@@ -1,0 +1,27 @@
+BTN_HOME = "🏠 Home"
+BTN_BACK = "⬅ Back"
+BTN_CANCEL = "❌ Cancel"
+BTN_YES = "✅ Yes"
+BTN_NO = "❌ No"
+BTN_SKIP = "⏭ Skip"
+BTN_EDIT = "✏️ Edit"
+BTN_SUBMIT = "✅ Submit"
+BTN_CHANGE = "✏ Change"
+BTN_USE_PROFILE = "✅ Yes"
+
+DATE_QUICK_PICK_TODAY = "📅 Today"
+DATE_QUICK_PICK_TOMORROW = "📅 Tomorrow"
+DATE_QUICK_PICK_ANOTHER = "📅 Choose Another Date"
+
+TIME_WINDOW_MORNING = "🌅 8am – 11am"
+TIME_WINDOW_AFTERNOON = "☀️ 12pm – 3pm"
+TIME_WINDOW_EVENING = "🌙 4pm – 7pm"
+
+VEHICLE_TYPE_SEDAN = "Sedan"
+VEHICLE_TYPE_SUV = "SUV"
+VEHICLE_TYPE_BUS = "Bus"
+VEHICLE_TYPE_BIKE = "Bike"
+VEHICLE_TYPE_VAN = "Van"
+
+ROLE_STUDENT = "📚 Student"
+ROLE_DRIVER = "🚗 Driver"
