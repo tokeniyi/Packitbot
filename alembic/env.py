@@ -9,6 +9,14 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 from bot.core.db.base_class import Base
+from bot.core.models import user
+from bot.core.models import student_profile
+from bot.core.models import driver_profile
+from bot.core.models import admin_profile
+from bot.core.models import delivery_request
+from bot.core.models import status_log
+from bot.core.models import feedback
+from bot.core.models import admin_action_log
 
 target_metadata = Base.metadata
 
