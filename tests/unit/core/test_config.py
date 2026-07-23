@@ -2,7 +2,6 @@ import os
 import tempfile
 
 import pytest
-from pydantic_settings import SettingsConfigDict
 
 from bot.core.config import Settings
 
@@ -29,6 +28,11 @@ def test_settings_loads_from_env(monkeypatch):
 
 
 def test_settings_defaults(monkeypatch):
+    env_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env")
+    backup_path = env_path + ".bak"
+    if os.path.exists(env_path):
+        os.rename(env_path, backup_path)
+
     monkeypatch.delenv("BOT_TOKEN", raising=False)
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("REDIS_URL", raising=False)
@@ -38,5 +42,9 @@ def test_settings_defaults(monkeypatch):
     monkeypatch.delenv("LOG_LEVEL", raising=False)
     monkeypatch.delenv("WEBHOOK_URL", raising=False)
 
-    with pytest.raises(Exception):
-        Settings()
+    try:
+        with pytest.raises(Exception):
+            Settings()
+    finally:
+        if os.path.exists(backup_path):
+            os.rename(backup_path, env_path)

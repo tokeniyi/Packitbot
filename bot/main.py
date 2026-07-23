@@ -3,10 +3,9 @@ import logging
 import sys
 
 from aiogram import Dispatcher
-from aiogram.fsm.storage.redis import RedisStorage
 
 from bot.core.config import get_settings
-from bot.core.loader import get_dispatch, get_storage
+from bot.core.loader import get_bot, get_dispatch
 from bot.core.middlewares.logging import LoggingMiddleware
 
 logging.basicConfig(
@@ -17,11 +16,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-async def _run_polling(dp: Dispatcher, storage: RedisStorage) -> None:
-    await dp.start_polling(storage=storage)
+async def _run_polling(dp: Dispatcher, bot) -> None:
+    await dp.start_polling(bot)
 
 
-async def _run_webhook(dp: Dispatcher, storage: RedisStorage) -> None:
+async def _run_webhook(dp: Dispatcher, bot) -> None:
     raise NotImplementedError("Webhook mode is not implemented yet.")
 
 
@@ -31,14 +30,14 @@ def main() -> None:
     logging.getLogger().setLevel(log_level)
 
     dp = get_dispatch()
-    storage = get_storage()
+    bot = get_bot()
 
     dp.update.outer_middleware(LoggingMiddleware())
 
     if settings.webhook_url:
-        asyncio.run(_run_webhook(dp, storage))
+        asyncio.run(_run_webhook(dp, bot))
     else:
-        asyncio.run(_run_polling(dp, storage))
+        asyncio.run(_run_polling(dp, bot))
 
 
 if __name__ == "__main__":

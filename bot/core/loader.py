@@ -16,16 +16,16 @@ def get_bot() -> Bot:
     return _bot
 
 
-def get_dispatch() -> Dispatcher:
-    global _dispatch
-    if _dispatch is None:
-        _dispatch = Dispatcher()
-    return _dispatch
-
-
 def get_storage() -> RedisStorage:
     global _storage
     if _storage is None:
         settings = Settings()
         _storage = RedisStorage.from_url(settings.redis_url)
     return _storage
+
+
+def get_dispatch() -> Dispatcher:
+    global _dispatch
+    if _dispatch is None:
+        _dispatch = Dispatcher(storage=get_storage())
+    return _dispatch
