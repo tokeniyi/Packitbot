@@ -246,7 +246,8 @@ async def test_start_handler_shows_role_buttons():
 
     message.answer = fake_answer
 
-    await cmd_start(message, user=fake_user)
+    state = AsyncMock()
+    await cmd_start(message, state=state, user=fake_user)
 
     markup = captured["reply_markup"]
     assert markup is not None

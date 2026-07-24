@@ -69,13 +69,11 @@ async def test_student_profile_round_trip():
     profile_repo = BaseRepository(session, StudentProfile)
     profile = await profile_repo.create(
         user_id=user.id,
-        matric_number="123/456",
         hall_of_residence="Esther Hall",
         verification_status=VerificationStatus.UNVERIFIED,
     )
     await session.commit()
     fetched = await profile_repo.get_by_id(profile.id)
-    assert fetched.matric_number == "123/456"
     assert fetched.hall_of_residence == "Esther Hall"
     assert fetched.verification_status == VerificationStatus.UNVERIFIED
     await session.close()

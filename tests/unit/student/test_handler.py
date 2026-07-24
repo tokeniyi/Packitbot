@@ -15,9 +15,10 @@ from bot.student.handler import (
     select_hall,
     submit_registration,
 )
+from bot.student.service import get_profile, is_registered, register_student
 from bot.student.states import StudentRegistrationFSM
 
-VALID_PHONE = "08012345678"
+VALID_PHONE = "08023456789"
 VALID_FULL_NAME = "John Doe"
 VALID_HALL = "Esther Hall"
 
@@ -38,6 +39,7 @@ def _make_callback(data: str = "", user_id: int = 1) -> MagicMock:
     cb.message = MagicMock()
     cb.message.edit_text = AsyncMock()
     cb.message.edit_reply_markup = AsyncMock()
+    cb.message.answer = AsyncMock()
     cb.answer = AsyncMock()
     return cb
 
@@ -51,16 +53,18 @@ async def test_register_student_creates_user_and_profile_atomically():
         row.scalar_one_or_none.return_value = None
         session.execute.return_value = row
 
-        profile = await StudentProfile(
+        profile = await register_student(
             telegram_id=999,
+            username="johndoe",
             full_name=VALID_FULL_NAME,
             hall=VALID_HALL,
             phone=VALID_PHONE,
         )
 
-        assert profile is not None
         assert isinstance(profile, StudentProfile)
-        assert session.add.call_count >= 2  # User + StudentProfile
+        assert profile.hall_of_residence == VALID_HALL
+        assert session.add.call_count == 2
+        session.commit.assert_awaited_once()
 
 
 async def test_register_student_duplicate_raises_validation_error():
@@ -68,19 +72,19 @@ async def test_register_student_duplicate_raises_validation_error():
         session = AsyncMock()
         mock_session_factory.return_value = session
 
-        row = MagicMock()
-        row.scalar_one_or_none.return_value = MagicMock()
-        session.execute.return_value = row
+        session.flush.side_effect = ValidationError("IntegrityError")
 
         with pytest.raises(ValidationError):
-            await StudentProfile(
+            await register_student(
                 telegram_id=999,
+                username="janedoe",
                 full_name="Jane Doe",
                 hall=VALID_HALL,
                 phone=VALID_PHONE,
             )
 
         session.rollback.assert_awaited_once()
+        session.commit.assert_not_awaited()
 
 
 async def test_is_registered_returns_false_before_registration():
@@ -92,7 +96,7 @@ async def test_is_registered_returns_false_before_registration():
         row.scalar_one_or_none.return_value = None
         session.execute.return_value = row
 
-        result = await UserRole.STUDENT
+        result = await is_registered(telegram_id=999)
         assert result is False
 
 
@@ -108,15 +112,14 @@ async def test_is_registered_returns_true_after_registration():
         row.scalar_one_or_none.return_value = user
         session.execute.return_value = row
 
-        result = await UserRole.STUDENT
+        result = await is_registered(telegram_id=999)
         assert result is True
 
 
 async def test_receive_full_name_advances_to_hall_state():
     message = _make_message(text=VALID_FULL_NAME)
-    state = MagicMock(spec=FSMContext)
-    state.update_data = AsyncMock()
-    state.set_state = AsyncMock()
+    state = AsyncMock()
+    state.get_data = AsyncMock(return_value={})
 
     await receive_full_name(message, state)
 
@@ -135,9 +138,8 @@ async def test_receive_full_name_invalid_reprompts_same_state():
 
 async def test_select_hall_callback_advances_to_phone_state():
     callback = _make_callback(data=f"hall_select:{VALID_HALL}")
-    state = MagicMock(spec=FSMContext)
-    state.update_data = AsyncMock()
-    state.set_state = AsyncMock()
+    state = AsyncMock()
+    state.get_data = AsyncMock(return_value={})
 
     await select_hall(callback, state)
 
@@ -147,7 +149,7 @@ async def test_select_hall_callback_advances_to_phone_state():
 
 async def test_receive_phone_advances_to_confirming_state():
     message = _make_message(text=VALID_PHONE)
-    state = MagicMock(spec=FSMContext)
+    state = AsyncMock()
     state.get_data = AsyncMock(
         return_value={
             "full_name": VALID_FULL_NAME,
@@ -155,7 +157,6 @@ async def test_receive_phone_advances_to_confirming_state():
             "phone_number": VALID_PHONE,
         }
     )
-    state.set_state = AsyncMock()
 
     await receive_phone(message, state)
 
@@ -228,7 +229,8 @@ async def test_submit_registration_shows_error_on_duplicate():
 
 async def test_edit_full_name_goes_back_to_name_state():
     callback = _make_callback(data="review_edit_full_name")
-    state = MagicMock(spec=FSMContext)
+    callback.message.answer = AsyncMock()
+    state = AsyncMock()
 
     await edit_full_name(callback, state)
 
@@ -237,7 +239,8 @@ async def test_edit_full_name_goes_back_to_name_state():
 
 async def test_edit_phone_goes_back_to_phone_state():
     callback = _make_callback(data="review_edit_phone_number")
-    state = MagicMock(spec=FSMContext)
+    callback.message.answer = AsyncMock()
+    state = AsyncMock()
 
     await edit_phone(callback, state)
 

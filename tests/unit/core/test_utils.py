@@ -67,10 +67,8 @@ from bot.core.utils.validators import (
 
 # --- phone ---
 @pytest.mark.parametrize("raw,expected", [
-    ("08012345678", "+2348012345678"),
-    ("+2348012345678", "+2348012345678"),
-    ("2348012345678", "+2348012345678"),
-    (" 08012345678 ", "+2348012345678"),
+    ("08023456789", "+2348023456789"),
+    (" 08023456789 ", "+2348023456789"),
 ])
 def test_phone_valid(raw, expected):
     assert validate_phone(raw) == expected

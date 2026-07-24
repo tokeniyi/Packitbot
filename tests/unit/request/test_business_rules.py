@@ -26,6 +26,7 @@ def _make_request(
     req.status = status
     req.student_id = student_id
     req.driver_id = driver_id
+    req.feedback = None
     return req
 
 

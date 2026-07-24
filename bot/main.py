@@ -1,9 +1,9 @@
 import asyncio
 import logging
-import sys
 
 from aiogram.client.bot import Bot
 from aiogram.types import BotCommand, BotCommandScopeChat, BotCommandScopeDefault
+from sqlalchemy import select
 
 # 1. Register all SQLAlchemy models before running any DB queries
 import bot.core.models  # noqa: F401
@@ -12,13 +12,30 @@ from bot.common.fallback import fallback_router
 from bot.common.help import help_router
 from bot.common.start import start_router
 from bot.core.config import get_settings
-from bot.core.constants.commands import *
+from bot.core.constants.commands import (
+    ADMIN_COMMANDS,
+    DEFAULT_COMMANDS,
+    DRIVER_COMMANDS,
+    STUDENT_COMMANDS,
+)
+from bot.core.constants.enums import AccountStatus, UserRole
+from bot.core.db.base_class import Base
+from bot.core.db.session import async_session as make_session
+from bot.core.db.session import engine
 from bot.core.loader import get_bot, get_dispatch
 from bot.core.middlewares.auth import AuthMiddleware
 from bot.core.middlewares.db_session import DbSessionMiddleware
 from bot.core.middlewares.logging import LoggingMiddleware, logger
 from bot.core.middlewares.throttling import ThrottlingMiddleware
+from bot.core.models.admin_profile import AdminProfile
+from bot.core.models.user import User
 from bot.student.handler import student_router
+
+
+async def _init_db() -> None:
+    """Ensures database tables are created before operations run."""
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
 
 def get_admin_chats_from_settings() -> list[int]:
@@ -31,40 +48,42 @@ def get_admin_chats_from_settings() -> list[int]:
     return [int(uid.strip()) for uid in raw_ids if uid.strip().isdigit()]
 
 
-async def _seed_admins() -> None:
-    from sqlalchemy import select
+async def get_user_chats_by_role(role: UserRole) -> list[int]:
+    """Fetches Telegram IDs for active users with a given role."""
+    async with make_session() as session:
+        stmt = select(User.telegram_id).where(User.role == role)
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
 
+
+async def _seed_admins() -> None:
     settings = get_settings()
     if not settings.seed_admin_telegram_ids:
         return
-
-    from bot.core.constants.enums import AccountStatus, UserRole
-    from bot.core.db.session import async_session as make_session
-    from bot.core.models.admin_profile import AdminProfile
-    from bot.core.models.user import User
 
     async with make_session() as session:
         try:
             for telegram_id in str(settings.seed_admin_telegram_ids).split(","):
                 telegram_id = telegram_id.strip()
-                if not telegram_id:
+                if not telegram_id or not telegram_id.isdigit():
                     continue
 
+                tg_id = int(telegram_id)
                 result = await session.execute(
-                    select(User).where(User.telegram_id == int(telegram_id))
+                    select(User).where(User.telegram_id == tg_id)
                 )
                 user = result.scalar_one_or_none()
 
                 if user is None:
                     user = User(
-                        telegram_id=int(telegram_id),
+                        telegram_id=tg_id,
                         full_name="System Admin",
                         role=UserRole.ADMIN,
                         account_status=AccountStatus.ACTIVE,
                     )
                     session.add(user)
                     await session.flush()
-                    logger.info(f"Seeded admin user telegram_id={telegram_id}")
+                    logger.info(f"Seeded admin user telegram_id={tg_id}")
 
                 if user.role != UserRole.ADMIN:
                     user.role = UserRole.ADMIN
@@ -86,7 +105,7 @@ async def _seed_admins() -> None:
 
 
 def setup_routers(dp) -> None:
-    """FIXED: Feature routers FIRST, Catch-all (fallback_router) LAST."""
+    """Feature routers FIRST, Catch-all (fallback_router) LAST."""
     dp.include_router(start_router)
     dp.include_router(admin_router)
     dp.include_router(help_router)
@@ -97,30 +116,46 @@ def setup_routers(dp) -> None:
 
 
 async def set_bot_commands(bot: Bot) -> None:
-    # Default global commands
-    commands = [
-        BotCommand(command="start", description="Start the bot"),
-        BotCommand(command="help", description="Get help"),
-        BotCommand(command="cancel", description="Cancel current action"),
-    ]
-    await bot.set_my_commands(commands, scope=BotCommandScopeDefault())
+    """Sets role-tailored command menus across Telegram."""
+    # 1. Global default fallback menu for guests/unregistered users
+    await bot.set_my_commands(DEFAULT_COMMANDS, scope=BotCommandScopeDefault())
 
-    # Admin-specific commands
-    admin_commands = ADMIN_COMMANDS
+    async def _apply_menu_for_chats(
+        chat_ids: list[int], commands: list[BotCommand], role_label: str
+    ) -> None:
+        for chat_id in chat_ids:
+            try:
+                await bot.set_my_commands(
+                    commands, scope=BotCommandScopeChat(chat_id=chat_id)
+                )
+                if bot.set_my_commands():
+                    print(f"Successfully set {role_label} commands for chat_id={chat_id}")
+                else:
+                    print(f"Failed to set {role_label} commands for chat_id={chat_id}")
+            except Exception as e:
+                logger.warning(
+                    f"Failed to set {role_label} commands for chat_id={chat_id}: {e}"
+                )
 
-    admin_chats = get_admin_chats_from_settings()
-    for chat_id in admin_chats:
-        try:
-            await bot.set_my_commands(
-                admin_commands, scope=BotCommandScopeChat(chat_id=chat_id)
-            )
-        except Exception as e:
-            logger.warning(f"Failed to set admin commands for chat_id={chat_id}: {e}")
+    # 2. Student Specific Commands
+    student_chats = await get_user_chats_by_role(UserRole.STUDENT)
+    await _apply_menu_for_chats(student_chats, STUDENT_COMMANDS, "student")
+
+    # 3. Driver Specific Commands
+    driver_chats = await get_user_chats_by_role(UserRole.DRIVER)
+    await _apply_menu_for_chats(driver_chats, DRIVER_COMMANDS, "driver")
+
+    # 4. Admin Specific Commands
+    db_admin_chats = await get_user_chats_by_role(UserRole.ADMIN)
+    env_admin_chats = get_admin_chats_from_settings()
+    all_admin_chats = list(set(db_admin_chats + env_admin_chats))
+    await _apply_menu_for_chats(all_admin_chats, ADMIN_COMMANDS, "admin")
 
 
 async def _run_polling(dp, bot: Bot) -> None:
-    await _seed_admins()        # 1. Seed admins first
-    await set_bot_commands(bot) # 2. Set bot commands after admins exist
+    await _init_db()
+    await _seed_admins()
+    await set_bot_commands(bot)
     await dp.start_polling(bot)
 
 
@@ -129,17 +164,16 @@ async def _run_webhook(dp, bot: Bot) -> None:
     from aiohttp import web
 
     settings = get_settings()
+    await _init_db()
     await _seed_admins()
     await set_bot_commands(bot)
 
-    # Set webhook URL on Telegram servers
     await bot.set_webhook(
         url=f"{settings.webhook_url}",
         secret_token=settings.webhook_secret,
         drop_pending_updates=True,
     )
 
-    # Build Aiohttp Web Server
     app = web.Application()
     webhook_requests_handler = SimpleRequestHandler(
         dispatcher=dp,
@@ -149,17 +183,23 @@ async def _run_webhook(dp, bot: Bot) -> None:
     webhook_requests_handler.register(app, path="/webhook")
     setup_application(app, dp, bot=bot)
 
+    # Clean lifecycle handling
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, host="0.0.0.0", port=settings.port)
     await site.start()
 
     logger.info(f"Webhook server running on port {settings.port}")
-    # Keep server alive
-    await asyncio.Event().wait()
-    raise NotImplementedError("Webhook mode is not implemented yet.")
+    
+    # Wait until interrupted by Ctrl+C / SystemExit
+    try:
+        await asyncio.Event().wait()
+    finally:
+        await runner.cleanup()
 
 
+
+    
 def main() -> None:
     settings = get_settings()
     log_level = getattr(logging, settings.log_level.upper(), logging.INFO)

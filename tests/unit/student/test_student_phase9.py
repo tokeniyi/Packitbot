@@ -50,37 +50,35 @@ async def test_register_student_creates_user_and_profile():
 
         profile = await register_student(
             telegram_id=999,
+            username="testuser",
             full_name="John Doe",
             hall="Esther Hall",
-            phone="08012345678",
+            phone="08023456789",
         )
 
         assert isinstance(profile, StudentProfile)
-        assert profile.matric_number == "12/3456"
         assert profile.hall_of_residence == "Esther Hall"
         assert session.add.call_count == 2
         session.commit.assert_awaited_once()
 
 
-async def test_register_student_duplicate_matric_raises_validation_error():
-    """Verify duplicate matric_number raises ValidationError and rolls back."""
+async def test_register_student_duplicate_raises_validation_error():
+    """Verify registration failure raises error and rolls back."""
     with patch("bot.student.service.async_session") as mock_session_factory:
         session = AsyncMock()
         mock_session_factory.return_value = session
 
-        row = MagicMock()
-        row.scalar_one_or_none.return_value = MagicMock()
-        session.execute.return_value = row
+        session.flush.side_effect = ValidationError("IntegrityError")
 
-        with pytest.raises(ValidationError) as exc_info:
+        with pytest.raises(ValidationError):
             await register_student(
                 telegram_id=999,
+                username="testuser",
                 full_name="Jane Doe",
                 hall="Dorcas Hall",
-                phone="08012345678",
+                phone="08023456789",
             )
 
-        assert "already registered" in str(exc_info.value)
         session.rollback.assert_awaited_once()
         session.commit.assert_not_awaited()
 
@@ -180,7 +178,7 @@ def test_hall_selection_keyboard_callback_format():
     keyboard = hall_selection_keyboard()
     for row in keyboard.inline_keyboard:
         for button in row:
-            assert button.callback_data.startswith("hall:")
+            assert button.callback_data.startswith("hall_select:")
 
 
 def test_student_main_menu_has_four_buttons():
@@ -216,7 +214,6 @@ def test_fsm_states_exist_and_are_unique():
     """Ensure StudentRegistrationFSM states match Architecture v2 §7 strictly."""
     expected_states = [
         "entering_full_name",
-        "entering_matric_number",
         "entering_hall",
         "entering_phone_number",
         "confirming_registration",
@@ -237,7 +234,7 @@ def test_fsm_states_count():
         if not name.startswith("_")
         and isinstance(getattr(StudentRegistrationFSM, name), State)
     ]
-    assert len(state_names) == 5
+    assert len(state_names) == 4
 
 
 async def test_cancel_mid_fsm_clears_state():

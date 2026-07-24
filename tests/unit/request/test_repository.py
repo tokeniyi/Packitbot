@@ -155,7 +155,7 @@ async def test_request_repository_get_pending_pagination():
 
     session.execute.assert_called_once()
     call_arg = session.execute.call_args[0][0]
-    assert "offset" in str(call_arg) or "limit" in str(call_arg)
+    assert "OFFSET" in str(call_arg) or "LIMIT" in str(call_arg)
 
 
 async def test_request_repository_list_returns_all():
