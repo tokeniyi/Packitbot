@@ -59,7 +59,14 @@ def driver_pending_menu() -> ReplyKeyboardMarkup:
 
 def driver_persistent_menu(availability: DriverAvailability = DriverAvailability.OFFLINE) -> ReplyKeyboardMarkup:
     """Full persistent menu for approved drivers."""
-    toggle_text = "🟢 Go Available" if availability == DriverAvailability.OFFLINE else "🔴 Go Offline"
+    if availability == DriverAvailability.AVAILABLE:
+        toggle_text = "🔴 Go Offline"
+    elif availability == DriverAvailability.OFFLINE:
+        toggle_text = "🟢 Go Available"
+    else:
+        # BUSY or default fallback
+        toggle_text = "🔴 Go Offline"
+
     return ReplyKeyboardMarkup(
         keyboard=[
             [
@@ -76,3 +83,4 @@ def driver_persistent_menu(availability: DriverAvailability = DriverAvailability
         ],
         resize_keyboard=True,
     )
+

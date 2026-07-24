@@ -5,7 +5,7 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
-from bot.core.constants.enums import DriverStatus
+from bot.core.constants.enums import DriverAvailability, DriverStatus
 from bot.core.keyboards.common_kb import HomeButton
 from bot.core.utils.validators import (
     ValidationError,
@@ -22,7 +22,7 @@ from bot.driver.keyboards import (
     vehicle_type_keyboard,
 )
 from bot.driver.schemas import RegisterDriverDTO
-from bot.driver.service import get_driver_profile_by_telegram_id, register_driver
+from bot.driver.service import get_driver_profile_by_telegram_id, register_driver, set_driver_availability
 from bot.driver.states import DriverRegistrationFSM
 
 logger = logging.getLogger(__name__)
@@ -278,3 +278,55 @@ async def check_approval_status(message: Message, session=None) -> None:
             f"Your account status: <b>{profile.status.value.upper()}</b>",
             parse_mode="HTML",
         )
+
+
+@driver_router.message(F.text.in_({"🟢 Go Available", "🔴 Go Offline"}))
+@driver_router.message(Command("toggle_availability"))
+async def toggle_availability_handler(message: Message, session=None) -> None:
+    profile = await get_driver_profile_by_telegram_id(message.from_user.id, session=session)
+    if not profile:
+        await message.answer("You are not registered as a driver. Use /register_driver to get started.")
+        return
+
+    if profile.status != DriverStatus.APPROVED:
+        await message.answer(
+            "❌ Only approved drivers can change availability.",
+            reply_markup=driver_pending_menu(),
+        )
+        return
+
+    if profile.availability == DriverAvailability.BUSY:
+        await message.answer(
+            "⚠️ You are currently on an active delivery. Your status is system-managed (BUSY) until the delivery completes.",
+            reply_markup=driver_persistent_menu(DriverAvailability.BUSY),
+        )
+        return
+
+    target_status = (
+        DriverAvailability.OFFLINE
+        if profile.availability == DriverAvailability.AVAILABLE
+        else DriverAvailability.AVAILABLE
+    )
+
+    try:
+        updated_profile = await set_driver_availability(
+            telegram_id=message.from_user.id,
+            target_availability=target_status,
+            session=session,
+        )
+    except Exception as exc:
+        logger.error(f"Error toggling availability for user {message.from_user.id}: {exc}")
+        await message.answer(f"❌ Failed to update status: {exc}")
+        return
+
+    if updated_profile.availability == DriverAvailability.AVAILABLE:
+        status_msg = "🟢 You are now <b>AVAILABLE</b> to receive delivery requests."
+    else:
+        status_msg = "🔴 You are now <b>OFFLINE</b> and will not receive new requests."
+
+    await message.answer(
+        status_msg,
+        parse_mode="HTML",
+        reply_markup=driver_persistent_menu(updated_profile.availability),
+    )
+

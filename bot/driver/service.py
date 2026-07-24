@@ -116,3 +116,42 @@ async def get_driver_profile_by_telegram_id(
     else:
         async with async_session() as sess:
             return await _execute_get(sess)
+
+
+async def set_driver_availability(
+    telegram_id: int,
+    target_availability: DriverAvailability,
+    session: Optional[AsyncSession] = None,
+) -> DriverProfile:
+    """Sets driver availability status after verifying status and busy constraints."""
+
+    async def _execute_set(sess: AsyncSession) -> DriverProfile:
+        profile = await get_driver_profile_by_telegram_id(telegram_id, session=sess)
+        if not profile:
+            raise PackitbotError("Driver profile not found.")
+
+        if profile.status != DriverStatus.APPROVED:
+            raise ValidationError("Only approved drivers can change availability.")
+
+        if profile.availability == DriverAvailability.BUSY:
+            raise ValidationError("Cannot manually change availability while on an active delivery.")
+
+        if target_availability == DriverAvailability.BUSY:
+            raise ValidationError("BUSY state is system-managed and cannot be set manually.")
+
+        profile.availability = target_availability
+        await sess.flush()
+        return profile
+
+    if session is not None:
+        return await _execute_set(session)
+    else:
+        async with async_session() as sess:
+            try:
+                dp = await _execute_set(sess)
+                await sess.commit()
+                return dp
+            except Exception:
+                await sess.rollback()
+                raise
+
