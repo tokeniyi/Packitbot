@@ -2,6 +2,7 @@ import re
 from datetime import date, datetime, timedelta
 
 from bot.core.constants.enums import LuggageSize
+from bot.core.constants.config import ALLOWED_PHONE_PREFIXES
 from bot.core.constants.halls import CU_HALLS
 from bot.core.constants.limits import (
     MAX_LUGGAGE_COUNT,
@@ -38,15 +39,29 @@ class ValidationError(Exception):
 
 
 def validate_phone(raw: str) -> str:
-    # Strip spaces, hyphens, and leading plus signs for clean matching
-    cleaned = re.sub(r"[\s\-\+]", "", raw.strip())
-    if not PHONE_REGEX.match(cleaned):
-        raise ValidationError("Enter a valid Nigerian phone number, e.g. 08012345678")
-    if cleaned.startswith("234"):
-        return "+" + cleaned
-    if cleaned.startswith("0"):
-        return "+234" + cleaned[1:]
-    raise ValidationError("Enter a valid Nigerian phone number, e.g. 08012345678")
+    """
+    Validates a Nigerian phone number:
+    1. Must contain digits only (no spaces, letters, or symbols).
+    2. Must be exactly 11 digits long.
+    3. Must start with a valid 4-digit prefix from ALLOWED_PHONE_PREFIXES.
+    4. Formats valid numbers to international format (+234...).
+    """
+    if not raw:
+        raise ValidationError("Phone number cannot be empty.")
+
+    cleaned = raw.strip()
+
+    # 1 & 2. Ensure strictly digits and exactly 11 characters
+    if not cleaned.isdigit() or len(cleaned) != 11:
+        raise ValidationError("Enter a valid 11-digit phone number, e.g., 08012345678")
+
+    # 3. Check against allowed Nigerian prefixes
+    if not cleaned.startswith(ALLOWED_PHONE_PREFIXES):
+        raise ValidationError("Invalid phone network provider prefix.")
+
+    # 4. Return formatted international number (+234...)
+    return "+234" + cleaned[1:]
+
 
 def validate_matric(raw: str) -> str:
     value = raw.strip().upper()

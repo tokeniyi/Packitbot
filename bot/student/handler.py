@@ -1,12 +1,12 @@
 """
-Refactoring Changes:
-1. Removed manual text checks: `if message.text and (message.text.startswith("/") or "Home" in message.text): return`
-   from `receive_full_name`, `receive_matric`, and `receive_phone`.
-   
-   Why: Those `return` statements were silently swallowing navigation messages inside active states. 
-   When a user clicked "Home", the state handler hit `return`, marking the event as handled 
-   without executing `start_router`, which caused the bot to fall through to the global fallback message.
-   Removing them allows `start_router` (equipped with `StateFilter("*")`) to take precedence.
+Refactoring Changes for Single-Field Edit Flow:
+1. Review Edit Callbacks:
+   - Sets an 'is_editing': True flag in state data when any edit button is clicked.
+2. Step Message Handlers (receive_full_name, receive_matric, receive_phone):
+   - Check if 'is_editing' flag is set in state data.
+   - If editing: Updates the value, clears the flag, and redirects directly back 
+     to the confirmation screen (confirming_registration state + _review_keyboard).
+   - If not editing: Proceeds linearly to the next step.
 """
 
 import logging
@@ -52,6 +52,21 @@ def _step_prompt(step: int, total: int, prompt: str) -> str:
     )
 
 
+async def _show_review_screen(target: Message | CallbackQuery, state: FSMContext) -> None:
+    """Helper to render or re-render the review keyboard and state."""
+    await state.set_state(StudentRegistrationFSM.confirming_registration)
+    if isinstance(target, CallbackQuery):
+        await target.message.answer(
+            MSG_REG_REVIEW_TITLE,
+            reply_markup=_review_keyboard(),
+        )
+    else:
+        await target.answer(
+            MSG_REG_REVIEW_TITLE,
+            reply_markup=_review_keyboard(),
+        )
+
+
 @student_router.message(Command("cancel"))
 @student_router.callback_query(F.data == "cancel")
 async def cancel_registration(event: Message | CallbackQuery, state: FSMContext) -> None:
@@ -71,9 +86,16 @@ async def receive_full_name(message: Message, state: FSMContext) -> None:
         await message.answer(MSG_REG_INVALID_FULL_NAME)
         return
 
+    data = await state.get_data()
     await state.update_data(full_name=message.text.strip())
-    await message.answer(_step_prompt(2, 5, MSG_REG_ENTER_MATRIC))
-    await state.set_state(StudentRegistrationFSM.entering_matric_number)
+
+    # Check if we were editing
+    if data.get("is_editing"):
+        await state.update_data(is_editing=False)
+        await _show_review_screen(message, state)
+    else:
+        await message.answer(_step_prompt(2, 5, MSG_REG_ENTER_MATRIC))
+        await state.set_state(StudentRegistrationFSM.entering_matric_number)
 
 
 @student_router.message(StudentRegistrationFSM.entering_matric_number)
@@ -84,25 +106,37 @@ async def receive_matric(message: Message, state: FSMContext) -> None:
         await message.answer(MSG_REG_INVALID_MATRIC)
         return
 
+    data = await state.get_data()
     await state.update_data(matric_number=message.text.strip())
-    await message.answer(
-        _step_prompt(3, 5, MSG_REG_ENTER_HALL),
-        reply_markup=hall_selection_keyboard(),
-    )
-    await state.set_state(StudentRegistrationFSM.entering_hall)
+
+    # Check if we were editing
+    if data.get("is_editing"):
+        await state.update_data(is_editing=False)
+        await _show_review_screen(message, state)
+    else:
+        await message.answer(
+            _step_prompt(3, 5, MSG_REG_ENTER_HALL),
+            reply_markup=hall_selection_keyboard(),
+        )
+        await state.set_state(StudentRegistrationFSM.entering_hall)
 
 
 @student_router.callback_query(
     StudentRegistrationFSM.entering_hall,
-    F.data.startswith("hall_select:"), # <--- Expects "hall_select:..."
+    F.data.startswith("hall_select:"),
 )
 async def select_hall(callback: CallbackQuery, state: FSMContext) -> None:
-    hall = callback.data.split(":", 1)[1]
+    hall = callback.data.split(":", 1)[1] if ":" in callback.data else callback.data
     await state.update_data(hall_of_residence=hall)
     await callback.answer(f"Selected Hall: {hall}")
-    
-    await state.set_state(StudentRegistrationFSM.entering_phone_number)
-    await callback.message.answer(_step_prompt(4, 5, MSG_REG_ENTER_PHONE))
+
+    data = await state.get_data()
+    if data.get("is_editing"):
+        await state.update_data(is_editing=False)
+        await _show_review_screen(callback, state)
+    else:
+        await state.set_state(StudentRegistrationFSM.entering_phone_number)
+        await callback.message.answer(_step_prompt(4, 5, MSG_REG_ENTER_PHONE))
 
 
 @student_router.message(StudentRegistrationFSM.entering_phone_number)
@@ -113,18 +147,19 @@ async def receive_phone(message: Message, state: FSMContext) -> None:
         await message.answer(MSG_REG_INVALID_PHONE)
         return
 
+    data = await state.get_data()
     await state.update_data(phone_number=message.text.strip())
-    await state.set_state(StudentRegistrationFSM.confirming_registration)
-    await message.answer(
-        MSG_REG_REVIEW_TITLE,
-        reply_markup=_review_keyboard(),
-    )
+
+    # If editing or finished linear flow, return to review screen
+    await state.update_data(is_editing=False)
+    await _show_review_screen(message, state)
 
 
 @student_router.callback_query(F.data == "review_edit_full_name")
 async def edit_full_name(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
-    await callback.message.edit_text(
+    await state.update_data(is_editing=True)  # Set edit mode flag
+    await callback.message.answer(
         _step_prompt(1, 5, MSG_REG_ENTER_FULL_NAME),
         reply_markup=None,
     )
@@ -134,7 +169,8 @@ async def edit_full_name(callback: CallbackQuery, state: FSMContext) -> None:
 @student_router.callback_query(F.data == "review_edit_matric_number")
 async def edit_matric(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
-    await callback.message.edit_text(
+    await state.update_data(is_editing=True)  # Set edit mode flag
+    await callback.message.answer(
         _step_prompt(2, 5, MSG_REG_ENTER_MATRIC),
         reply_markup=None,
     )
@@ -144,7 +180,8 @@ async def edit_matric(callback: CallbackQuery, state: FSMContext) -> None:
 @student_router.callback_query(F.data == "review_edit_phone_number")
 async def edit_phone(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
-    await callback.message.edit_text(
+    await state.update_data(is_editing=True)  # Set edit mode flag
+    await callback.message.answer(
         _step_prompt(4, 5, MSG_REG_ENTER_PHONE),
         reply_markup=None,
     )
