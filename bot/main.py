@@ -3,22 +3,32 @@ import logging
 import sys
 
 from aiogram.client.bot import Bot
-from aiogram.types import BotCommand, BotCommandScopeDefault, BotCommandScopeChat
+from aiogram.types import BotCommand, BotCommandScopeChat, BotCommandScopeDefault
 
 # 1. Register all SQLAlchemy models before running any DB queries
 import bot.core.models  # noqa: F401
-from bot.core.constants.commands import *
+from bot.admin.handler import admin_router
 from bot.common.fallback import fallback_router
 from bot.common.help import help_router
-from bot.admin.handler import admin_router
 from bot.common.start import start_router
 from bot.core.config import get_settings
+from bot.core.constants.commands import *
 from bot.core.loader import get_bot, get_dispatch
 from bot.core.middlewares.auth import AuthMiddleware
 from bot.core.middlewares.db_session import DbSessionMiddleware
 from bot.core.middlewares.logging import LoggingMiddleware, logger
 from bot.core.middlewares.throttling import ThrottlingMiddleware
 from bot.student.handler import student_router
+
+
+def get_admin_chats_from_settings() -> list[int]:
+    """Reads admin telegram IDs directly from settings as a fallback/helper."""
+    settings = get_settings()
+    if not settings.seed_admin_telegram_ids:
+        return []
+
+    raw_ids = str(settings.seed_admin_telegram_ids).split(",")
+    return [int(uid.strip()) for uid in raw_ids if uid.strip().isdigit()]
 
 
 async def _seed_admins() -> None:
@@ -81,7 +91,7 @@ def setup_routers(dp) -> None:
     dp.include_router(admin_router)
     dp.include_router(help_router)
     dp.include_router(student_router)
-    
+
     # ALWAYS KEEP FALLBACK ROUTER LAST!
     dp.include_router(fallback_router)
 
@@ -95,25 +105,28 @@ async def set_bot_commands(bot: Bot) -> None:
     ]
     await bot.set_my_commands(commands, scope=BotCommandScopeDefault())
 
-    # Admin-specific commands (requires manual admin assignment in DB)
+    # Admin-specific commands
     admin_commands = ADMIN_COMMANDS
 
-    admin_chats = await get_admin_chats(bot)
+    admin_chats = get_admin_chats_from_settings()
     for chat_id in admin_chats:
-        await bot.set_my_commands(
-            admin_commands, scope=BotCommandScopeChat(chat_id=chat_id)
-        )
+        try:
+            await bot.set_my_commands(
+                admin_commands, scope=BotCommandScopeChat(chat_id=chat_id)
+            )
+        except Exception as e:
+            logger.warning(f"Failed to set admin commands for chat_id={chat_id}: {e}")
 
 
 async def _run_polling(dp, bot: Bot) -> None:
-    await set_bot_commands(bot)
-    await _seed_admins()
+    await _seed_admins()        # 1. Seed admins first
+    await set_bot_commands(bot) # 2. Set bot commands after admins exist
     await dp.start_polling(bot)
 
 
 async def _run_webhook(dp, bot: Bot) -> None:
-    await set_bot_commands(bot)
-    await _seed_admins()
+    await _seed_admins()        # 1. Seed admins first
+    await set_bot_commands(bot) # 2. Set bot commands after admins exist
     raise NotImplementedError("Webhook mode is not implemented yet.")
 
 
@@ -143,4 +156,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()  
+    main()
