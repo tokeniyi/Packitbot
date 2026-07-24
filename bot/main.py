@@ -125,8 +125,38 @@ async def _run_polling(dp, bot: Bot) -> None:
 
 
 async def _run_webhook(dp, bot: Bot) -> None:
-    await _seed_admins()        # 1. Seed admins first
-    await set_bot_commands(bot) # 2. Set bot commands after admins exist
+    from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+    from aiohttp import web
+
+    settings = get_settings()
+    await _seed_admins()
+    await set_bot_commands(bot)
+
+    # Set webhook URL on Telegram servers
+    await bot.set_webhook(
+        url=f"{settings.webhook_url}",
+        secret_token=settings.webhook_secret,
+        drop_pending_updates=True,
+    )
+
+    # Build Aiohttp Web Server
+    app = web.Application()
+    webhook_requests_handler = SimpleRequestHandler(
+        dispatcher=dp,
+        bot=bot,
+        secret_token=settings.webhook_secret,
+    )
+    webhook_requests_handler.register(app, path="/webhook")
+    setup_application(app, dp, bot=bot)
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, host="0.0.0.0", port=settings.port)
+    await site.start()
+
+    logger.info(f"Webhook server running on port {settings.port}")
+    # Keep server alive
+    await asyncio.Event().wait()
     raise NotImplementedError("Webhook mode is not implemented yet.")
 
 
