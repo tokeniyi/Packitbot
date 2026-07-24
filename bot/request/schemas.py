@@ -4,7 +4,7 @@ from datetime import date
 from bot.core.constants.enums import LuggageSize, RequestStatus
 
 
-@dataclass
+@dataclass(frozen=True)
 class CreateRequestDTO:
     student_id: int
     pickup_detail: str
@@ -19,21 +19,21 @@ class CreateRequestDTO:
     preferred_time_window: str
 
 
-@dataclass
+@dataclass(frozen=True)
 class UpdateRequestDTO:
     request_id: int
     actor_id: int
     changed_fields: dict
 
 
-@dataclass
+@dataclass(frozen=True)
 class AssignDriverDTO:
     request_id: int
     driver_id: int
     admin_id: int
 
 
-@dataclass
+@dataclass(frozen=True)
 class TransitionDTO:
     request_id: int
     new_status: RequestStatus

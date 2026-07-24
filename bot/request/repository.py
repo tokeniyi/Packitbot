@@ -1,10 +1,8 @@
-from datetime import date
 from typing import Optional
 
-from sqlalchemy import desc, select
+from sqlalchemy import desc, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.core.db.base_class import Base
 from bot.core.models.delivery_request import DeliveryRequest
 from bot.core.models.feedback import Feedback
 from bot.core.models.status_log import RequestStatusLog
@@ -62,13 +60,15 @@ class RequestRepository(BaseRepository):
         return list(result.scalars().all())
 
     async def get_dropoff_address_history_for_student(
-        self, student_id: int
+        self, student_id: int, limit: int = 5
     ) -> list[str]:
+        # Uses MAX(created_at) so Postgres doesn't throw a Group-By syntax error
         stmt = (
             select(DeliveryRequest.dropoff_address)
             .where(DeliveryRequest.student_id == student_id)
             .group_by(DeliveryRequest.dropoff_address)
-            .order_by(desc(DeliveryRequest.created_at))
+            .order_by(desc(func.max(DeliveryRequest.created_at)))
+            .limit(limit)
         )
         result = await self.session.execute(stmt)
         return [row[0] for row in result.all()]

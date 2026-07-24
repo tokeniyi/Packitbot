@@ -1,3 +1,4 @@
+from typing import Any
 from bot.core.constants.enums import (
     DriverAvailability,
     DriverStatus,
@@ -28,5 +29,6 @@ def can_assign_driver(driver: DriverProfile) -> bool:
     )
 
 
-def can_rate_delivery(request: DeliveryRequest, existing_feedback) -> bool:
-    return request.status == RequestStatus.DELIVERED and existing_feedback is None
+def can_rate_delivery(request: DeliveryRequest, existing_feedback: Any = None) -> bool:
+    feedback = existing_feedback or getattr(request, "feedback", None)
+    return request.status == RequestStatus.DELIVERED and feedback is None
