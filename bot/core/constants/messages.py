@@ -1,7 +1,40 @@
 MSG_START_ROLE_SELECTION = "Welcome to Packitbot! Are you a Student or a Driver?"
-MSG_START_ADMIN_WELCOME = "Welcome, Admin."
+
+# Admins
+MSG_START_ADMIN_WELCOME = (
+    "⚙️ **Admin Portal Active**\n\n"
+    "Welcome back, Boss! You have full administrative access.\n\n"
+    "🛠️ **Quick Actions:**\n"
+    "• View active dispatch orders\n"
+    "• Manage verified drivers & students\n"
+    "• System metrics & logs\n\n"
+    "Type /admin to open the management panel."
+)
+
+MSG_MANAGEMENT_PORTAL = (
+    "⚙️ **Admin Management Panel**\n\n"
+    "Welcome, Admin! Here are the commands and controls available to you:\n\n"
+    "📊 **System & Metrics**\n"
+    "• `/admin` — Re-open this management portal\n"
+    "• `/stats` — View live delivery metrics & system stats\n\n"
+    "👥 **User & Verification Management**\n"
+    "• `/verify` — Review & verify pending driver accounts\n"
+    "• `/users` — Search or view registered students and drivers\n\n"
+    "📦 **Logistics & Orders**\n"
+    "• `/orders` — View active, pending, or completed deliveries\n"
+    "• `/broadcast` — Send an announcement message to all users\n\n"
+    "💡 *Tip: You can also use the inline buttons below to navigate quick actions!(not implemented yet 😁*"
+)
+
+
 MSG_START_ROLE_SELECTION_STUDENT = "📚 Student"
 MSG_START_ROLE_SELECTION_DRIVER = "🚗 Driver"
+
+
+
+from bot.core.config import get_support_url
+
+SUPPORT_LINK = get_support_url()
 
 MSG_HELP = (
     "👋 **Need help getting started?**\n\n"
@@ -10,16 +43,36 @@ MSG_HELP = (
     "💡 **Quick Tips:**\n"
     "• Use the menu buttons below to navigate.\n"
     "• Type /start or /home anytime to return to the main menu.\n"
-    "• Want to reset or start over? Just send /cancel!"
+    "• Want to reset or start over? Just send /cancel!\n\n"
+    f"💬 **Having any issues?** [Contact Support Directly]({SUPPORT_LINK})"
 )
+
+
 
 MSG_ABOUT = (
     "🚀 **Packitbot** — CU delivery logistics, simplified.\n\n"
     "🎓 **Students** request deliveries.\n"
     "🚗 **Drivers** accept & complete them.\n"
-    "⚙️ **Admins** keep everything running smoothly!"
+    "⚙️ **Admins** keep everything running smoothly!\n\n"
+    "👋 New here or ran into an issue? Type /help for quick support, "
+    "or send /menu to explore all the things you can do!"
 )
+
+
+MSG_WELCOME_GENERAL = (
+    "👋 Welcome to **Packitbot**!\n\n"
+    "The easiest way to send and receive packages on Covenant University campus.\n\n"
+    "🎓 **Students:** Send items to friends or family on campus.\n"
+    "🚗 **Drivers:** Earn money by delivering packages.\n"
+    "⚙️ **Admins:** Keep the system running smoothly.\n\n"
+    "Ready to get started?"
+)
+
+
 # Student registration flow
+MSG_STUDENT_WELCOME = "🎓 **Student Portal**\n\nReady to send packages? Let's get you set up!"
+
+
 MSG_REG_STEP_PROMPT = "📌 **Step {current} of {total}** {progress_bar}\n\n{prompt}"
 MSG_REG_ENTER_FULL_NAME = "👤 **What's your full name?**\n*(e.g., John Doe)*"
 MSG_REG_ENTER_MATRIC = "🪪 **Enter your matriculation number.**\n*(e.g., 21AB1234)*"
@@ -39,6 +92,9 @@ MSG_DRIVER_NOT_APPROVED = (
 )
 
 # Driver registration flow
+MSG_DRIVER_WELCOME = "🚗 **Driver Portal**\n\nReady to earn by delivering? Let's get you set up!"
+
+
 MSG_DRIVER_PENDING_APPROVAL = (
     "⏳ **Application Pending Review**\n\n"
     "Your driver profile has been created and is waiting for admin approval.\n"
@@ -111,3 +167,6 @@ MSG_EMPTY_STATE_REQUESTS = "📭 You haven't created any delivery requests yet.\
 MSG_EMPTY_STATE_DRIVER = "🛋️ You don't have an active delivery right now. We'll notify you when a request comes in!"
 MSG_SLOW_DOWN = "⏳ **Slow down!** You're tapping buttons too fast."
 MSG_BANNED = "🔒 **Account Restricted.** Your account has been restricted. Contact an admin for assistance."
+
+
+# welcome admin

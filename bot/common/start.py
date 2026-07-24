@@ -22,6 +22,9 @@ from bot.core.constants.messages import (
     MSG_START_ROLE_SELECTION,
     MSG_START_ROLE_SELECTION_DRIVER,
     MSG_START_ROLE_SELECTION_STUDENT,
+    MSG_WELCOME_GENERAL,
+    MSG_STUDENT_WELCOME,
+    MSG_DRIVER_WELCOME,
 )
 from bot.core.models.user import User
 from bot.student.states import StudentRegistrationFSM
@@ -76,13 +79,13 @@ async def cmd_start(
         )
         await message.answer(MSG_START_ROLE_SELECTION, reply_markup=keyboard)
     elif user.role == UserRole.STUDENT:
-        await message.answer("Welcome back, Student!")
+        await message.answer(MSG_STUDENT_WELCOME)
     elif user.role == UserRole.DRIVER:
-        await message.answer("Welcome back, Driver!")
+        await message.answer(MSG_DRIVER_WELCOME)
     elif user.role == UserRole.ADMIN:
         await message.answer(MSG_START_ADMIN_WELCOME)
     else:
-        await message.answer("Welcome to Packitbot!")
+        await message.answer(MSG_WELCOME_GENERAL)
 
 
 @start_router.callback_query(F.data == "role:student")

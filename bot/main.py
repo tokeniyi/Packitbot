@@ -3,13 +3,14 @@ import logging
 import sys
 
 from aiogram.client.bot import Bot
-from aiogram.types import BotCommand, BotCommandScopeDefault
+from aiogram.types import BotCommand, BotCommandScopeDefault, BotCommandScopeChat
 
 # 1. Register all SQLAlchemy models before running any DB queries
 import bot.core.models  # noqa: F401
-
+from bot.core.constants.commands import *
 from bot.common.fallback import fallback_router
 from bot.common.help import help_router
+from bot.admin.handler import admin_router
 from bot.common.start import start_router
 from bot.core.config import get_settings
 from bot.core.loader import get_bot, get_dispatch
@@ -77,6 +78,7 @@ async def _seed_admins() -> None:
 def setup_routers(dp) -> None:
     """FIXED: Feature routers FIRST, Catch-all (fallback_router) LAST."""
     dp.include_router(start_router)
+    dp.include_router(admin_router)
     dp.include_router(help_router)
     dp.include_router(student_router)
     
@@ -85,13 +87,22 @@ def setup_routers(dp) -> None:
 
 
 async def set_bot_commands(bot: Bot) -> None:
+    # Default global commands
     commands = [
         BotCommand(command="start", description="Start the bot"),
         BotCommand(command="help", description="Get help"),
-        BotCommand(command="about", description="About Packitbot"),
         BotCommand(command="cancel", description="Cancel current action"),
     ]
     await bot.set_my_commands(commands, scope=BotCommandScopeDefault())
+
+    # Admin-specific commands (requires manual admin assignment in DB)
+    admin_commands = ADMIN_COMMANDS
+
+    admin_chats = await get_admin_chats(bot)
+    for chat_id in admin_chats:
+        await bot.set_my_commands(
+            admin_commands, scope=BotCommandScopeChat(chat_id=chat_id)
+        )
 
 
 async def _run_polling(dp, bot: Bot) -> None:
