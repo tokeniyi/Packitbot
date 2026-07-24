@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 
 class StudentProfile(Base, TimestampMixin):
-    """Student profile with matric number and hall/room details."""
+    """Student profile with hall/room details and verification status."""
 
     __tablename__ = "student_profiles"
 
@@ -23,9 +23,6 @@ class StudentProfile(Base, TimestampMixin):
         ForeignKey("users.id", ondelete="CASCADE"),
         unique=True,
         nullable=False,
-    )
-    matric_number: Mapped[str] = mapped_column(
-        String(50), unique=True, index=True, nullable=False
     )
     hall_of_residence: Mapped[str] = mapped_column(
         String(100), nullable=False

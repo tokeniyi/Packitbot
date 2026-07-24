@@ -7,39 +7,27 @@ from bot.core.db.session import async_session
 from bot.core.exceptions import ValidationError
 from bot.core.models.student_profile import StudentProfile
 from bot.core.models.user import User
-from bot.core.repositories.base_repository import BaseRepository
 from bot.core.utils.validators import (
     validate_full_name,
     validate_phone,
-    validate_matric,
 )
 
 
 async def register_student(
     telegram_id: int,
+    username: Optional[str],
     full_name: str,
-    matric_number: str,
     hall: str,
-    phone: str,
+    phone: Optional[str] = None,
 ) -> StudentProfile:
     validated_full_name = validate_full_name(full_name)
-    validated_phone = validate_phone(phone)
-    validated_matric = validate_matric(matric_number)
+    validated_phone = validate_phone(phone) if phone else None
 
     session = async_session()
     try:
-        existing = await session.execute(
-            select(StudentProfile).where(
-                StudentProfile.matric_number == validated_matric
-            )
-        )
-        if existing.scalar_one_or_none() is not None:
-            raise ValidationError(
-                "This matriculation number is already registered."
-            )
-
         user = User(
             telegram_id=telegram_id,
+            username=username,
             full_name=validated_full_name,
             phone_number=validated_phone,
             role=UserRole.STUDENT,
@@ -50,7 +38,6 @@ async def register_student(
 
         profile = StudentProfile(
             user_id=user.id,
-            matric_number=validated_matric,
             hall_of_residence=hall,
             verification_status=None,
         )

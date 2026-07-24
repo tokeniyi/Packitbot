@@ -1,12 +1,9 @@
 """
-Refactoring Changes for Single-Field Edit Flow:
-1. Review Edit Callbacks:
-   - Sets an 'is_editing': True flag in state data when any edit button is clicked.
-2. Step Message Handlers (receive_full_name, receive_matric, receive_phone):
-   - Check if 'is_editing' flag is set in state data.
-   - If editing: Updates the value, clears the flag, and redirects directly back 
-     to the confirmation screen (confirming_registration state + _review_keyboard).
-   - If not editing: Proceeds linearly to the next step.
+Refactoring Changes:
+1. Removed matric_number from states, step handlers, and review keyboard.
+2. Direct Flow: Full Name -> Hall Selection -> Phone Number -> Confirm/Review Screen.
+3. Automatically retrieves `username` from Telegram's callback.from_user on submission.
+4. Preserved single-field editing flag logic.
 """
 
 import logging
@@ -19,10 +16,8 @@ from bot.core.constants.messages import (
     MSG_REG_EDIT,
     MSG_REG_ENTER_FULL_NAME,
     MSG_REG_ENTER_HALL,
-    MSG_REG_ENTER_MATRIC,
     MSG_REG_ENTER_PHONE,
     MSG_REG_INVALID_FULL_NAME,
-    MSG_REG_INVALID_MATRIC,
     MSG_REG_INVALID_PHONE,
     MSG_REG_REVIEW_TITLE,
     MSG_REG_STEP_PROMPT,
@@ -30,7 +25,7 @@ from bot.core.constants.messages import (
     MSG_REG_SUCCESS,
 )
 from bot.core.keyboards.common_kb import HomeButton
-from bot.core.utils.validators import validate_full_name, validate_matric, validate_phone
+from bot.core.utils.validators import validate_full_name, validate_phone
 from bot.student.keyboards import hall_selection_keyboard, student_persistent_menu
 from bot.student.service import register_student
 from bot.student.states import StudentRegistrationFSM
@@ -89,33 +84,13 @@ async def receive_full_name(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     await state.update_data(full_name=message.text.strip())
 
-    # Check if we were editing
     if data.get("is_editing"):
         await state.update_data(is_editing=False)
         await _show_review_screen(message, state)
     else:
-        await message.answer(_step_prompt(2, 5, MSG_REG_ENTER_MATRIC))
-        await state.set_state(StudentRegistrationFSM.entering_matric_number)
-
-
-@student_router.message(StudentRegistrationFSM.entering_matric_number)
-async def receive_matric(message: Message, state: FSMContext) -> None:
-    try:
-        validate_matric(message.text)
-    except Exception:
-        await message.answer(MSG_REG_INVALID_MATRIC)
-        return
-
-    data = await state.get_data()
-    await state.update_data(matric_number=message.text.strip())
-
-    # Check if we were editing
-    if data.get("is_editing"):
-        await state.update_data(is_editing=False)
-        await _show_review_screen(message, state)
-    else:
+        # Progresses directly to Step 2: Hall Selection (out of 3 steps)
         await message.answer(
-            _step_prompt(3, 5, MSG_REG_ENTER_HALL),
+            _step_prompt(2, 3, MSG_REG_ENTER_HALL),
             reply_markup=hall_selection_keyboard(),
         )
         await state.set_state(StudentRegistrationFSM.entering_hall)
@@ -136,21 +111,21 @@ async def select_hall(callback: CallbackQuery, state: FSMContext) -> None:
         await _show_review_screen(callback, state)
     else:
         await state.set_state(StudentRegistrationFSM.entering_phone_number)
-        await callback.message.answer(_step_prompt(4, 5, MSG_REG_ENTER_PHONE))
+        await callback.message.answer(_step_prompt(3, 3, MSG_REG_ENTER_PHONE))
 
 
 @student_router.message(StudentRegistrationFSM.entering_phone_number)
 async def receive_phone(message: Message, state: FSMContext) -> None:
-    try:
-        validate_phone(message.text)
-    except Exception:
-        await message.answer(MSG_REG_INVALID_PHONE)
-        return
+    if message.text and message.text.strip():
+        try:
+            validate_phone(message.text)
+        except Exception:
+            await message.answer(MSG_REG_INVALID_PHONE)
+            return
+        await state.update_data(phone_number=message.text.strip())
+    else:
+        await state.update_data(phone_number=None)
 
-    data = await state.get_data()
-    await state.update_data(phone_number=message.text.strip())
-
-    # If editing or finished linear flow, return to review screen
     await state.update_data(is_editing=False)
     await _show_review_screen(message, state)
 
@@ -158,31 +133,20 @@ async def receive_phone(message: Message, state: FSMContext) -> None:
 @student_router.callback_query(F.data == "review_edit_full_name")
 async def edit_full_name(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
-    await state.update_data(is_editing=True)  # Set edit mode flag
+    await state.update_data(is_editing=True)
     await callback.message.answer(
-        _step_prompt(1, 5, MSG_REG_ENTER_FULL_NAME),
+        _step_prompt(1, 3, MSG_REG_ENTER_FULL_NAME),
         reply_markup=None,
     )
     await state.set_state(StudentRegistrationFSM.entering_full_name)
 
 
-@student_router.callback_query(F.data == "review_edit_matric_number")
-async def edit_matric(callback: CallbackQuery, state: FSMContext) -> None:
-    await callback.answer()
-    await state.update_data(is_editing=True)  # Set edit mode flag
-    await callback.message.answer(
-        _step_prompt(2, 5, MSG_REG_ENTER_MATRIC),
-        reply_markup=None,
-    )
-    await state.set_state(StudentRegistrationFSM.entering_matric_number)
-
-
 @student_router.callback_query(F.data == "review_edit_phone_number")
 async def edit_phone(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
-    await state.update_data(is_editing=True)  # Set edit mode flag
+    await state.update_data(is_editing=True)
     await callback.message.answer(
-        _step_prompt(4, 5, MSG_REG_ENTER_PHONE),
+        _step_prompt(3, 3, MSG_REG_ENTER_PHONE),
         reply_markup=None,
     )
     await state.set_state(StudentRegistrationFSM.entering_phone_number)
@@ -192,13 +156,17 @@ async def edit_phone(callback: CallbackQuery, state: FSMContext) -> None:
 async def submit_registration(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     data = await state.get_data()
+
+    # Automatically extract Telegram username from callback event
+    tg_username = callback.from_user.username
+
     try:
         await register_student(
             telegram_id=callback.from_user.id,
+            username=tg_username,
             full_name=data["full_name"],
-            matric_number=data["matric_number"],
             hall=data["hall_of_residence"],
-            phone=data["phone_number"],
+            phone=data.get("phone_number"),
         )
     except Exception as e:
         logger.error(f"Failed to register student: {e}")
@@ -219,12 +187,6 @@ def _review_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text=f"Full Name {MSG_REG_EDIT}",
                     callback_data="review_edit_full_name",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text=f"Matric Number {MSG_REG_EDIT}",
-                    callback_data="review_edit_matric_number",
                 )
             ],
             [
