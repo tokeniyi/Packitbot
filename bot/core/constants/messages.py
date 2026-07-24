@@ -5,8 +5,12 @@ MSG_START_ROLE_SELECTION_DRIVER = "🚗 Driver"
 
 MSG_HELP = (
     "👋 **Need help getting started?**\n\n"
-    "📦 **Packitbot** connects Covenant University students with trusted drivers for fast, reliable campus deliveries.\n\n"
-    "💡 Use the menu buttons below or type /start to return to the main menu anytime!"
+    "📦 **Packitbot** connects Covenant University students with trusted drivers "
+    "for fast, reliable campus deliveries.\n\n"
+    "💡 **Quick Tips:**\n"
+    "• Use the menu buttons below to navigate.\n"
+    "• Type /start or /home anytime to return to the main menu.\n"
+    "• Want to reset or start over? Just send /cancel!"
 )
 
 MSG_ABOUT = (

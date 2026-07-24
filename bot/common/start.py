@@ -1,14 +1,9 @@
 """
-Refactoring Changes:
-1. Imported `StateFilter` from `aiogram.filters`.
-2. Applied `StateFilter("*")` to both `@start_router.message(Command("start"))` 
-   and `@start_router.message(F.text.contains("Home"))`.
-   
-   Why: By default, Aiogram FSM limits message handler matching to state-specific filters.
-   Adding `StateFilter("*")` ensures that clicking 'Home' or calling '/start' intercepts the 
-   message regardless of what active state the user is currently stuck in, wiping the state 
-   via `await state.clear()` and properly rendering the main menu instead of falling through 
-   to the invalid input fallback handler.
+Refactoring Summary:
+1. Added `Command("home")` to the main navigation decorator alongside `Command("start")` 
+   and `F.text.contains("Home")` with StateFilter("*") so sending `/home` resets state anywhere.
+2. Updated student registration step prompt from (1, 5) to (1, 3) to match the removal of matric number.
+3. Ensures state wiping via `await state.clear()` when going home or restarting.
 """
 
 import logging
@@ -49,6 +44,7 @@ def _step_prompt(step: int, total: int, prompt: str) -> str:
 
 
 @start_router.message(StateFilter("*"), Command("start"))
+@start_router.message(StateFilter("*"), Command("home"))
 @start_router.message(StateFilter("*"), F.text.contains("Home"))
 async def cmd_start(
     message: Message,
@@ -93,7 +89,8 @@ async def cmd_start(
 async def process_role_student(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     await state.set_state(StudentRegistrationFSM.entering_full_name)
-    await callback.message.answer(_step_prompt(1, 5, MSG_REG_ENTER_FULL_NAME))
+    # Updated total steps from 5 to 3
+    await callback.message.answer(_step_prompt(1, 3, MSG_REG_ENTER_FULL_NAME))
 
 
 @start_router.callback_query(F.data == "role:driver")
