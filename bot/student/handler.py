@@ -617,3 +617,169 @@ async def submit_request_creation(callback: CallbackQuery, state: FSMContext, se
             "✅ Delivery request created successfully!",
             reply_markup=student_persistent_menu(),
         )
+
+
+# ------------------------------------------------------------------
+# Phase 13: Student Request View & Detail Handlers
+# ------------------------------------------------------------------
+
+from bot.core.constants.messages import (
+    MSG_EMPTY_STATE_REQUESTS,
+    MSG_STATUS_PENDING,
+    MSG_STATUS_ASSIGNED,
+    MSG_STATUS_ACCEPTED,
+    MSG_STATUS_REJECTED_BY_DRIVER,
+    MSG_STATUS_EN_ROUTE_TO_PICKUP,
+    MSG_STATUS_PICKED_UP,
+    MSG_STATUS_IN_TRANSIT,
+    MSG_STATUS_DELIVERED,
+    MSG_STATUS_CANCELLED,
+    MSG_STATUS_FAILED,
+)
+from bot.core.utils.pagination import paginate
+from bot.request.repository import RequestRepository
+from bot.student.keyboards import my_requests_list_keyboard, request_detail_keyboard
+
+STATUS_DISPLAY_MAP = {
+    "pending": MSG_STATUS_PENDING,
+    "assigned": MSG_STATUS_ASSIGNED,
+    "accepted": MSG_STATUS_ACCEPTED,
+    "rejected_by_driver": MSG_STATUS_REJECTED_BY_DRIVER,
+    "en_route_to_pickup": MSG_STATUS_EN_ROUTE_TO_PICKUP,
+    "picked_up": MSG_STATUS_PICKED_UP,
+    "in_transit": MSG_STATUS_IN_TRANSIT,
+    "delivered": MSG_STATUS_DELIVERED,
+    "cancelled": MSG_STATUS_CANCELLED,
+    "failed": MSG_STATUS_FAILED,
+}
+
+STATUS_PROGRESS_INDICATORS = {
+    "pending": "⏳ [░░░░] Request Submitted",
+    "assigned": "👤 [█░░░] Driver Assigned",
+    "accepted": "🤝 [█░░░] Driver Accepted",
+    "en_route_to_pickup": "🚗 [██░░] Driver En Route to Pickup",
+    "picked_up": "📦 [███░] Package Picked Up",
+    "in_transit": "🛣️ [███░] Package In Transit",
+    "delivered": "🎉 [████] Delivered",
+    "cancelled": "🚫 Request Cancelled",
+    "failed": "⚠️ Delivery Failed",
+}
+
+
+def _format_request_detail(req) -> str:
+    status_key = req.status.value if hasattr(req.status, "value") else str(req.status)
+    status_label = STATUS_DISPLAY_MAP.get(status_key, status_key.replace("_", " ").title())
+    progress = STATUS_PROGRESS_INDICATORS.get(status_key, "")
+
+    driver_info = "Not assigned yet"
+    if req.driver:
+        d_name = req.driver.full_name or "Driver"
+        d_phone = req.driver.phone_number or "N/A"
+        driver_info = f"{d_name} ({d_phone})"
+        if hasattr(req.driver, "driver_profile") and req.driver.driver_profile:
+            dp = req.driver.driver_profile
+            driver_info += f"\n  Vehicle: {dp.vehicle_type} ({dp.plate_number})"
+
+    luggage_size_str = req.luggage_size.value if hasattr(req.luggage_size, "value") else str(req.luggage_size)
+
+    text = (
+        f"📋 <b>Request Detail #{req.id}</b>\n\n"
+        f"<b>Status:</b> {status_label}\n"
+        f"<b>Progress:</b> {progress}\n\n"
+        f"📍 <b>Pickup Detail:</b> {req.pickup_detail}\n"
+        f"🏛️ <b>Hall of Residence:</b> {req.hall_of_residence}\n"
+        f"🎯 <b>Dropoff Address:</b> {req.dropoff_address}\n"
+        f"🗺️ <b>Landmark:</b> {req.dropoff_landmark or 'None'}\n\n"
+        f"👤 <b>Recipient:</b> {req.recipient_name} ({req.recipient_phone})\n"
+        f"📦 <b>Luggage:</b> {req.luggage_count}x {luggage_size_str.title()}\n"
+        f"📅 <b>Preferred Date:</b> {req.preferred_date}\n"
+        f"⏰ <b>Time Window:</b> {req.preferred_time_window}\n"
+        f"📝 <b>Special Instructions:</b> {req.special_instructions or 'None'}\n\n"
+        f"🚗 <b>Driver Details:</b> {driver_info}\n"
+    )
+    if req.cancelled_by:
+        cancelled_by_str = req.cancelled_by.value if hasattr(req.cancelled_by, "value") else str(req.cancelled_by)
+        text += f"\n🚫 <b>Cancelled By:</b> {cancelled_by_str.title()}"
+        if req.cancellation_reason:
+            text += f"\n<b>Reason:</b> {req.cancellation_reason}"
+
+    return text
+
+
+@student_router.message(F.text == "📋 My Requests")
+@student_router.message(Command("my_requests"))
+async def show_my_requests_list(message: Message, session=None, page: int = 1) -> None:
+    if session is None:
+        await message.answer(MSG_EMPTY_STATE_REQUESTS, reply_markup=student_persistent_menu())
+        return
+
+    repo = RequestRepository(session)
+    user_id = message.from_user.id
+    requests = await repo.get_history_for_student(student_id=user_id, page=1)
+
+    if not requests:
+        await message.answer(MSG_EMPTY_STATE_REQUESTS, reply_markup=student_persistent_menu())
+        return
+
+    paginated_page = paginate(requests, page=page)
+    kb = my_requests_list_keyboard(paginated_page.items, page=paginated_page.page, total_pages=paginated_page.total_pages)
+    await message.answer("📋 <b>Your Delivery Requests:</b>", parse_mode="HTML", reply_markup=kb)
+
+
+@student_router.callback_query(F.data == "my_reqs_list")
+@student_router.callback_query(F.data.startswith("my_reqs_page:"))
+async def my_requests_page_callback(callback: CallbackQuery, session=None) -> None:
+    await callback.answer()
+    page = 1
+    if ":" in callback.data:
+        try:
+            page = int(callback.data.split(":")[1])
+        except ValueError:
+            page = 1
+
+    if session is None:
+        await callback.message.edit_text(MSG_EMPTY_STATE_REQUESTS, reply_markup=student_persistent_menu())
+        return
+
+    repo = RequestRepository(session)
+    user_id = callback.from_user.id
+    requests = await repo.get_history_for_student(student_id=user_id, page=1)
+
+    if not requests:
+        await callback.message.edit_text(MSG_EMPTY_STATE_REQUESTS, reply_markup=student_persistent_menu())
+        return
+
+    paginated_page = paginate(requests, page=page)
+    kb = my_requests_list_keyboard(paginated_page.items, page=paginated_page.page, total_pages=paginated_page.total_pages)
+    await callback.message.edit_text("📋 <b>Your Delivery Requests:</b>", parse_mode="HTML", reply_markup=kb)
+
+
+@student_router.callback_query(F.data.startswith("my_req_detail:"))
+async def show_request_detail(callback: CallbackQuery, session=None) -> None:
+    await callback.answer()
+    req_id_str = callback.data.split(":")[1]
+    try:
+        req_id = int(req_id_str)
+    except ValueError:
+        await callback.message.answer("Invalid request ID.")
+        return
+
+    if session is None:
+        await callback.message.answer("Session unavailable.")
+        return
+
+    repo = RequestRepository(session)
+    req = await repo.get_by_id(req_id)
+
+    if not req or req.student_id != callback.from_user.id:
+        await callback.message.answer("Request not found or permission denied.")
+        return
+
+    text = _format_request_detail(req)
+    kb = request_detail_keyboard(req)
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+
+
+@student_router.callback_query(F.data == "noop")
+async def noop_callback(callback: CallbackQuery) -> None:
+    await callback.answer()

@@ -143,3 +143,46 @@ def request_review_keyboard() -> InlineKeyboardMarkup:
             ],
         ]
     )
+
+
+def my_requests_list_keyboard(requests: list, page: int, total_pages: int) -> InlineKeyboardMarkup:
+    """Builds inline keyboard for paginated requests list."""
+    buttons = []
+    for req in requests:
+        # e.g., "📦 #1 - Esther Hall (Pending)"
+        status_str = req.status.value.replace("_", " ").title() if hasattr(req.status, "value") else str(req.status)
+        btn_text = f"📦 #{req.id} - {req.hall_of_residence} ({status_str})"
+        buttons.append([InlineKeyboardButton(text=btn_text, callback_data=f"my_req_detail:{req.id}")])
+
+    # Pagination controls row
+    nav_row = []
+    if page > 1:
+        nav_row.append(InlineKeyboardButton(text="⬅ Previous", callback_data=f"my_reqs_page:{page - 1}"))
+    nav_row.append(InlineKeyboardButton(text=f"Page {page}/{total_pages}", callback_data="noop"))
+    if page < total_pages:
+        nav_row.append(InlineKeyboardButton(text="Next ➡️", callback_data=f"my_reqs_page:{page + 1}"))
+
+    if nav_row:
+        buttons.append(nav_row)
+
+    buttons.append([InlineKeyboardButton(text="🏠 Home", callback_data="home")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def request_detail_keyboard(req) -> InlineKeyboardMarkup:
+    """Builds dynamic action buttons for request detail view."""
+    buttons = []
+    status = req.status.value if hasattr(req.status, "value") else str(req.status)
+
+    # Dynamic action buttons based on status
+    if status in ("pending", "assigned", "accepted"):
+        buttons.append([InlineKeyboardButton(text="🚫 Cancel Request", callback_data=f"my_req_cancel:{req.id}")])
+    elif status == "delivered":
+        if not getattr(req, "feedback", None):
+            buttons.append([InlineKeyboardButton(text="⭐ Rate Delivery", callback_data=f"my_req_rate:{req.id}")])
+
+    buttons.append([
+        InlineKeyboardButton(text="⬅ Back to List", callback_data="my_reqs_list"),
+        InlineKeyboardButton(text="🏠 Home", callback_data="home"),
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
