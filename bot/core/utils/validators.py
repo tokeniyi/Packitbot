@@ -10,9 +10,9 @@ from bot.core.constants.limits import (
     RATING_MAX,
     RATING_MIN,
 )
-
-PHONE_REGEX = re.compile(r"^(?:\+?234|0)([7-9]\d{9})$")
-MATRIC_REGEX = re.compile(r"^\d{2}/\d{4}$")
+PHONE_REGEX = re.compile(r"^(?:234|0)([7-9]\d{9})$")
+# FIXED: Supports 21AB1234, 21/1234, 21/AB1234, etc.
+MATRIC_REGEX = re.compile(r"^\d{2}/?[A-Za-z0-9]{4,6}$")
 PLATE_REGEX = re.compile(r"^[A-Z]{3}-\d{3}[A-Z]{2}$")
 NAME_REGEX = re.compile(r"^[A-Za-z][A-Za-z\-']+(?:\s[A-Za-z][A-Za-z\-']+)+$")
 TIME_WINDOW_SLOTS = [
@@ -38,29 +38,27 @@ class ValidationError(Exception):
 
 
 def validate_phone(raw: str) -> str:
-    cleaned = re.sub(r"[\s\-]", "", raw.strip())
+    # Strip spaces, hyphens, and leading plus signs for clean matching
+    cleaned = re.sub(r"[\s\-\+]", "", raw.strip())
     if not PHONE_REGEX.match(cleaned):
         raise ValidationError("Enter a valid Nigerian phone number, e.g. 08012345678")
-    if cleaned.startswith("+"):
-        return cleaned
     if cleaned.startswith("234"):
         return "+" + cleaned
     if cleaned.startswith("0"):
         return "+234" + cleaned[1:]
     raise ValidationError("Enter a valid Nigerian phone number, e.g. 08012345678")
 
-
 def validate_matric(raw: str) -> str:
-    value = raw.strip()
+    value = raw.strip().upper()
     if not MATRIC_REGEX.match(value):
-        raise ValidationError("Matric number must match the pattern XX/XXXX (e.g. 12/3456)")
+        raise ValidationError("Enter a valid matriculation number (e.g. 21AB1234 or 12/3456).")
     return value
 
 
 def validate_full_name(raw: str) -> str:
     value = raw.strip()
     if not NAME_REGEX.match(value):
-        raise ValidationError("Enter your full name (first and last name, letters and hyphens only)")
+        raise ValidationError("Enter your full name (first and last name, letters and hyphens only).")
     return value
 
 

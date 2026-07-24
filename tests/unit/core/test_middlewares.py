@@ -207,7 +207,7 @@ async def test_auth_middleware_short_circuits_banned_user(monkeypatch):
 @pytest.mark.asyncio
 async def test_throttling_middleware_denies_rapid_updates():
     settings = MagicMock()
-    settings.default_throttle_rate = 1000
+    settings.default_throttle_rate = 0  # effectively no tokens regenerate
 
     middleware = ThrottlingMiddleware(settings)
     middleware.tokens = {}
@@ -222,7 +222,7 @@ async def test_throttling_middleware_denies_rapid_updates():
     result1 = await middleware(fake_handler, mock_update, {})
     assert result1 == "ok"
 
-    # Immediate second call should be blocked
+    # Immediate second call should be blocked (0 tokens regenerate)
     result2 = await middleware(fake_handler, mock_update, {})
     assert result2 is None
     mock_update.message.answer.assert_awaited_once()
@@ -239,19 +239,17 @@ async def test_start_handler_shows_role_buttons():
     fake_user.role = None
 
     message = MagicMock()
-    message.answer = AsyncMock()
-    message._user = fake_user
-
     captured = {}
 
     async def fake_answer(*args, **kwargs):
         captured["reply_markup"] = kwargs.get("reply_markup")
-        return None
 
-    message.answer.side_effect = fake_answer
-    await cmd_start(message, {"user": fake_user})
+    message.answer = fake_answer
+
+    await cmd_start(message, user=fake_user)
 
     markup = captured["reply_markup"]
+    assert markup is not None
     buttons = [btn for row in markup.inline_keyboard for btn in row]
     texts = [btn.text for btn in buttons]
     assert any("Student" in t for t in texts)
@@ -267,7 +265,7 @@ async def test_help_handler_responds():
 
     message = MagicMock()
     message.answer = AsyncMock()
-    await cmd_help(message, {"user": MagicMock()})
+    await cmd_help(message)
     message.answer.assert_awaited_once()
     assert "help" in message.answer.call_args[0][0].lower()
 
@@ -281,7 +279,7 @@ async def test_about_handler_responds():
 
     message = MagicMock()
     message.answer = AsyncMock()
-    await cmd_about(message, {"user": MagicMock()})
+    await cmd_about(message)
     message.answer.assert_awaited_once()
     assert "packitbot" in message.answer.call_args[0][0].lower()
 

@@ -26,9 +26,10 @@ def upgrade() -> None:
     op.drop_constraint(op.f('admin_action_logs_target_request_id_fkey'), 'admin_action_logs', type_='foreignkey')
     op.drop_constraint(op.f('admin_action_logs_target_user_id_fkey'), 'admin_action_logs', type_='foreignkey')
     op.drop_constraint(op.f('admin_action_logs_admin_id_fkey'), 'admin_action_logs', type_='foreignkey')
-    op.create_foreign_key(None, 'admin_action_logs', 'delivery_requests', ['target_request_id'], ['id'], ondelete='SET NULL')
-    op.create_foreign_key(None, 'admin_action_logs', 'users', ['target_user_id'], ['id'], ondelete='SET NULL')
-    op.create_foreign_key(None, 'admin_action_logs', 'users', ['admin_id'], ['id'], ondelete='RESTRICT')
+    op.create_foreign_key('admin_action_logs_target_request_id_fkey', 'admin_action_logs', 'delivery_requests', ['target_request_id'], ['id'], ondelete='SET NULL')
+    op.create_foreign_key('admin_action_logs_target_user_id_fkey', 'admin_action_logs', 'users', ['target_user_id'], ['id'], ondelete='SET NULL')
+    op.create_foreign_key('admin_action_logs_admin_id_fkey', 'admin_action_logs', 'users', ['admin_id'], ['id'], ondelete='RESTRICT')
+    
     op.create_index(op.f('ix_delivery_requests_cancelled_by'), 'delivery_requests', ['cancelled_by'], unique=False)
     op.create_index(op.f('ix_delivery_requests_driver_id'), 'delivery_requests', ['driver_id'], unique=False)
     op.create_index(op.f('ix_delivery_requests_hall_of_residence'), 'delivery_requests', ['hall_of_residence'], unique=False)
@@ -37,23 +38,27 @@ def upgrade() -> None:
     op.create_index(op.f('ix_delivery_requests_student_id'), 'delivery_requests', ['student_id'], unique=False)
     op.drop_constraint(op.f('delivery_requests_student_id_fkey'), 'delivery_requests', type_='foreignkey')
     op.drop_constraint(op.f('delivery_requests_driver_id_fkey'), 'delivery_requests', type_='foreignkey')
-    op.create_foreign_key(None, 'delivery_requests', 'users', ['driver_id'], ['id'], ondelete='SET NULL')
-    op.create_foreign_key(None, 'delivery_requests', 'users', ['student_id'], ['id'], ondelete='RESTRICT')
+    op.create_foreign_key('delivery_requests_driver_id_fkey', 'delivery_requests', 'users', ['driver_id'], ['id'], ondelete='SET NULL')
+    op.create_foreign_key('delivery_requests_student_id_fkey', 'delivery_requests', 'users', ['student_id'], ['id'], ondelete='RESTRICT')
+    
     op.create_index(op.f('ix_driver_profiles_approved_by_admin_id'), 'driver_profiles', ['approved_by_admin_id'], unique=False)
     op.create_index(op.f('ix_driver_profiles_availability'), 'driver_profiles', ['availability'], unique=False)
     op.create_index(op.f('ix_driver_profiles_status'), 'driver_profiles', ['status'], unique=False)
     op.drop_constraint(op.f('driver_profiles_approved_by_admin_id_fkey'), 'driver_profiles', type_='foreignkey')
-    op.create_foreign_key(None, 'driver_profiles', 'users', ['approved_by_admin_id'], ['id'], ondelete='SET NULL')
+    op.create_foreign_key('driver_profiles_approved_by_admin_id_fkey', 'driver_profiles', 'users', ['approved_by_admin_id'], ['id'], ondelete='SET NULL')
+    
     op.drop_constraint(op.f('feedbacks_request_id_key'), 'feedbacks', type_='unique')
     op.create_index(op.f('ix_feedbacks_request_id'), 'feedbacks', ['request_id'], unique=True)
     op.create_index(op.f('ix_feedbacks_student_id'), 'feedbacks', ['student_id'], unique=False)
     op.drop_constraint(op.f('feedbacks_student_id_fkey'), 'feedbacks', type_='foreignkey')
-    op.create_foreign_key(None, 'feedbacks', 'users', ['student_id'], ['id'], ondelete='CASCADE')
+    op.create_foreign_key('feedbacks_student_id_fkey', 'feedbacks', 'users', ['student_id'], ['id'], ondelete='CASCADE')
+    
     op.create_index(op.f('ix_request_status_logs_changed_by_user_id'), 'request_status_logs', ['changed_by_user_id'], unique=False)
     op.create_index(op.f('ix_request_status_logs_new_status'), 'request_status_logs', ['new_status'], unique=False)
     op.create_index(op.f('ix_request_status_logs_request_id'), 'request_status_logs', ['request_id'], unique=False)
     op.drop_constraint(op.f('request_status_logs_changed_by_user_id_fkey'), 'request_status_logs', type_='foreignkey')
-    op.create_foreign_key(None, 'request_status_logs', 'users', ['changed_by_user_id'], ['id'], ondelete='SET NULL')
+    op.create_foreign_key('request_status_logs_changed_by_user_id_fkey', 'request_status_logs', 'users', ['changed_by_user_id'], ['id'], ondelete='SET NULL')
+    
     op.create_index(op.f('ix_student_profiles_verification_status'), 'student_profiles', ['verification_status'], unique=False)
     op.alter_column('users', 'full_name',
                existing_type=sa.VARCHAR(length=255),
@@ -80,30 +85,39 @@ def downgrade() -> None:
                existing_type=sa.DateTime(timezone=True),
                type_=postgresql.TIMESTAMP(),
                existing_nullable=True)
+
+    op.execute("UPDATE users SET role = 'STUDENT' WHERE role IS NULL")
     op.alter_column('users', 'role',
                existing_type=postgresql.ENUM('STUDENT', 'DRIVER', 'ADMIN', name='userrole'),
                nullable=False)
+
+    op.execute("UPDATE users SET full_name = '' WHERE full_name IS NULL")
     op.alter_column('users', 'full_name',
                existing_type=sa.VARCHAR(length=255),
                nullable=False)
+
     op.drop_index(op.f('ix_student_profiles_verification_status'), table_name='student_profiles')
-    op.drop_constraint(None, 'request_status_logs', type_='foreignkey')
+    
+    op.drop_constraint('request_status_logs_changed_by_user_id_fkey', 'request_status_logs', type_='foreignkey')
     op.create_foreign_key(op.f('request_status_logs_changed_by_user_id_fkey'), 'request_status_logs', 'users', ['changed_by_user_id'], ['id'])
     op.drop_index(op.f('ix_request_status_logs_request_id'), table_name='request_status_logs')
     op.drop_index(op.f('ix_request_status_logs_new_status'), table_name='request_status_logs')
     op.drop_index(op.f('ix_request_status_logs_changed_by_user_id'), table_name='request_status_logs')
-    op.drop_constraint(None, 'feedbacks', type_='foreignkey')
+    
+    op.drop_constraint('feedbacks_student_id_fkey', 'feedbacks', type_='foreignkey')
     op.create_foreign_key(op.f('feedbacks_student_id_fkey'), 'feedbacks', 'users', ['student_id'], ['id'])
     op.drop_index(op.f('ix_feedbacks_student_id'), table_name='feedbacks')
     op.drop_index(op.f('ix_feedbacks_request_id'), table_name='feedbacks')
     op.create_unique_constraint(op.f('feedbacks_request_id_key'), 'feedbacks', ['request_id'], postgresql_nulls_not_distinct=False)
-    op.drop_constraint(None, 'driver_profiles', type_='foreignkey')
+    
+    op.drop_constraint('driver_profiles_approved_by_admin_id_fkey', 'driver_profiles', type_='foreignkey')
     op.create_foreign_key(op.f('driver_profiles_approved_by_admin_id_fkey'), 'driver_profiles', 'users', ['approved_by_admin_id'], ['id'])
     op.drop_index(op.f('ix_driver_profiles_status'), table_name='driver_profiles')
     op.drop_index(op.f('ix_driver_profiles_availability'), table_name='driver_profiles')
     op.drop_index(op.f('ix_driver_profiles_approved_by_admin_id'), table_name='driver_profiles')
-    op.drop_constraint(None, 'delivery_requests', type_='foreignkey')
-    op.drop_constraint(None, 'delivery_requests', type_='foreignkey')
+    
+    op.drop_constraint('delivery_requests_driver_id_fkey', 'delivery_requests', type_='foreignkey')
+    op.drop_constraint('delivery_requests_student_id_fkey', 'delivery_requests', type_='foreignkey')
     op.create_foreign_key(op.f('delivery_requests_driver_id_fkey'), 'delivery_requests', 'users', ['driver_id'], ['id'])
     op.create_foreign_key(op.f('delivery_requests_student_id_fkey'), 'delivery_requests', 'users', ['student_id'], ['id'])
     op.drop_index(op.f('ix_delivery_requests_student_id'), table_name='delivery_requests')
@@ -112,9 +126,10 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_delivery_requests_hall_of_residence'), table_name='delivery_requests')
     op.drop_index(op.f('ix_delivery_requests_driver_id'), table_name='delivery_requests')
     op.drop_index(op.f('ix_delivery_requests_cancelled_by'), table_name='delivery_requests')
-    op.drop_constraint(None, 'admin_action_logs', type_='foreignkey')
-    op.drop_constraint(None, 'admin_action_logs', type_='foreignkey')
-    op.drop_constraint(None, 'admin_action_logs', type_='foreignkey')
+    
+    op.drop_constraint('admin_action_logs_admin_id_fkey', 'admin_action_logs', type_='foreignkey')
+    op.drop_constraint('admin_action_logs_target_user_id_fkey', 'admin_action_logs', type_='foreignkey')
+    op.drop_constraint('admin_action_logs_target_request_id_fkey', 'admin_action_logs', type_='foreignkey')
     op.create_foreign_key(op.f('admin_action_logs_admin_id_fkey'), 'admin_action_logs', 'users', ['admin_id'], ['id'])
     op.create_foreign_key(op.f('admin_action_logs_target_user_id_fkey'), 'admin_action_logs', 'users', ['target_user_id'], ['id'])
     op.create_foreign_key(op.f('admin_action_logs_target_request_id_fkey'), 'admin_action_logs', 'delivery_requests', ['target_request_id'], ['id'])

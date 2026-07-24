@@ -17,6 +17,7 @@ from bot.core.middlewares.auth import AuthMiddleware
 from bot.core.middlewares.db_session import DbSessionMiddleware
 from bot.core.middlewares.logging import LoggingMiddleware, logger
 from bot.core.middlewares.throttling import ThrottlingMiddleware
+from bot.student.handler import student_router
 
 
 async def _seed_admins() -> None:
@@ -44,7 +45,6 @@ async def _seed_admins() -> None:
                 user = result.scalar_one_or_none()
 
                 if user is None:
-                    # FIXED: Added full_name="System Admin" to satisfy NOT NULL constraint
                     user = User(
                         telegram_id=int(telegram_id),
                         full_name="System Admin",
@@ -75,8 +75,12 @@ async def _seed_admins() -> None:
 
 
 def setup_routers(dp) -> None:
+    """FIXED: Feature routers FIRST, Catch-all (fallback_router) LAST."""
     dp.include_router(start_router)
     dp.include_router(help_router)
+    dp.include_router(student_router)
+    
+    # ALWAYS KEEP FALLBACK ROUTER LAST!
     dp.include_router(fallback_router)
 
 
@@ -91,7 +95,7 @@ async def set_bot_commands(bot: Bot) -> None:
 
 
 async def _run_polling(dp, bot: Bot) -> None:
-    await set_bot_commands(bot)  # FIXED: Registered bot commands on Telegram
+    await set_bot_commands(bot)
     await _seed_admins()
     await dp.start_polling(bot)
 
@@ -112,20 +116,20 @@ def main() -> None:
 
     setup_routers(dp)
 
-    # FIXED: Middleware Order (Inflow order: Logging -> DbSession -> Throttling -> Auth)
+    # Middleware Order (Inflow order: Logging -> DbSession -> Throttling -> Auth)
     dp.update.outer_middleware(LoggingMiddleware())
     dp.update.outer_middleware(DbSessionMiddleware())
     dp.update.outer_middleware(ThrottlingMiddleware(settings))
     dp.update.outer_middleware(AuthMiddleware(settings))
 
-    if settings.webhook_url:
-        asyncio.run(_run_webhook(dp, bot))
-    else:
-        asyncio.run(_run_polling(dp, bot))
+    try:
+        if settings.webhook_url:
+            asyncio.run(_run_webhook(dp, bot))
+        else:
+            asyncio.run(_run_polling(dp, bot))
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Bot stopped cleanly.")
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except (KeyboardInterrupt, SystemExit):
-        logger.info("Bot stopped")
+    main()  

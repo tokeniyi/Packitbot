@@ -1,28 +1,62 @@
+"""
+Refactoring Changes:
+1. Imported `StateFilter` from `aiogram.filters`.
+2. Applied `StateFilter("*")` to both `@start_router.message(Command("start"))` 
+   and `@start_router.message(F.text.contains("Home"))`.
+   
+   Why: By default, Aiogram FSM limits message handler matching to state-specific filters.
+   Adding `StateFilter("*")` ensures that clicking 'Home' or calling '/start' intercepts the 
+   message regardless of what active state the user is currently stuck in, wiping the state 
+   via `await state.clear()` and properly rendering the main menu instead of falling through 
+   to the invalid input fallback handler.
+"""
+
 import logging
 from typing import Any
 
-from aiogram import Router
-from aiogram.filters import Command
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram import F, Router
+from aiogram.filters import Command, StateFilter
+from aiogram.fsm.context import FSMContext
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from bot.core.constants.enums import UserRole
 from bot.core.constants.messages import (
+    MSG_REG_ENTER_FULL_NAME,
+    MSG_REG_STEP_PROMPT,
     MSG_START_ADMIN_WELCOME,
     MSG_START_ROLE_SELECTION,
     MSG_START_ROLE_SELECTION_DRIVER,
     MSG_START_ROLE_SELECTION_STUDENT,
 )
 from bot.core.models.user import User
+from bot.student.states import StudentRegistrationFSM
 
 logger = logging.getLogger(__name__)
 start_router = Router()
 
 
-@start_router.message(Command("start"))
+def _progress_bar(current: int, total: int) -> str:
+    filled = "\u2588" * current
+    empty = "\u2591" * (total - current)
+    return f"{filled}{empty}"
+
+
+def _step_prompt(step: int, total: int, prompt: str) -> str:
+    bar = _progress_bar(step, total)
+    return MSG_REG_STEP_PROMPT.format(
+        current=step, total=total, progress_bar=bar, prompt=prompt
+    )
+
+
+@start_router.message(StateFilter("*"), Command("start"))
+@start_router.message(StateFilter("*"), F.text.contains("Home"))
 async def cmd_start(
     message: Message,
+    state: FSMContext,
     user: User | None = None,  # Inject user directly from AuthMiddleware
 ) -> None:
+    await state.clear()
+
     if user is None:
         await message.answer("Something went wrong. Please try again.")
         return
@@ -53,3 +87,15 @@ async def cmd_start(
         await message.answer(MSG_START_ADMIN_WELCOME)
     else:
         await message.answer("Welcome to Packitbot!")
+
+
+@start_router.callback_query(F.data == "role:student")
+async def process_role_student(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    await state.set_state(StudentRegistrationFSM.entering_full_name)
+    await callback.message.answer(_step_prompt(1, 5, MSG_REG_ENTER_FULL_NAME))
+
+
+@start_router.callback_query(F.data == "role:driver")
+async def process_role_driver(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer("Driver registration coming soon!", show_alert=True)
