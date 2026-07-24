@@ -115,6 +115,39 @@ async def test_status_log_repository_create():
     session.add.assert_called_once()
 
 
+async def test_status_log_repository_get_for_request():
+    session = AsyncMock()
+    log1 = MagicMock(spec=RequestStatusLog)
+    log1.id = 1
+    log1.request_id = 42
+    log2 = MagicMock(spec=RequestStatusLog)
+    log2.id = 2
+    log2.request_id = 42
+    result_mock = MagicMock()
+    result_mock.scalars.return_value.all.return_value = [log1, log2]
+    session.execute.return_value = result_mock
+
+    repo = StatusLogRepository(session)
+    logs = await repo.get_for_request(request_id=42)
+
+    assert len(logs) == 2
+    assert logs[0].request_id == 42
+    assert logs[1].request_id == 42
+    session.execute.assert_called_once()
+
+
+async def test_status_log_repository_get_for_request_returns_empty():
+    session = AsyncMock()
+    result_mock = MagicMock()
+    result_mock.scalars.return_value.all.return_value = []
+    session.execute.return_value = result_mock
+
+    repo = StatusLogRepository(session)
+    logs = await repo.get_for_request(request_id=42)
+
+    assert logs == []
+
+
 async def test_feedback_repository_get_for_request_found():
     session = AsyncMock()
     feedback = MagicMock(spec=Feedback)
