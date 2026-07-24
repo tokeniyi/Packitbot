@@ -235,3 +235,15 @@ def request_edit_confirm_keyboard(request_id: int) -> InlineKeyboardMarkup:
             ]
         ]
     )
+
+
+def request_cancel_confirm_keyboard(request_id: int) -> InlineKeyboardMarkup:
+    """Strict confirmation dialog (Yes/No) for student request cancellation."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="Yes, Cancel Request", callback_data=f"my_req_cancel_confirm:{request_id}"),
+                InlineKeyboardButton(text="No, Keep Request", callback_data=f"my_req_detail:{request_id}"),
+            ]
+        ]
+    )

@@ -789,7 +789,13 @@ async def noop_callback(callback: CallbackQuery) -> None:
 # Phase 14: Student Request Edit Flow (RequestUpdateFSM)
 # ------------------------------------------------------------------
 
-from bot.core.exceptions import PackitbotError, PermissionDeniedError, NotFoundError, ValidationError
+from bot.core.exceptions import (
+    InvalidStatusTransitionError,
+    NotFoundError,
+    PackitbotError,
+    PermissionDeniedError,
+    ValidationError,
+)
 from bot.request.schemas import UpdateRequestDTO
 from bot.student.keyboards import (
     request_edit_fields_keyboard,
@@ -1008,3 +1014,91 @@ async def confirm_request_update(callback: CallbackQuery, state: FSMContext, ses
         )
     except (NotFoundError, ValidationError, PackitbotError) as exc:
         await callback.message.answer(f"❌ Failed to update request: {exc}")
+
+
+# ------------------------------------------------------------------
+# Phase 15: Student Request Cancellation Flow
+# ------------------------------------------------------------------
+
+from bot.core.constants.enums import CancelledBy, DriverAvailability
+from bot.core.models.driver_profile import DriverProfile
+from bot.request.schemas import CancelRequestDTO
+from bot.student.keyboards import request_cancel_confirm_keyboard
+
+
+@student_router.callback_query(F.data.startswith("my_req_cancel:"))
+async def prompt_cancel_request(callback: CallbackQuery, session=None) -> None:
+    await callback.answer()
+    req_id_str = callback.data.split(":")[1]
+    try:
+        req_id = int(req_id_str)
+    except ValueError:
+        await callback.message.answer("Invalid request ID.")
+        return
+
+    if session is None:
+        await callback.message.answer("Session unavailable.")
+        return
+
+    repo = RequestRepository(session)
+    req = await repo.get_by_id(req_id)
+
+    if not req or req.student_id != callback.from_user.id:
+        await callback.message.answer("Request not found or permission denied.")
+        return
+
+    if req.status not in (RequestStatus.PENDING, RequestStatus.ASSIGNED, RequestStatus.ACCEPTED):
+        await callback.message.answer("⚠️ Request cannot be cancelled in its current status.")
+        return
+
+    kb = request_cancel_confirm_keyboard(req_id)
+    await callback.message.edit_text(
+        f"⚠️ <b>Are you sure you want to cancel Request #{req_id}?</b>\n\nThis action cannot be undone.",
+        parse_mode="HTML",
+        reply_markup=kb,
+    )
+
+
+@student_router.callback_query(F.data.startswith("my_req_cancel_confirm:"))
+async def confirm_cancel_request(callback: CallbackQuery, session=None) -> None:
+    await callback.answer()
+    req_id_str = callback.data.split(":")[1]
+    try:
+        req_id = int(req_id_str)
+    except ValueError:
+        await callback.message.answer("Invalid request ID.")
+        return
+
+    if session is None:
+        await callback.message.answer("Session unavailable.")
+        return
+
+    service = RequestService(session)
+    dto = CancelRequestDTO(
+        request_id=req_id,
+        actor_id=callback.from_user.id,
+        cancelled_by=CancelledBy.STUDENT,
+        cancellation_reason="Cancelled by student via bot",
+    )
+
+    try:
+        updated_req, event = await service.cancel_request(dto)
+
+        # Restore driver availability if request had assigned/accepted driver
+        if updated_req.driver_id is not None:
+            driver = await session.get(DriverProfile, updated_req.driver_id)
+            if driver:
+                driver.availability = DriverAvailability.AVAILABLE
+                await session.flush()
+
+        await callback.message.edit_text(
+            f"🚫 Request #{updated_req.id} has been cancelled successfully.",
+            reply_markup=student_persistent_menu(),
+        )
+    except (PermissionDeniedError, InvalidStatusTransitionError) as exc:
+        await callback.message.edit_text(
+            f"⚠️ Request cancellation failed: {exc}",
+            reply_markup=student_persistent_menu(),
+        )
+    except (NotFoundError, ValidationError, PackitbotError) as exc:
+        await callback.message.answer(f"❌ Failed to cancel request: {exc}")
