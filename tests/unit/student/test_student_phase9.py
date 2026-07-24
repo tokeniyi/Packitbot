@@ -51,7 +51,6 @@ async def test_register_student_creates_user_and_profile():
         profile = await register_student(
             telegram_id=999,
             full_name="John Doe",
-            matric_number="12/3456",
             hall="Esther Hall",
             phone="08012345678",
         )
@@ -77,7 +76,6 @@ async def test_register_student_duplicate_matric_raises_validation_error():
             await register_student(
                 telegram_id=999,
                 full_name="Jane Doe",
-                matric_number="12/3456",
                 hall="Dorcas Hall",
                 phone="08012345678",
             )
