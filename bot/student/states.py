@@ -21,3 +21,9 @@ class RequestCreateFSM(StatesGroup):
     selecting_time_window = State()
     entering_special_instructions = State()
     confirming_request = State()
+
+
+class RequestUpdateFSM(StatesGroup):
+    selecting_field = State()
+    editing_value = State()
+    confirming_update = State()

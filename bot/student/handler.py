@@ -783,3 +783,228 @@ async def show_request_detail(callback: CallbackQuery, session=None) -> None:
 @student_router.callback_query(F.data == "noop")
 async def noop_callback(callback: CallbackQuery) -> None:
     await callback.answer()
+
+
+# ------------------------------------------------------------------
+# Phase 14: Student Request Edit Flow (RequestUpdateFSM)
+# ------------------------------------------------------------------
+
+from bot.core.exceptions import PackitbotError, PermissionDeniedError, NotFoundError, ValidationError
+from bot.request.schemas import UpdateRequestDTO
+from bot.student.keyboards import (
+    request_edit_fields_keyboard,
+    request_edit_confirm_keyboard,
+)
+from bot.student.states import RequestUpdateFSM
+
+
+@student_router.callback_query(F.data.startswith("my_req_edit:"))
+async def start_request_edit(callback: CallbackQuery, state: FSMContext, session=None) -> None:
+    await callback.answer()
+    req_id_str = callback.data.split(":")[1]
+    try:
+        req_id = int(req_id_str)
+    except ValueError:
+        await callback.message.answer("Invalid request ID.")
+        return
+
+    if session is None:
+        await callback.message.answer("Session unavailable.")
+        return
+
+    repo = RequestRepository(session)
+    req = await repo.get_by_id(req_id)
+
+    if not req or req.student_id != callback.from_user.id:
+        await callback.message.answer("Request not found or permission denied.")
+        return
+
+    if req.status != RequestStatus.PENDING:
+        await callback.message.answer("⚠️ Only requests in PENDING status can be edited.")
+        return
+
+    await state.clear()
+    await state.set_state(RequestUpdateFSM.selecting_field)
+    await state.update_data(request_id=req_id, changes={})
+
+    kb = request_edit_fields_keyboard(req_id)
+    await callback.message.edit_text(
+        f"✏️ <b>Edit Request #{req_id}</b>\n\nSelect a field to modify:",
+        parse_mode="HTML",
+        reply_markup=kb,
+    )
+
+
+@student_router.callback_query(RequestUpdateFSM.selecting_field, F.data.startswith("req_update_field:"))
+async def select_field_to_edit(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    parts = callback.data.split(":")
+    req_id = int(parts[1])
+    field_name = parts[2]
+
+    await state.update_data(current_field=field_name)
+    await state.set_state(RequestUpdateFSM.editing_value)
+
+    field_prompts = {
+        "pickup_detail": ("Pickup Detail", "Enter new pickup detail:"),
+        "dropoff_address": ("Dropoff Address", "Enter new dropoff address:"),
+        "dropoff_landmark": ("Dropoff Landmark", "Enter new dropoff landmark (or type 'none' to clear):"),
+        "hall_of_residence": ("Hall of Residence", "Select new Hall of Residence:"),
+        "recipient_name": ("Recipient Name", "Enter new recipient full name:"),
+        "recipient_phone": ("Recipient Phone", "Enter new recipient phone number:"),
+        "luggage_size": ("Luggage Size", "Select new luggage size:"),
+        "luggage_count": ("Luggage Count", "Enter new luggage count (1-10):"),
+        "preferred_date": ("Preferred Date", "Select new preferred date or type YYYY-MM-DD:"),
+        "preferred_time_window": ("Preferred Time Window", "Select new time window:"),
+        "special_instructions": ("Special Instructions", "Enter new special instructions (or type 'none' to clear):"),
+    }
+
+    title, prompt = field_prompts.get(field_name, (field_name.replace("_", " ").title(), "Enter new value:"))
+
+    if field_name == "hall_of_residence":
+        await callback.message.answer(f"✏️ <b>Editing {title}</b>\n\n{prompt}", parse_mode="HTML", reply_markup=req_hall_selection_keyboard())
+    elif field_name == "luggage_size":
+        await callback.message.answer(f"✏️ <b>Editing {title}</b>\n\n{prompt}", parse_mode="HTML", reply_markup=luggage_size_keyboard())
+    elif field_name == "preferred_date":
+        await callback.message.answer(f"✏️ <b>Editing {title}</b>\n\n{prompt}", parse_mode="HTML", reply_markup=date_quick_pick_keyboard())
+    elif field_name == "preferred_time_window":
+        await callback.message.answer(f"✏️ <b>Editing {title}</b>\n\n{prompt}", parse_mode="HTML", reply_markup=time_window_keyboard())
+    else:
+        await callback.message.answer(f"✏️ <b>Editing {title}</b>\n\n{prompt}", parse_mode="HTML")
+
+
+@student_router.callback_query(RequestUpdateFSM.editing_value, F.data.startswith("req_hall:"))
+async def process_edit_hall_callback(callback: CallbackQuery, state: FSMContext) -> None:
+    hall = callback.data.split(":", 1)[1]
+    await callback.answer(f"Selected Hall: {hall}")
+    await _store_field_change(callback, state, "hall_of_residence", hall)
+
+
+@student_router.callback_query(RequestUpdateFSM.editing_value, F.data.startswith("req_size:"))
+async def process_edit_size_callback(callback: CallbackQuery, state: FSMContext) -> None:
+    size = callback.data.split(":", 1)[1]
+    await callback.answer(f"Selected Size: {size}")
+    await _store_field_change(callback, state, "luggage_size", LuggageSize(size))
+
+
+@student_router.callback_query(RequestUpdateFSM.editing_value, F.data.startswith("req_date:"))
+async def process_edit_date_callback(callback: CallbackQuery, state: FSMContext) -> None:
+    dt_str = callback.data.split(":", 1)[1]
+    await callback.answer(f"Selected Date: {dt_str}")
+    dt = date.fromisoformat(dt_str)
+    await _store_field_change(callback, state, "preferred_date", dt)
+
+
+@student_router.callback_query(RequestUpdateFSM.editing_value, F.data.startswith("req_time:"))
+async def process_edit_time_callback(callback: CallbackQuery, state: FSMContext) -> None:
+    slot = callback.data.split(":", 1)[1]
+    await callback.answer(f"Selected Time: {slot}")
+    await _store_field_change(callback, state, "preferred_time_window", slot)
+
+
+@student_router.message(RequestUpdateFSM.editing_value)
+async def process_edit_value_message(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    field_name = data.get("current_field")
+    text = message.text.strip() if message.text else ""
+
+    parsed_value = None
+    try:
+        if field_name == "pickup_detail":
+            parsed_value = validate_pickup_detail(text)
+        elif field_name == "dropoff_address":
+            parsed_value = validate_dropoff_address(text)
+        elif field_name == "dropoff_landmark":
+            parsed_value = None if text.lower() == "none" else text
+        elif field_name == "recipient_name":
+            parsed_value = validate_recipient_name(text)
+        elif field_name == "recipient_phone":
+            parsed_value = validate_phone(text)
+        elif field_name == "luggage_count":
+            parsed_value = validate_luggage_count(text)
+        elif field_name == "preferred_date":
+            parsed_value = validate_preferred_date(text)
+        elif field_name == "preferred_time_window":
+            parsed_value = validate_time_window(text)
+        elif field_name == "special_instructions":
+            parsed_value = None if text.lower() == "none" else validate_special_instructions(text)
+        else:
+            parsed_value = text
+    except Exception as exc:
+        await message.answer(f"❌ {exc}")
+        return
+
+    await _store_field_change(message, state, field_name, parsed_value)
+
+
+async def _store_field_change(
+    target: Message | CallbackQuery,
+    state: FSMContext,
+    field_name: str,
+    new_value: object,
+) -> None:
+    data = await state.get_data()
+    changes = data.get("changes", {})
+    changes[field_name] = new_value
+
+    await state.update_data(changes=changes)
+    await state.set_state(RequestUpdateFSM.confirming_update)
+
+    req_id = data["request_id"]
+    formatted_diff = []
+    for f_name, val in changes.items():
+        val_str = val.value if hasattr(val, "value") else str(val)
+        formatted_diff.append(f"• <b>{f_name.replace('_', ' ').title()}:</b> {val_str}")
+
+    diff_text = "\n".join(formatted_diff)
+    prompt = (
+        f"📝 <b>Confirm Changes for Request #{req_id}</b>\n\n"
+        f"<b>Proposed Changes:</b>\n{diff_text}\n\n"
+        "Do you want to apply these changes?"
+    )
+
+    kb = request_edit_confirm_keyboard(req_id)
+    if isinstance(target, CallbackQuery):
+        await target.message.answer(prompt, parse_mode="HTML", reply_markup=kb)
+    else:
+        await target.answer(prompt, parse_mode="HTML", reply_markup=kb)
+
+
+@student_router.callback_query(RequestUpdateFSM.confirming_update, F.data.startswith("req_update_confirm:"))
+async def confirm_request_update(callback: CallbackQuery, state: FSMContext, session=None) -> None:
+    await callback.answer()
+    data = await state.get_data()
+    req_id = data["request_id"]
+    changes = data.get("changes", {})
+
+    if not changes:
+        await callback.message.answer("No changes to save.")
+        await state.clear()
+        return
+
+    if session is None:
+        await callback.message.answer("Session unavailable.")
+        return
+
+    service = RequestService(session)
+    dto = UpdateRequestDTO(
+        request_id=req_id,
+        actor_id=callback.from_user.id,
+        changed_fields=changes,
+    )
+
+    try:
+        updated_req = await service.update_request(dto)
+        await state.clear()
+        await callback.message.edit_text(
+            f"✅ Request #{updated_req.id} updated successfully!",
+            reply_markup=student_persistent_menu(),
+        )
+    except PermissionDeniedError:
+        await state.clear()
+        await callback.message.edit_text(
+            "⚠️ Request can no longer be edited because its status is no longer PENDING.",
+            reply_markup=student_persistent_menu(),
+        )
+    except (NotFoundError, ValidationError, PackitbotError) as exc:
+        await callback.message.answer(f"❌ Failed to update request: {exc}")

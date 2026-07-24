@@ -175,6 +175,9 @@ def request_detail_keyboard(req) -> InlineKeyboardMarkup:
     status = req.status.value if hasattr(req.status, "value") else str(req.status)
 
     # Dynamic action buttons based on status
+    if status == "pending":
+        buttons.append([InlineKeyboardButton(text="✏️ Edit Request", callback_data=f"my_req_edit:{req.id}")])
+
     if status in ("pending", "assigned", "accepted"):
         buttons.append([InlineKeyboardButton(text="🚫 Cancel Request", callback_data=f"my_req_cancel:{req.id}")])
     elif status == "delivered":
@@ -186,3 +189,49 @@ def request_detail_keyboard(req) -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="🏠 Home", callback_data="home"),
     ])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def request_edit_fields_keyboard(request_id: int) -> InlineKeyboardMarkup:
+    """Keyboard listing all editable fields for a pending request."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="Pickup Detail ✏️", callback_data=f"req_update_field:{request_id}:pickup_detail"),
+                InlineKeyboardButton(text="Dropoff Addr ✏️", callback_data=f"req_update_field:{request_id}:dropoff_address"),
+            ],
+            [
+                InlineKeyboardButton(text="Landmark ✏️", callback_data=f"req_update_field:{request_id}:dropoff_landmark"),
+                InlineKeyboardButton(text="Hall ✏️", callback_data=f"req_update_field:{request_id}:hall_of_residence"),
+            ],
+            [
+                InlineKeyboardButton(text="Recipient Name ✏️", callback_data=f"req_update_field:{request_id}:recipient_name"),
+                InlineKeyboardButton(text="Recipient Phone ✏️", callback_data=f"req_update_field:{request_id}:recipient_phone"),
+            ],
+            [
+                InlineKeyboardButton(text="Luggage Size ✏️", callback_data=f"req_update_field:{request_id}:luggage_size"),
+                InlineKeyboardButton(text="Luggage Count ✏️", callback_data=f"req_update_field:{request_id}:luggage_count"),
+            ],
+            [
+                InlineKeyboardButton(text="Preferred Date ✏️", callback_data=f"req_update_field:{request_id}:preferred_date"),
+                InlineKeyboardButton(text="Time Window ✏️", callback_data=f"req_update_field:{request_id}:preferred_time_window"),
+            ],
+            [
+                InlineKeyboardButton(text="Special Instructions ✏️", callback_data=f"req_update_field:{request_id}:special_instructions"),
+            ],
+            [
+                InlineKeyboardButton(text="⬅ Cancel Edit", callback_data=f"my_req_detail:{request_id}"),
+            ],
+        ]
+    )
+
+
+def request_edit_confirm_keyboard(request_id: int) -> InlineKeyboardMarkup:
+    """Diff confirmation keyboard for applying changes to a pending request."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Confirm Update", callback_data=f"req_update_confirm:{request_id}"),
+                InlineKeyboardButton(text="❌ Cancel Edit", callback_data=f"my_req_detail:{request_id}"),
+            ]
+        ]
+    )
