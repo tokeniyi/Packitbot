@@ -238,18 +238,19 @@ async def test_start_handler_shows_role_buttons():
     fake_user = MagicMock()
     fake_user.role = None
 
-    message = MagicMock()
-    captured = {}
-
-    async def fake_answer(*args, **kwargs):
-        captured["reply_markup"] = kwargs.get("reply_markup")
-
-    message.answer = fake_answer
+    fake_bot = AsyncMock()  # <--- Added bot mock
+    message = AsyncMock()   # <--- Switched to AsyncMock for clean async calls
 
     state = AsyncMock()
-    await cmd_start(message, state=state, user=fake_user)
+    
+    # Pass fake_bot as the missing positional argument
+    await cmd_start(message, bot=fake_bot, state=state, user=fake_user)
 
-    markup = captured["reply_markup"]
+    # Inspect the reply_markup passed to message.answer
+    assert message.answer.called
+    _, kwargs = message.answer.call_args
+    markup = kwargs.get("reply_markup")
+
     assert markup is not None
     buttons = [btn for row in markup.inline_keyboard for btn in row]
     texts = [btn.text for btn in buttons]

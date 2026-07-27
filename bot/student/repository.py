@@ -18,9 +18,9 @@ class StudentRepository(BaseRepository):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_by_matric(self, matric_number: str) -> Optional[StudentProfile]:
-        stmt = select(StudentProfile).where(
-            StudentProfile.matric_number == matric_number
-        )
-        result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
+    # async def get_by_matric(self, matric_number: str) -> Optional[StudentProfile]:
+    #     stmt = select(StudentProfile).where(
+    #         StudentProfile.matric_number == matric_number
+    #     )
+    #     result = await self.session.execute(stmt)
+    #     return result.scalar_one_or_none()

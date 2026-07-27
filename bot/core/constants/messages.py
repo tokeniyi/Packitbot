@@ -70,7 +70,14 @@ MSG_WELCOME_GENERAL = (
 
 
 # Student registration flow
-MSG_STUDENT_WELCOME = "🎓 **Student Portal**\n\nReady to send packages? Let's get you set up!"
+MSG_STUDENT_WELCOME = (
+    "🎓 **Welcome to the Student Portal!**\n\n"
+    "We're ready whenever you are! 📦\n\n"
+    "🚀 **Get Started**\n"
+    "• /request — Create a new delivery request\n"
+    "• /my_requests — View and track your requests\n\n"
+    "⚙️ Want to update your profile? Send /menu to open your profile and settings."
+)
 
 
 MSG_REG_STEP_PROMPT = "📌 **Step {current} of {total}** {progress_bar}\n\n{prompt}"

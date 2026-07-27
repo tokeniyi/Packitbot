@@ -6,6 +6,9 @@ Refactoring Changes:
 4. Preserved single-field editing flag logic.
 """
 
+from bot.core.constants.commands import CMD_MY_REQUESTS
+from bot.core.constants.commands import CMD_NEW_REQUEST
+from bot.core.constants.enums import RequestStatus
 import logging
 from aiogram import F, Router
 from aiogram.filters import Command
@@ -157,6 +160,16 @@ async def submit_registration(callback: CallbackQuery, state: FSMContext) -> Non
     await callback.answer()
     data = await state.get_data()
 
+    # Safely retrieve full_name checking common key variations or falling back to Telegram full name
+    full_name = (
+        data.get("full_name") 
+        or data.get("name") 
+        or callback.from_user.full_name
+    )
+
+    # Safely retrieve hall checking common key variations
+    hall = data.get("hall_of_residence") or data.get("hall") or "Unknown Hall"
+
     # Automatically extract Telegram username from callback event
     tg_username = callback.from_user.username
 
@@ -164,9 +177,9 @@ async def submit_registration(callback: CallbackQuery, state: FSMContext) -> Non
         await register_student(
             telegram_id=callback.from_user.id,
             username=tg_username,
-            full_name=data["full_name"],
-            hall=data["hall_of_residence"],
-            phone=data.get("phone_number"),
+            full_name=full_name,
+            hall=hall,
+            phone=data.get("phone_number") or data.get("phone"),
         )
     except Exception as e:
         logger.error(f"Failed to register student: {e}")
@@ -204,7 +217,7 @@ def _review_keyboard() -> InlineKeyboardMarkup:
 
 
 # ------------------------------------------------------------------
-# Phase 12: Delivery Request Creation FSM Flow
+# Phase 12: Delivery Request Creation FSM Flow  request
 # ------------------------------------------------------------------
 
 from datetime import date
@@ -263,23 +276,33 @@ async def _show_request_review(target: Message | CallbackQuery, state: FSMContex
         await target.answer(summary, parse_mode="HTML", reply_markup=request_review_keyboard())
 
 
-@student_router.message(F.text == "📦 New Request")
-@student_router.message(Command("new_request"))
+# 1. Start Request Handler
+@student_router.message(F.text == "📦 Request Delivery")  # Matched persistent keyboard text
+@student_router.message(F.text == "📦 New Request")      # Kept as alias
+@student_router.message(Command(CMD_NEW_REQUEST))
 async def start_request_creation(message: Message, state: FSMContext) -> None:
     await state.clear()
     await state.set_state(RequestCreateFSM.entering_pickup_detail)
-    await message.answer(_req_step_prompt(1, 11, "Enter pickup detail (e.g. Room 102, Esther Hall):"))
+    await message.answer(
+        _req_step_prompt(1, 11, "Enter pickup detail (e.g. Room 102, Esther Hall):")
+    )
 
 
+# 2. Cancel Request Handler
 @student_router.message(Command("cancel_request"))
 @student_router.callback_query(F.data == "req_cancel")
 async def cancel_request_creation(event: Message | CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     msg = "Request creation cancelled."
+
     if isinstance(event, CallbackQuery):
         await event.answer()
-        await event.message.answer(msg, reply_markup=student_persistent_menu())
+        # Edit the inline message to remove old buttons and show cancellation message
+        await event.message.edit_text(msg)
+        # Send persistent reply keyboard menu
+        await event.message.answer("Main Menu:", reply_markup=student_persistent_menu())
     else:
+        # Standard text message command response
         await event.answer(msg, reply_markup=student_persistent_menu())
 
 
@@ -654,15 +677,15 @@ STATUS_DISPLAY_MAP = {
 }
 
 STATUS_PROGRESS_INDICATORS = {
-    "pending": "⏳ [░░░░] Request Submitted",
-    "assigned": "👤 [█░░░] Driver Assigned",
-    "accepted": "🤝 [█░░░] Driver Accepted",
-    "en_route_to_pickup": "🚗 [██░░] Driver En Route to Pickup",
-    "picked_up": "📦 [███░] Package Picked Up",
-    "in_transit": "🛣️ [███░] Package In Transit",
-    "delivered": "🎉 [████] Delivered",
-    "cancelled": "🚫 Request Cancelled",
-    "failed": "⚠️ Delivery Failed",
+    "pending": "📝 Step 1/6 • We've received your request",
+    "assigned": "👤 Step 2/6 • A driver has been assigned",
+    "accepted": "✅ Step 3/6 • Your driver accepted the request",
+    "en_route_to_pickup": "🚗 Step 4/6 • Your driver is on the way to pick up your package",
+    "picked_up": "📦 Step 5/6 • Your package has been picked up",
+    "in_transit": "🛣️ Step 6/6 • Your package is on its way",
+    "delivered": "🎉 Completed • Your package has been delivered",
+    "cancelled": "❌ This request was cancelled",
+    "failed": "⚠️ Delivery couldn't be completed",
 }
 
 
@@ -706,8 +729,8 @@ def _format_request_detail(req) -> str:
     return text
 
 
-@student_router.message(F.text == "📋 My Requests")
-@student_router.message(Command("my_requests"))
+@student_router.message(F.text == CMD_MY_REQUESTS)
+@student_router.message(Command(CMD_MY_REQUESTS))
 async def show_my_requests_list(message: Message, session=None, page: int = 1) -> None:
     if session is None:
         await message.answer(MSG_EMPTY_STATE_REQUESTS, reply_markup=student_persistent_menu())
