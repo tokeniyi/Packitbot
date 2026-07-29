@@ -12,6 +12,14 @@ class ReviewDriverDTO:
 
 
 @dataclass
+class BroadcastDTO:
+    audience: str
+    message_text: str
+    admin_telegram_id: int
+
+
+
+@dataclass
 class DriverApplicationDetailDTO:
     driver_id: int
     user_id: int

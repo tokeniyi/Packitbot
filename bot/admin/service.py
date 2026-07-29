@@ -695,3 +695,26 @@ async def search_user_by_identifier(
         async with async_session() as sess:
             return await _execute(sess)
 
+
+async def get_broadcast_target_telegram_ids(
+    audience: str,
+    session: Optional[AsyncSession] = None,
+) -> List[int]:
+    """Retrieves target telegram_ids for broadcast audience (students, drivers, or all)."""
+    async def _execute(sess: AsyncSession):
+        stmt = select(User.telegram_id).where(User.account_status == AccountStatus.ACTIVE)
+        if audience == "students":
+            stmt = stmt.where(User.role == UserRole.STUDENT)
+        elif audience == "drivers":
+            stmt = stmt.where(User.role == UserRole.DRIVER)
+
+        res = await sess.execute(stmt)
+        return list(res.scalars().all())
+
+    if session is not None:
+        return await _execute(session)
+    else:
+        async with async_session() as sess:
+            return await _execute(sess)
+
+

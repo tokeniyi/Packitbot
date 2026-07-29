@@ -177,11 +177,40 @@ def user_action_keyboard(user_detail: UserDetailDTO) -> InlineKeyboardMarkup:
     if action_row:
         buttons.append(action_row)
 
-    buttons.append(
-        [
-            InlineKeyboardButton(text=BTN_HOME, callback_data="home"),
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def broadcast_audience_keyboard() -> InlineKeyboardMarkup:
+    """Returns target audience selection keyboard (Students, Drivers, All Users)."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🎓 Students", callback_data="broadcast_audience:students"),
+                InlineKeyboardButton(text="🚗 Drivers", callback_data="broadcast_audience:drivers"),
+            ],
+            [
+                InlineKeyboardButton(text="👥 All Users", callback_data="broadcast_audience:all"),
+            ],
+            [
+                InlineKeyboardButton(text=BTN_BACK, callback_data="broadcast_cancel"),
+                InlineKeyboardButton(text=BTN_HOME, callback_data="home"),
+            ],
         ]
     )
 
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def broadcast_confirm_keyboard() -> InlineKeyboardMarkup:
+    """Returns broadcast preview confirmation keyboard."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🚀 Send Broadcast", callback_data="broadcast_confirm:send"),
+                InlineKeyboardButton(text="❌ Cancel", callback_data="broadcast_cancel"),
+            ],
+            [
+                InlineKeyboardButton(text=BTN_HOME, callback_data="home"),
+            ],
+        ]
+    )
+
 

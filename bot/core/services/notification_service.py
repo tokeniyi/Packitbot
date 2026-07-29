@@ -30,3 +30,18 @@ async def notify_driver_approval_status(
     except Exception as e:
         logger.error(f"Failed to send driver notification to {telegram_id}: {e}")
         return False
+
+
+async def send_broadcast_message(
+    bot: Bot,
+    telegram_id: int,
+    text: str,
+) -> bool:
+    """Sends a broadcast notification message to a user."""
+    try:
+        await bot.send_message(chat_id=telegram_id, text=text, parse_mode="Markdown")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send broadcast message to {telegram_id}: {e}")
+        return False
+

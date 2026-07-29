@@ -9,16 +9,19 @@ from aiogram.types import Message, CallbackQuery
 
 from bot.admin.keyboards import (
     available_drivers_keyboard,
+    broadcast_audience_keyboard,
+    broadcast_confirm_keyboard,
     driver_approval_keyboard,
     pending_drivers_list_keyboard,
     pending_requests_list_keyboard,
     user_action_keyboard,
 )
-from bot.admin.schemas import BanUserDTO, PromoteAdminDTO, ReviewDriverDTO, UnbanUserDTO
+from bot.admin.schemas import BanUserDTO, BroadcastDTO, PromoteAdminDTO, ReviewDriverDTO, UnbanUserDTO
 from bot.admin.service import (
     approve_driver,
     ban_user,
     get_available_drivers_ranked,
+    get_broadcast_target_telegram_ids,
     get_driver_application_detail,
     get_pending_drivers,
     get_pending_requests,
@@ -28,6 +31,8 @@ from bot.admin.service import (
     search_user_by_identifier,
     unban_user,
 )
+from bot.admin.states import BroadcastFSM
+from bot.core.constants.limits import MAX_BROADCAST_LENGTH
 from bot.core.constants.enums import UserRole
 from bot.core.constants.messages import (
     MSG_MANAGEMENT_PORTAL,
@@ -39,7 +44,7 @@ from bot.core.constants.messages import (
 from bot.core.db.session import async_session
 from bot.core.exceptions import PackitbotError
 from bot.core.models.user import User
-from bot.core.services.notification_service import notify_driver_approval_status
+from bot.core.services.notification_service import notify_driver_approval_status, send_broadcast_message
 from bot.core.utils.callback_data import AdminAssign, AdminDriverApproval, AdminUserAction, PaginationNav
 from bot.driver.repository import DriverRepository
 from bot.request.repository import RequestRepository
@@ -48,6 +53,7 @@ from bot.request.service import RequestService
 
 logger = logging.getLogger(__name__)
 admin_router = Router()
+
 
 
 class AdminUserMgmtState(StatesGroup):
@@ -647,3 +653,160 @@ async def handle_promote_admin(
     except Exception as e:
         logger.error(f"Error promoting user: {e}")
         await callback.answer(MSG_SOMETHING_WENT_WRONG, show_alert=True)
+
+
+# --- Broadcast Handlers ---
+
+
+@admin_router.message(Command("broadcast"))
+async def cmd_broadcast(
+    message: Message,
+    state: FSMContext,
+    user: User | None = None,
+) -> None:
+    """Initiates the broadcast workflow by requesting audience selection."""
+    await state.clear()
+
+    if not _is_admin(user):
+        await message.answer(MSG_NO_PERMISSION)
+        return
+
+    await state.set_state(BroadcastFSM.waiting_for_audience)
+    await message.answer(
+        "📢 **Admin Broadcast**\n\n"
+        "Please select the target audience for your broadcast message:",
+        reply_markup=broadcast_audience_keyboard(),
+        parse_mode="Markdown",
+    )
+
+
+@admin_router.callback_query(BroadcastFSM.waiting_for_audience, F.data.startswith("broadcast_audience:"))
+async def process_broadcast_audience(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User | None = None,
+) -> None:
+    """Handles audience selection and prompts for message content."""
+    if not _is_admin(user):
+        await callback.answer("⛔ Admin access required.", show_alert=True)
+        return
+
+    audience = callback.data.split(":")[1]
+    await state.update_data(audience=audience)
+    await state.set_state(BroadcastFSM.waiting_for_content)
+
+    audience_name = "Students" if audience == "students" else ("Drivers" if audience == "drivers" else "All Users")
+    await callback.message.edit_text(
+        f"🎯 **Target Audience:** `{audience_name}`\n\n"
+        "Please type and send the broadcast message text below.\n"
+        f"*(Maximum {MAX_BROADCAST_LENGTH} characters)*",
+        parse_mode="Markdown",
+    )
+    await callback.answer()
+
+
+@admin_router.message(BroadcastFSM.waiting_for_content)
+async def process_broadcast_content(
+    message: Message,
+    state: FSMContext,
+    user: User | None = None,
+) -> None:
+    """Validates broadcast message content and shows mandatory preview with confirmation."""
+    if not _is_admin(user):
+        await message.answer(MSG_NO_PERMISSION)
+        await state.clear()
+        return
+
+    content = message.text.strip() if message.text else ""
+    if not content:
+        await message.answer("❌ Message content cannot be empty. Please enter your broadcast text:")
+        return
+
+    if len(content) > MAX_BROADCAST_LENGTH:
+        await message.answer(
+            f"❌ Broadcast message is too long ({len(content)} characters). "
+            f"Maximum allowed is {MAX_BROADCAST_LENGTH} characters. Please enter a shorter message:"
+        )
+        return
+
+    await state.update_data(content=content)
+    await state.set_state(BroadcastFSM.waiting_for_confirmation)
+
+    data = await state.get_data()
+    audience = data.get("audience", "all")
+    audience_name = "Students" if audience == "students" else ("Drivers" if audience == "drivers" else "All Users")
+
+    await message.answer(
+        "🔍 **Broadcast Preview & Confirmation**\n\n"
+        f"🎯 **Audience:** `{audience_name}`\n\n"
+        "📝 **Message Preview:**\n"
+        "----------------------------------------\n"
+        f"{content}\n"
+        "----------------------------------------\n\n"
+        "⚠️ Please review carefully before bulk dispatching.",
+        reply_markup=broadcast_confirm_keyboard(),
+        parse_mode="Markdown",
+    )
+
+
+@admin_router.callback_query(BroadcastFSM.waiting_for_confirmation, F.data == "broadcast_confirm:send")
+async def execute_broadcast(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User | None = None,
+) -> None:
+    """Executes bulk dispatching of broadcast message via notification_service."""
+    if not _is_admin(user):
+        await callback.answer("⛔ Admin access required.", show_alert=True)
+        await state.clear()
+        return
+
+    data = await state.get_data()
+    audience = data.get("audience")
+    content = data.get("content")
+
+    if not audience or not content:
+        await callback.message.edit_text("❌ Broadcast session data missing or expired.")
+        await state.clear()
+        return
+
+    broadcast_dto = BroadcastDTO(
+        audience=audience,
+        message_text=content,
+        admin_telegram_id=user.telegram_id,
+    )
+
+    await callback.message.edit_text("⏳ Dispatching broadcast messages... Please wait.")
+
+    target_telegram_ids = await get_broadcast_target_telegram_ids(broadcast_dto.audience)
+    total_targets = len(target_telegram_ids)
+    success_count = 0
+
+    for tid in target_telegram_ids:
+        sent = await send_broadcast_message(
+            bot=callback.bot,
+            telegram_id=tid,
+            text=broadcast_dto.message_text,
+        )
+        if sent:
+            success_count += 1
+
+    await callback.message.edit_text(
+        f"✅ **Broadcast Completed!**\n\n"
+        f"🎯 **Target Audience:** `{broadcast_dto.audience.capitalize()}`\n"
+        f"📊 **Success Rate:** `{success_count} / {total_targets}` delivered",
+        parse_mode="Markdown",
+    )
+    await state.clear()
+    await callback.answer("Broadcast sent successfully!")
+
+
+@admin_router.callback_query(F.data == "broadcast_cancel")
+async def cancel_broadcast(
+    callback: CallbackQuery,
+    state: FSMContext,
+) -> None:
+    """Cancels current broadcast process."""
+    await state.clear()
+    await callback.message.edit_text("❌ Broadcast operation cancelled.")
+    await callback.answer("Broadcast cancelled")
