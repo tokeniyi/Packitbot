@@ -5,13 +5,19 @@ from typing import List, Optional, Tuple
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.core.constants.enums import AdminActionType, DriverStatus, UserRole
+from bot.core.constants.enums import AdminActionType, DriverStatus, RequestStatus, UserRole
 from bot.core.db.session import async_session
 from bot.core.exceptions import NotFoundError, PackitbotError, ValidationError
 from bot.core.models.admin_action_log import AdminActionLog
+from bot.core.models.delivery_request import DeliveryRequest
 from bot.core.models.driver_profile import DriverProfile
+from bot.core.models.feedback import Feedback
 from bot.core.models.user import User
-from bot.admin.schemas import DriverApplicationDetailDTO, ReviewDriverDTO
+from bot.admin.schemas import (
+    DriverApplicationDetailDTO,
+    ReviewDriverDTO,
+    SystemStatsDTO,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -242,3 +248,98 @@ async def reject_driver(
             except Exception:
                 await sess.rollback()
                 raise
+
+
+async def get_stats(
+    session: Optional[AsyncSession] = None,
+) -> SystemStatsDTO:
+    """Retrieves system-wide delivery metrics and user statistics."""
+    async def _execute(sess: AsyncSession):
+        total_requests = (await sess.execute(select(func.count(DeliveryRequest.id)))).scalar() or 0
+        pending_requests = (await sess.execute(
+            select(func.count(DeliveryRequest.id)).where(DeliveryRequest.status == RequestStatus.PENDING)
+        )).scalar() or 0
+        assigned_requests = (await sess.execute(
+            select(func.count(DeliveryRequest.id)).where(DeliveryRequest.status == RequestStatus.ASSIGNED)
+        )).scalar() or 0
+        accepted_requests = (await sess.execute(
+            select(func.count(DeliveryRequest.id)).where(DeliveryRequest.status == RequestStatus.ACCEPTED)
+        )).scalar() or 0
+        en_route_requests = (await sess.execute(
+            select(func.count(DeliveryRequest.id)).where(DeliveryRequest.status == RequestStatus.EN_ROUTE_TO_PICKUP)
+        )).scalar() or 0
+        picked_up_requests = (await sess.execute(
+            select(func.count(DeliveryRequest.id)).where(DeliveryRequest.status == RequestStatus.PICKED_UP)
+        )).scalar() or 0
+        in_transit_requests = (await sess.execute(
+            select(func.count(DeliveryRequest.id)).where(DeliveryRequest.status == RequestStatus.IN_TRANSIT)
+        )).scalar() or 0
+        delivered_requests = (await sess.execute(
+            select(func.count(DeliveryRequest.id)).where(DeliveryRequest.status == RequestStatus.DELIVERED)
+        )).scalar() or 0
+        cancelled_requests = (await sess.execute(
+            select(func.count(DeliveryRequest.id)).where(DeliveryRequest.status == RequestStatus.CANCELLED)
+        )).scalar() or 0
+        failed_requests = (await sess.execute(
+            select(func.count(DeliveryRequest.id)).where(DeliveryRequest.status == RequestStatus.FAILED)
+        )).scalar() or 0
+        rejected_by_driver_requests = (await sess.execute(
+            select(func.count(DeliveryRequest.id)).where(DeliveryRequest.status == RequestStatus.REJECTED_BY_DRIVER)
+        )).scalar() or 0
+
+        total_users = (await sess.execute(select(func.count(User.id)))).scalar() or 0
+        total_students = (await sess.execute(
+            select(func.count(User.id)).where(User.role == UserRole.STUDENT)
+        )).scalar() or 0
+        total_drivers = (await sess.execute(
+            select(func.count(User.id)).where(User.role == UserRole.DRIVER)
+        )).scalar() or 0
+        total_admins = (await sess.execute(
+            select(func.count(User.id)).where(User.role == UserRole.ADMIN)
+        )).scalar() or 0
+
+        approved_drivers = (await sess.execute(
+            select(func.count(DriverProfile.id)).where(DriverProfile.status == DriverStatus.APPROVED)
+        )).scalar() or 0
+        pending_drivers = (await sess.execute(
+            select(func.count(DriverProfile.id)).where(DriverProfile.status == DriverStatus.PENDING_APPROVAL)
+        )).scalar() or 0
+        rejected_drivers = (await sess.execute(
+            select(func.count(DriverProfile.id)).where(DriverProfile.status == DriverStatus.REJECTED)
+        )).scalar() or 0
+        suspended_drivers = (await sess.execute(
+            select(func.count(DriverProfile.id)).where(DriverProfile.status == DriverStatus.SUSPENDED)
+        )).scalar() or 0
+
+        total_feedbacks = (await sess.execute(select(func.count(Feedback.id)))).scalar() or 0
+        avg_rating = (await sess.execute(select(func.avg(Feedback.rating)))).scalar()
+
+        return SystemStatsDTO(
+            total_requests=total_requests,
+            pending_requests=pending_requests,
+            assigned_requests=assigned_requests,
+            accepted_requests=accepted_requests,
+            en_route_requests=en_route_requests,
+            picked_up_requests=picked_up_requests,
+            in_transit_requests=in_transit_requests,
+            delivered_requests=delivered_requests,
+            cancelled_requests=cancelled_requests,
+            failed_requests=failed_requests,
+            rejected_by_driver_requests=rejected_by_driver_requests,
+            total_users=total_users,
+            total_students=total_students,
+            total_drivers=total_drivers,
+            total_admins=total_admins,
+            approved_drivers=approved_drivers,
+            pending_drivers=pending_drivers,
+            rejected_drivers=rejected_drivers,
+            suspended_drivers=suspended_drivers,
+            total_feedbacks=total_feedbacks,
+            avg_rating=round(avg_rating, 1) if avg_rating is not None else None,
+        )
+
+    if session is not None:
+        return await _execute(session)
+    else:
+        async with async_session() as sess:
+            return await _execute(sess)

@@ -26,6 +26,35 @@ MSG_MANAGEMENT_PORTAL = (
     "💡 *Tip: You can also use the inline buttons below to navigate quick actions!(not implemented yet 😁*"
 )
 
+MSG_STATS = (
+    "📊 **System Statistics**\n\n"
+    "📦 **Delivery Metrics**\n"
+    "• Total Requests: `{total_requests}`\n"
+    "• Pending: `{pending_requests}`\n"
+    "• Assigned: `{assigned_requests}`\n"
+    "• Accepted: `{accepted_requests}`\n"
+    "• En Route: `{en_route_requests}`\n"
+    "• Picked Up: `{picked_up_requests}`\n"
+    "• In Transit: `{in_transit_requests}`\n"
+    "• Delivered: `{delivered_requests}`\n"
+    "• Cancelled: `{cancelled_requests}`\n"
+    "• Failed: `{failed_requests}`\n"
+    "• Rejected by Driver: `{rejected_by_driver_requests}`\n\n"
+    "👥 **User Overview**\n"
+    "• Total Users: `{total_users}`\n"
+    "• Students: `{total_students}`\n"
+    "• Drivers: `{total_drivers}`\n"
+    "• Admins: `{total_admins}`\n\n"
+    "🚗 **Driver Status**\n"
+    "• Approved: `{approved_drivers}`\n"
+    "• Pending Approval: `{pending_drivers}`\n"
+    "• Rejected: `{rejected_drivers}`\n"
+    "• Suspended: `{suspended_drivers}`\n\n"
+    "⭐ **Feedback**\n"
+    "• Total Ratings: `{total_feedbacks}`\n"
+    "• Avg Rating: `{avg_rating}`\n"
+)
+
 
 MSG_START_ROLE_SELECTION_STUDENT = "📚 Student"
 MSG_START_ROLE_SELECTION_DRIVER = "🚗 Driver"

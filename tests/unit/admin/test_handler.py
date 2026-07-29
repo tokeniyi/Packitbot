@@ -5,6 +5,7 @@ from aiogram.fsm.context import FSMContext
 
 from bot.admin.handler import (
     cmd_admin_portal,
+    cmd_stats,
     cmd_verify_drivers,
     handle_approve_driver,
     handle_back_to_pending_list,
@@ -60,6 +61,56 @@ class TestCmdAdminPortal:
         student.role = UserRole.STUDENT
 
         await cmd_admin_portal(message, state, user=student)
+
+        message.answer.assert_awaited_once()
+
+
+class TestCmdStats:
+    async def test_admin_sees_stats(self):
+        message = _make_message(text="/stats")
+        state = AsyncMock()
+        user = _make_admin_user()
+
+        stats = MagicMock()
+        stats.total_requests = 100
+        stats.pending_requests = 10
+        stats.assigned_requests = 5
+        stats.accepted_requests = 8
+        stats.en_route_requests = 3
+        stats.picked_up_requests = 2
+        stats.in_transit_requests = 4
+        stats.delivered_requests = 60
+        stats.cancelled_requests = 5
+        stats.failed_requests = 2
+        stats.rejected_by_driver_requests = 1
+        stats.total_users = 200
+        stats.total_students = 150
+        stats.total_drivers = 45
+        stats.total_admins = 5
+        stats.approved_drivers = 40
+        stats.pending_drivers = 3
+        stats.rejected_drivers = 1
+        stats.suspended_drivers = 1
+        stats.total_feedbacks = 80
+        stats.avg_rating = 4.5
+
+        with patch(
+            "bot.admin.handler.get_stats",
+            new_callable=AsyncMock,
+            return_value=stats,
+        ):
+            await cmd_stats(message, state, user=user)
+
+        state.clear.assert_awaited_once()
+        message.answer.assert_awaited_once()
+
+    async def test_non_admin_denied(self):
+        message = _make_message(text="/stats")
+        state = AsyncMock()
+        student = MagicMock()
+        student.role = UserRole.STUDENT
+
+        await cmd_stats(message, state, user=student)
 
         message.answer.assert_awaited_once()
 

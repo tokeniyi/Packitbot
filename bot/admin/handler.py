@@ -12,6 +12,7 @@ from bot.admin.service import (
     approve_driver,
     get_driver_application_detail,
     get_pending_drivers,
+    get_stats,
     reject_driver,
 )
 from bot.core.constants.enums import UserRole
@@ -19,6 +20,7 @@ from bot.core.constants.messages import (
     MSG_MANAGEMENT_PORTAL,
     MSG_NO_PERMISSION,
     MSG_SOMETHING_WENT_WRONG,
+    MSG_STATS,
 )
 from bot.core.exceptions import PackitbotError
 from bot.core.models.user import User
@@ -50,6 +52,50 @@ async def cmd_admin_portal(
         MSG_MANAGEMENT_PORTAL,
         parse_mode="Markdown",
     )
+
+
+@admin_router.message(Command("stats"))
+async def cmd_stats(
+    message: Message,
+    state: FSMContext,
+    user: User | None = None,
+) -> None:
+    """Displays live delivery metrics and system statistics."""
+    await state.clear()
+
+    if not _is_admin(user):
+        await message.answer(MSG_NO_PERMISSION)
+        return
+
+    try:
+        stats = await get_stats()
+        text = MSG_STATS.format(
+            total_requests=stats.total_requests,
+            pending_requests=stats.pending_requests,
+            assigned_requests=stats.assigned_requests,
+            accepted_requests=stats.accepted_requests,
+            en_route_requests=stats.en_route_requests,
+            picked_up_requests=stats.picked_up_requests,
+            in_transit_requests=stats.in_transit_requests,
+            delivered_requests=stats.delivered_requests,
+            cancelled_requests=stats.cancelled_requests,
+            failed_requests=stats.failed_requests,
+            rejected_by_driver_requests=stats.rejected_by_driver_requests,
+            total_users=stats.total_users,
+            total_students=stats.total_students,
+            total_drivers=stats.total_drivers,
+            total_admins=stats.total_admins,
+            approved_drivers=stats.approved_drivers,
+            pending_drivers=stats.pending_drivers,
+            rejected_drivers=stats.rejected_drivers,
+            suspended_drivers=stats.suspended_drivers,
+            total_feedbacks=stats.total_feedbacks,
+            avg_rating=stats.avg_rating if stats.avg_rating is not None else "N/A",
+        )
+        await message.answer(text, parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"Error fetching stats: {e}")
+        await message.answer(MSG_SOMETHING_WENT_WRONG)
 
 
 @admin_router.message(Command("verify"))

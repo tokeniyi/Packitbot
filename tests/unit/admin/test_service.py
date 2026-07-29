@@ -5,12 +5,16 @@ from bot.admin.service import (
     approve_driver,
     get_driver_application_detail,
     get_pending_drivers,
+    get_stats,
     reject_driver,
 )
+from bot.admin.schemas import SystemStatsDTO
 from bot.core.constants.enums import AdminActionType, DriverStatus, UserRole
 from bot.core.exceptions import NotFoundError, ValidationError
 from bot.core.models.admin_action_log import AdminActionLog
+from bot.core.models.delivery_request import DeliveryRequest
 from bot.core.models.driver_profile import DriverProfile
+from bot.core.models.feedback import Feedback
 from bot.core.models.user import User
 
 
@@ -238,3 +242,68 @@ class TestRejectDriver:
 
         with pytest.raises(NotFoundError):
             await reject_driver(dto, session=session)
+
+
+class TestGetStats:
+    async def test_returns_stats_dto(self):
+        session = AsyncMock()
+        scalar_values = [
+            100,  # total_requests
+            10,  # pending_requests
+            5,  # assigned_requests
+            8,  # accepted_requests
+            3,  # en_route_requests
+            2,  # picked_up_requests
+            4,  # in_transit_requests
+            60,  # delivered_requests
+            5,  # cancelled_requests
+            2,  # failed_requests
+            1,  # rejected_by_driver_requests
+            200,  # total_users
+            150,  # total_students
+            45,  # total_drivers
+            5,  # total_admins
+            40,  # approved_drivers
+            3,  # pending_drivers
+            1,  # rejected_drivers
+            1,  # suspended_drivers
+            80,  # total_feedbacks
+            4.5,  # avg_rating
+        ]
+        result_mocks = [MagicMock(scalar=MagicMock(return_value=v)) for v in scalar_values]
+        session.execute.side_effect = result_mocks
+
+        stats = await get_stats(session=session)
+
+        assert isinstance(stats, SystemStatsDTO)
+        assert stats.total_requests == 100
+        assert stats.pending_requests == 10
+        assert stats.delivered_requests == 60
+        assert stats.total_users == 200
+        assert stats.total_students == 150
+        assert stats.total_drivers == 45
+        assert stats.total_admins == 5
+        assert stats.approved_drivers == 40
+        assert stats.pending_drivers == 3
+        assert stats.rejected_drivers == 1
+        assert stats.suspended_drivers == 1
+        assert stats.total_feedbacks == 80
+        assert stats.avg_rating == 4.5
+
+    async def test_returns_zero_counts_when_empty(self):
+        session = AsyncMock()
+        zero = MagicMock(scalar=MagicMock(return_value=0))
+        none_mock = MagicMock(scalar=MagicMock(return_value=None))
+        session.execute.side_effect = [
+            zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+            zero, zero, zero, zero,
+            zero, zero, zero, zero,
+            zero,
+            none_mock,
+        ]
+
+        stats = await get_stats(session=session)
+
+        assert stats.total_requests == 0
+        assert stats.total_users == 0
+        assert stats.avg_rating is None
