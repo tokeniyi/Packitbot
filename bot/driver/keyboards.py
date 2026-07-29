@@ -1,6 +1,7 @@
 # bot/driver/keyboards.py
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
-from bot.core.constants.enums import DriverAvailability, DriverStatus
+from bot.core.constants.enums import DriverAvailability, DriverStatus, RequestStatus
+
 
 
 def vehicle_type_keyboard() -> InlineKeyboardMarkup:
@@ -92,4 +93,30 @@ def driver_assignment_response_keyboard(request_id: int) -> InlineKeyboardMarkup
             ],
         ]
     )
+
+
+def delivery_status_update_keyboard(request_id: int, current_status: RequestStatus) -> InlineKeyboardMarkup:
+    """Returns contextual single next-step action button keyboard based on current status."""
+    buttons: list[list[InlineKeyboardButton]] = []
+
+    if current_status == RequestStatus.ACCEPTED:
+        buttons.append([
+            InlineKeyboardButton(text="🚗 En Route to Pickup", callback_data=f"driver_step:en_route:{request_id}")
+        ])
+    elif current_status == RequestStatus.EN_ROUTE_TO_PICKUP:
+        buttons.append([
+            InlineKeyboardButton(text="📦 Picked Up", callback_data=f"driver_step:picked_up:{request_id}")
+        ])
+    elif current_status == RequestStatus.PICKED_UP:
+        buttons.append([
+            InlineKeyboardButton(text="🚚 In Transit", callback_data=f"driver_step:in_transit:{request_id}")
+        ])
+    elif current_status == RequestStatus.IN_TRANSIT:
+        buttons.append([
+            InlineKeyboardButton(text="✅ Delivered", callback_data=f"driver_step:delivered:{request_id}"),
+            InlineKeyboardButton(text="❌ Delivery Failed", callback_data=f"driver_step:failed:{request_id}"),
+        ])
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
 

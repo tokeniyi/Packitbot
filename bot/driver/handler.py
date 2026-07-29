@@ -16,6 +16,7 @@ from bot.core.utils.validators import (
     validate_vehicle_type,
 )
 from bot.driver.keyboards import (
+    delivery_status_update_keyboard,
     driver_pending_menu,
     driver_persistent_menu,
     driver_registration_review_keyboard,
@@ -400,6 +401,7 @@ async def process_driver_accept(callback: CallbackQuery, session=None) -> None:
             f"• Name: {student_name}\n"
             f"• Phone: {student_phone}",
             parse_mode="HTML",
+            reply_markup=delivery_status_update_keyboard(req.id, req.status),
         )
         await callback.answer("Request accepted!")
 
@@ -427,6 +429,207 @@ async def process_driver_accept(callback: CallbackQuery, session=None) -> None:
         await session.rollback()
         logger.error(f"Error in driver_accept: {exc}")
         await callback.answer("Something went wrong. Please try again.", show_alert=True)
+
+
+@driver_router.message(F.text == "📊 Active Delivery")
+@driver_router.message(Command("active_delivery"))
+async def active_delivery_dashboard_handler(message: Message, session=None) -> None:
+    """Displays Current Delivery Dashboard with active order details and student contact info."""
+    if session is None:
+        await message.answer("Session unavailable.")
+        return
+
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from bot.core.constants.enums import RequestStatus
+    from bot.core.models.delivery_request import DeliveryRequest
+    from bot.core.models.user import User
+
+    try:
+        driver_user_res = await session.execute(
+            select(User).where(User.telegram_id == message.from_user.id)
+        )
+        driver_user = driver_user_res.scalar_one_or_none()
+        if not driver_user:
+            await message.answer("Driver profile not found.")
+            return
+
+        active_statuses = [
+            RequestStatus.ACCEPTED,
+            RequestStatus.EN_ROUTE_TO_PICKUP,
+            RequestStatus.PICKED_UP,
+            RequestStatus.IN_TRANSIT,
+        ]
+
+        stmt = (
+            select(DeliveryRequest)
+            .options(selectinload(DeliveryRequest.student))
+            .where(
+                DeliveryRequest.driver_id == driver_user.id,
+                DeliveryRequest.status.in_(active_statuses),
+            )
+            .order_by(DeliveryRequest.updated_at.desc())
+        )
+        res = await session.execute(stmt)
+        active_req = res.scalars().first()
+
+        if not active_req:
+            await message.answer("ℹ️ You currently have no active delivery.")
+            return
+
+        student = active_req.student
+        student_name = student.full_name if student else "Student"
+        student_phone = student.phone_number if student else "N/A"
+
+        dashboard_text = (
+            f"📊 <b>Current Delivery Dashboard</b>\n\n"
+            f"📦 <b>Request ID:</b> #{active_req.id}\n"
+            f"📌 <b>Status:</b> {active_req.status.value.replace('_', ' ').title()}\n"
+            f"📍 <b>Pickup:</b> {active_req.pickup_detail} ({active_req.hall_of_residence})\n"
+            f"🎯 <b>Dropoff:</b> {active_req.dropoff_address} ({active_req.dropoff_landmark or 'N/A'})\n"
+            f"👤 <b>Recipient:</b> {active_req.recipient_name} ({active_req.recipient_phone})\n"
+            f"🧳 <b>Luggage:</b> {active_req.luggage_size.value.title()} x{active_req.luggage_count}\n"
+            f"📝 <b>Instructions:</b> {active_req.special_instructions or 'None'}\n\n"
+            f"📞 <b>Student Contact Details:</b>\n"
+            f"• Name: {student_name}\n"
+            f"• Phone: {student_phone}"
+        )
+
+        kb = delivery_status_update_keyboard(active_req.id, active_req.status)
+        await message.answer(dashboard_text, parse_mode="HTML", reply_markup=kb)
+
+    except Exception as exc:
+        logger.error(f"Error loading active delivery dashboard: {exc}")
+        await message.answer("❌ Failed to retrieve active delivery details.")
+
+
+@driver_router.callback_query(F.data.startswith("driver_step:"))
+async def process_delivery_status_step(callback: CallbackQuery, session=None) -> None:
+    """Handles status updates for active deliveries (En Route -> Picked Up -> In Transit -> Delivered/Failed)."""
+    parts = callback.data.split(":")
+    if len(parts) != 3:
+        await callback.answer("Invalid callback data.", show_alert=True)
+        return
+
+    action, request_id_str = parts[1], parts[2]
+    request_id = int(request_id_str)
+
+    if session is None:
+        await callback.answer("Session unavailable.", show_alert=True)
+        return
+
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from bot.core.constants.enums import DriverAvailability, RequestStatus
+    from bot.core.exceptions import PackitbotError
+    from bot.core.models.delivery_request import DeliveryRequest
+    from bot.core.models.driver_profile import DriverProfile
+    from bot.core.models.user import User
+    from bot.request.schemas import TransitionDTO
+    from bot.request.service import RequestService
+
+    action_to_status = {
+        "en_route": RequestStatus.EN_ROUTE_TO_PICKUP,
+        "picked_up": RequestStatus.PICKED_UP,
+        "in_transit": RequestStatus.IN_TRANSIT,
+        "delivered": RequestStatus.DELIVERED,
+        "failed": RequestStatus.FAILED,
+    }
+
+    new_status = action_to_status.get(action)
+    if not new_status:
+        await callback.answer("Unknown status action.", show_alert=True)
+        return
+
+    try:
+        driver_user_res = await session.execute(
+            select(User).where(User.telegram_id == callback.from_user.id)
+        )
+        driver_user = driver_user_res.scalar_one_or_none()
+        if not driver_user:
+            await callback.answer("Driver user not found.", show_alert=True)
+            return
+
+        req_service = RequestService(session)
+        dto = TransitionDTO(
+            request_id=request_id,
+            new_status=new_status,
+            actor_id=driver_user.id,
+            note=f"Status updated to {new_status.value} by driver {driver_user.id}",
+        )
+        updated_req, event = await req_service.transition_status(dto)
+
+        # On delivery completion or failure, set driver availability back to AVAILABLE
+        if new_status in (RequestStatus.DELIVERED, RequestStatus.FAILED):
+            dp_res = await session.execute(
+                select(DriverProfile).where(DriverProfile.user_id == driver_user.id)
+            )
+            dp = dp_res.scalar_one_or_none()
+            if dp:
+                dp.availability = DriverAvailability.AVAILABLE
+
+        await session.commit()
+
+        # Re-fetch request with loaded student
+        req_res = await session.execute(
+            select(DeliveryRequest)
+            .options(selectinload(DeliveryRequest.student))
+            .where(DeliveryRequest.id == request_id)
+        )
+        req = req_res.scalar_one()
+
+        student = req.student
+        student_name = student.full_name if student else "Student"
+        student_phone = student.phone_number if student else "N/A"
+
+        new_status_title = req.status.value.replace("_", " ").title()
+        kb = delivery_status_update_keyboard(req.id, req.status)
+
+        status_header = "✅ Delivery Completed!" if req.status == RequestStatus.DELIVERED else (
+            "❌ Delivery Failed!" if req.status == RequestStatus.FAILED else f"🔄 Status Updated: {new_status_title}"
+        )
+
+        await callback.message.edit_text(
+            f"<b>{status_header}</b>\n\n"
+            f"📦 <b>Request ID:</b> #{req.id}\n"
+            f"📌 <b>Current Status:</b> {new_status_title}\n"
+            f"📍 <b>Pickup:</b> {req.pickup_detail} ({req.hall_of_residence})\n"
+            f"🎯 <b>Dropoff:</b> {req.dropoff_address}\n"
+            f"👤 <b>Recipient:</b> {req.recipient_name} ({req.recipient_phone})\n\n"
+            f"📞 <b>Student Contact Details:</b>\n"
+            f"• Name: {student_name}\n"
+            f"• Phone: {student_phone}",
+            parse_mode="HTML",
+            reply_markup=kb,
+        )
+        await callback.answer(f"Status updated to {new_status_title}")
+
+        # Notify student about status change
+        if student and student.telegram_id:
+            status_notif_msgs = {
+                RequestStatus.EN_ROUTE_TO_PICKUP: f"🚗 Driver is en route to pickup location for Request #{req.id}.",
+                RequestStatus.PICKED_UP: f"📦 Driver has picked up your package for Request #{req.id}.",
+                RequestStatus.IN_TRANSIT: f"🚚 Your package for Request #{req.id} is now in transit!",
+                RequestStatus.DELIVERED: f"🎉 Your delivery for Request #{req.id} has been completed!",
+                RequestStatus.FAILED: f"⚠️ Delivery attempt failed for Request #{req.id}. Please contact support.",
+            }
+            notif_text = status_notif_msgs.get(req.status, f"Notice: Request #{req.id} status updated to {new_status_title}.")
+            try:
+                await callback.bot.send_message(
+                    chat_id=student.telegram_id,
+                    text=notif_text,
+                )
+            except Exception as notif_err:
+                logger.error(f"Failed to notify student {student.telegram_id} of status update: {notif_err}")
+
+    except PackitbotError as exc:
+        await session.rollback()
+        await callback.answer(str(exc), show_alert=True)
+    except Exception as exc:
+        await session.rollback()
+        logger.error(f"Error processing delivery status step: {exc}")
+        await callback.answer("Failed to update status. Please try again.", show_alert=True)
+
 
 
 @driver_router.callback_query(F.data.startswith("driver_reject:"))
