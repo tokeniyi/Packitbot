@@ -5,7 +5,7 @@ from typing import List, Optional, Tuple
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.core.constants.enums import AdminActionType, DriverStatus, RequestStatus, UserRole
+from bot.core.constants.enums import AdminActionType, DriverAvailability, DriverStatus, RequestStatus, UserRole
 from bot.core.db.session import async_session
 from bot.core.exceptions import NotFoundError, PackitbotError, ValidationError
 from bot.core.models.admin_action_log import AdminActionLog
@@ -14,12 +14,93 @@ from bot.core.models.driver_profile import DriverProfile
 from bot.core.models.feedback import Feedback
 from bot.core.models.user import User
 from bot.admin.schemas import (
+    AvailableDriverDTO,
     DriverApplicationDetailDTO,
     ReviewDriverDTO,
     SystemStatsDTO,
 )
 
 logger = logging.getLogger(__name__)
+
+
+async def get_pending_requests(
+    page: int = 1,
+    per_page: int = 5,
+    session: Optional[AsyncSession] = None,
+) -> Tuple[List[DeliveryRequest], int]:
+    """Retrieves paginated PENDING delivery requests and total pages count."""
+    async def _execute(sess: AsyncSession):
+        offset = (page - 1) * per_page
+
+        count_stmt = (
+            select(func.count(DeliveryRequest.id))
+            .where(DeliveryRequest.status == RequestStatus.PENDING)
+        )
+        total_res = await sess.execute(count_stmt)
+        total_count = total_res.scalar() or 0
+        total_pages = max(1, (total_count + per_page - 1) // per_page)
+
+        stmt = (
+            select(DeliveryRequest)
+            .where(DeliveryRequest.status == RequestStatus.PENDING)
+            .order_by(DeliveryRequest.created_at.desc())
+            .offset(offset)
+            .limit(per_page)
+        )
+        res = await sess.execute(stmt)
+        requests = list(res.scalars().all())
+        return requests, total_pages
+
+    if session is not None:
+        return await _execute(session)
+    else:
+        async with async_session() as sess:
+            return await _execute(sess)
+
+
+async def get_available_drivers_ranked(
+    session: Optional[AsyncSession] = None,
+) -> List[AvailableDriverDTO]:
+    """Retrieves approved drivers ranked by higher average rating (rating_avg desc, total_deliveries desc)."""
+    async def _execute(sess: AsyncSession):
+        stmt = (
+            select(DriverProfile, User)
+            .join(User, DriverProfile.user_id == User.id)
+            .where(
+                DriverProfile.status == DriverStatus.APPROVED,
+                DriverProfile.availability != DriverAvailability.OFFLINE,
+            )
+            .order_by(
+                DriverProfile.rating_avg.desc(),
+                DriverProfile.total_deliveries.desc(),
+                DriverProfile.id.asc(),
+            )
+        )
+        res = await sess.execute(stmt)
+        rows = res.all()
+
+        dtos = []
+        for dp, user in rows:
+            dtos.append(
+                AvailableDriverDTO(
+                    driver_id=dp.id,
+                    user_id=user.id,
+                    telegram_id=user.telegram_id,
+                    full_name=user.full_name or "Unknown Driver",
+                    phone_number=user.phone_number or "N/A",
+                    vehicle_type=dp.vehicle_type,
+                    rating_avg=dp.rating_avg,
+                    total_deliveries=dp.total_deliveries,
+                    username=user.username,
+                )
+            )
+        return dtos
+
+    if session is not None:
+        return await _execute(session)
+    else:
+        async with async_session() as sess:
+            return await _execute(sess)
 
 
 async def get_pending_drivers(

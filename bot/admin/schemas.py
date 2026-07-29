@@ -26,6 +26,19 @@ class DriverApplicationDetailDTO:
 
 
 @dataclass
+class AvailableDriverDTO:
+    driver_id: int
+    user_id: int
+    telegram_id: int
+    full_name: str
+    phone_number: str
+    vehicle_type: str
+    rating_avg: float
+    total_deliveries: int
+    username: Optional[str] = None
+
+
+@dataclass
 class SystemStatsDTO:
     total_requests: int
     pending_requests: int
@@ -48,4 +61,3 @@ class SystemStatsDTO:
     suspended_drivers: int
     total_feedbacks: int
     avg_rating: float | None
-
