@@ -39,6 +39,39 @@ class AvailableDriverDTO:
 
 
 @dataclass
+class BanUserDTO:
+    target_user_id: int
+    admin_telegram_id: int
+    reason: Optional[str] = None
+
+
+@dataclass
+class UnbanUserDTO:
+    target_user_id: int
+    admin_telegram_id: int
+    reason: Optional[str] = None
+
+
+@dataclass
+class PromoteAdminDTO:
+    target_user_id: int
+    admin_telegram_id: int
+
+
+@dataclass
+class UserDetailDTO:
+    user_id: int
+    telegram_id: int
+    full_name: Optional[str]
+    username: Optional[str]
+    phone_number: Optional[str]
+    role: Optional[str]
+    account_status: str
+    banned_reason: Optional[str]
+    banned_at: Optional[str]
+
+
+@dataclass
 class SystemStatsDTO:
     total_requests: int
     pending_requests: int
@@ -61,3 +94,4 @@ class SystemStatsDTO:
     suspended_drivers: int
     total_feedbacks: int
     avg_rating: float | None
+

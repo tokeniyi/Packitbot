@@ -247,3 +247,35 @@ def request_cancel_confirm_keyboard(request_id: int) -> InlineKeyboardMarkup:
             ]
         ]
     )
+
+
+def feedback_rating_keyboard(request_id: int) -> InlineKeyboardMarkup:
+    """1-5 star rating selector keyboard."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="1 ⭐", callback_data=f"rate:{request_id}:1"),
+                InlineKeyboardButton(text="2 ⭐", callback_data=f"rate:{request_id}:2"),
+                InlineKeyboardButton(text="3 ⭐", callback_data=f"rate:{request_id}:3"),
+                InlineKeyboardButton(text="4 ⭐", callback_data=f"rate:{request_id}:4"),
+                InlineKeyboardButton(text="5 ⭐", callback_data=f"rate:{request_id}:5"),
+            ],
+            [
+                InlineKeyboardButton(text=BTN_CANCEL, callback_data=f"my_req_detail:{request_id}"),
+            ],
+        ]
+    )
+
+
+def feedback_comment_skip_keyboard(request_id: int) -> InlineKeyboardMarkup:
+    """Keyboard allowing optional text comment input or skipping comment submission."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text=BTN_SKIP, callback_data=f"feedback_skip_comment:{request_id}"),
+            ],
+            [
+                InlineKeyboardButton(text=BTN_CANCEL, callback_data=f"my_req_detail:{request_id}"),
+            ],
+        ]
+    )

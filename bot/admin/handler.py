@@ -4,6 +4,7 @@ import logging
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, CallbackQuery
 
 from bot.admin.keyboards import (
@@ -11,16 +12,21 @@ from bot.admin.keyboards import (
     driver_approval_keyboard,
     pending_drivers_list_keyboard,
     pending_requests_list_keyboard,
+    user_action_keyboard,
 )
-from bot.admin.schemas import ReviewDriverDTO
+from bot.admin.schemas import BanUserDTO, PromoteAdminDTO, ReviewDriverDTO, UnbanUserDTO
 from bot.admin.service import (
     approve_driver,
+    ban_user,
     get_available_drivers_ranked,
     get_driver_application_detail,
     get_pending_drivers,
     get_pending_requests,
     get_stats,
+    promote_admin,
     reject_driver,
+    search_user_by_identifier,
+    unban_user,
 )
 from bot.core.constants.enums import UserRole
 from bot.core.constants.messages import (
@@ -34,7 +40,7 @@ from bot.core.db.session import async_session
 from bot.core.exceptions import PackitbotError
 from bot.core.models.user import User
 from bot.core.services.notification_service import notify_driver_approval_status
-from bot.core.utils.callback_data import AdminAssign, AdminDriverApproval, PaginationNav
+from bot.core.utils.callback_data import AdminAssign, AdminDriverApproval, AdminUserAction, PaginationNav
 from bot.driver.repository import DriverRepository
 from bot.request.repository import RequestRepository
 from bot.request.schemas import AssignDriverDTO
@@ -44,8 +50,14 @@ logger = logging.getLogger(__name__)
 admin_router = Router()
 
 
+class AdminUserMgmtState(StatesGroup):
+    waiting_for_user_identifier = State()
+    waiting_for_ban_reason = State()
+
+
 def _is_admin(user: User | None) -> bool:
     return user is not None and user.role == UserRole.ADMIN
+
 
 
 @admin_router.message(Command("admin"))
@@ -434,3 +446,197 @@ async def handle_back_to_pending_list(
         parse_mode="Markdown",
     )
     await callback.answer()
+
+
+@admin_router.message(Command("users"))
+async def cmd_user_management(
+    message: Message,
+    state: FSMContext,
+    user: User | None = None,
+) -> None:
+    """Prompt admin to enter user ID, Telegram ID, or Username for management."""
+    if not _is_admin(user):
+        await message.answer(MSG_NO_PERMISSION)
+        return
+
+    await state.set_state(AdminUserMgmtState.waiting_for_user_identifier)
+    await message.answer(
+        "🔍 **User Management Search**\n\n"
+        "Please enter the **User ID**, **Telegram ID**, or **@username** of the user you want to manage:",
+        parse_mode="Markdown",
+    )
+
+
+@admin_router.message(AdminUserMgmtState.waiting_for_user_identifier)
+async def process_user_search(
+    message: Message,
+    state: FSMContext,
+    user: User | None = None,
+) -> None:
+    """Processes user search input and displays user profile with action buttons."""
+    if not _is_admin(user):
+        await message.answer(MSG_NO_PERMISSION)
+        await state.clear()
+        return
+
+    identifier = message.text.strip()
+    user_detail = await search_user_by_identifier(identifier)
+
+    if not user_detail:
+        await message.answer(
+            f"❌ No user found matching `{identifier}`.\n"
+            f"Please check the ID or username and try again with /users.",
+            parse_mode="Markdown",
+        )
+        await state.clear()
+        return
+
+    await state.clear()
+    status_icon = "🔴 BANNED" if user_detail.account_status == "banned" else "🟢 ACTIVE"
+    role_str = (user_detail.role or "N/A").upper()
+
+    text = (
+        f"👤 **User Profile Details**\n\n"
+        f"🆔 **DB ID:** {user_detail.user_id}\n"
+        f"📱 **Telegram ID:** {user_detail.telegram_id}\n"
+        f"👤 **Name:** {user_detail.full_name or 'N/A'}\n"
+        f"💬 **Username:** @{user_detail.username if user_detail.username else 'N/A'}\n"
+        f"📞 **Phone:** {user_detail.phone_number or 'N/A'}\n"
+        f"🎭 **Role:** {role_str}\n"
+        f"📌 **Status:** {status_icon}\n"
+    )
+    if user_detail.account_status == "banned":
+        text += f"⚠️ **Ban Reason:** {user_detail.banned_reason or 'No reason provided'}\n"
+        text += f"🕒 **Banned At:** {user_detail.banned_at or 'N/A'}\n"
+
+    keyboard = user_action_keyboard(user_detail)
+    await message.answer(text, reply_markup=keyboard, parse_mode="Markdown")
+
+
+@admin_router.callback_query(AdminUserAction.filter(F.action == "ban"))
+async def handle_ban_user_init(
+    callback: CallbackQuery,
+    callback_data: AdminUserAction,
+    state: FSMContext,
+    user: User | None = None,
+) -> None:
+    """Prompts admin to enter a reason for banning the user."""
+    if not _is_admin(user):
+        await callback.answer("⛔ Admin access required.", show_alert=True)
+        return
+
+    await state.update_data(target_user_id=callback_data.user_id)
+    await state.set_state(AdminUserMgmtState.waiting_for_ban_reason)
+
+    await callback.message.answer(
+        f"⚠️ **Ban User #{callback_data.user_id}**\n\n"
+        f"Please reply with the reason for banning this user (or type `skip` for no reason):",
+        parse_mode="Markdown",
+    )
+    await callback.answer()
+
+
+@admin_router.message(AdminUserMgmtState.waiting_for_ban_reason)
+async def process_ban_reason(
+    message: Message,
+    state: FSMContext,
+    user: User | None = None,
+) -> None:
+    """Executes user ban with recorded reason."""
+    if not _is_admin(user):
+        await message.answer(MSG_NO_PERMISSION)
+        await state.clear()
+        return
+
+    data = await state.get_data()
+    target_user_id = data.get("target_user_id")
+    await state.clear()
+
+    if not target_user_id:
+        await message.answer("❌ Session expired. Please search for the user again with /users.")
+        return
+
+    reason_text = message.text.strip()
+    reason = None if reason_text.lower() == "skip" else reason_text
+
+    try:
+        dto = BanUserDTO(
+            target_user_id=target_user_id,
+            admin_telegram_id=user.telegram_id,
+            reason=reason,
+        )
+        updated_user = await ban_user(dto)
+        await message.answer(
+            f"🛑 **User #{updated_user.user_id} has been banned.**\n\n"
+            f"👤 **Name:** {updated_user.full_name or 'N/A'}\n"
+            f"📌 **Status:** BANNED\n"
+            f"📝 **Reason:** {updated_user.banned_reason or 'None'}",
+            parse_mode="Markdown",
+        )
+    except PackitbotError as e:
+        await message.answer(f"❌ {e}")
+    except Exception as e:
+        logger.error(f"Error banning user: {e}")
+        await message.answer(MSG_SOMETHING_WENT_WRONG)
+
+
+@admin_router.callback_query(AdminUserAction.filter(F.action == "unban"))
+async def handle_unban_user(
+    callback: CallbackQuery,
+    callback_data: AdminUserAction,
+    user: User | None = None,
+) -> None:
+    """Executes user unban action."""
+    if not _is_admin(user):
+        await callback.answer("⛔ Admin access required.", show_alert=True)
+        return
+
+    try:
+        dto = UnbanUserDTO(
+            target_user_id=callback_data.user_id,
+            admin_telegram_id=user.telegram_id,
+        )
+        updated_user = await unban_user(dto)
+        await callback.message.edit_text(
+            f"🟢 **User #{updated_user.user_id} has been unbanned.**\n\n"
+            f"👤 **Name:** {updated_user.full_name or 'N/A'}\n"
+            f"📌 **Status:** ACTIVE",
+            parse_mode="Markdown",
+        )
+        await callback.answer("User unbanned successfully!")
+    except PackitbotError as e:
+        await callback.answer(str(e), show_alert=True)
+    except Exception as e:
+        logger.error(f"Error unbanning user: {e}")
+        await callback.answer(MSG_SOMETHING_WENT_WRONG, show_alert=True)
+
+
+@admin_router.callback_query(AdminUserAction.filter(F.action == "promote"))
+async def handle_promote_admin(
+    callback: CallbackQuery,
+    callback_data: AdminUserAction,
+    user: User | None = None,
+) -> None:
+    """Executes admin promotion action."""
+    if not _is_admin(user):
+        await callback.answer("⛔ Admin access required.", show_alert=True)
+        return
+
+    try:
+        dto = PromoteAdminDTO(
+            target_user_id=callback_data.user_id,
+            admin_telegram_id=user.telegram_id,
+        )
+        updated_user = await promote_admin(dto)
+        await callback.message.edit_text(
+            f"⭐ **User #{updated_user.user_id} promoted to ADMIN!**\n\n"
+            f"👤 **Name:** {updated_user.full_name or 'N/A'}\n"
+            f"🎭 **Role:** ADMIN",
+            parse_mode="Markdown",
+        )
+        await callback.answer("User promoted to Admin!")
+    except PackitbotError as e:
+        await callback.answer(str(e), show_alert=True)
+    except Exception as e:
+        logger.error(f"Error promoting user: {e}")
+        await callback.answer(MSG_SOMETHING_WENT_WRONG, show_alert=True)

@@ -5,7 +5,8 @@ from typing import List, Optional, Tuple
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.core.constants.enums import AdminActionType, DriverAvailability, DriverStatus, RequestStatus, UserRole
+from datetime import datetime
+from bot.core.constants.enums import AccountStatus, AdminActionType, DriverAvailability, DriverStatus, RequestStatus, UserRole
 from bot.core.db.session import async_session
 from bot.core.exceptions import NotFoundError, PackitbotError, ValidationError
 from bot.core.models.admin_action_log import AdminActionLog
@@ -15,9 +16,13 @@ from bot.core.models.feedback import Feedback
 from bot.core.models.user import User
 from bot.admin.schemas import (
     AvailableDriverDTO,
+    BanUserDTO,
     DriverApplicationDetailDTO,
+    PromoteAdminDTO,
     ReviewDriverDTO,
     SystemStatsDTO,
+    UnbanUserDTO,
+    UserDetailDTO,
 )
 
 logger = logging.getLogger(__name__)
@@ -424,3 +429,232 @@ async def get_stats(
     else:
         async with async_session() as sess:
             return await _execute(sess)
+
+
+async def ban_user(
+    dto: BanUserDTO,
+    session: Optional[AsyncSession] = None,
+) -> UserDetailDTO:
+    """Bans a user, records AdminActionLog, and returns updated UserDetailDTO."""
+    async def _execute(sess: AsyncSession):
+        # Verify admin
+        admin_stmt = select(User).where(User.telegram_id == dto.admin_telegram_id)
+        admin_res = await sess.execute(admin_stmt)
+        admin_user = admin_res.scalar_one_or_none()
+        if not admin_user or admin_user.role != UserRole.ADMIN:
+            raise ValidationError("Admin permission required.")
+
+        # Target user
+        target_stmt = select(User).where(User.id == dto.target_user_id)
+        target_res = await sess.execute(target_stmt)
+        target_user = target_res.scalar_one_or_none()
+        if not target_user:
+            raise NotFoundError(f"User with ID {dto.target_user_id} not found.")
+
+        if target_user.account_status == AccountStatus.BANNED:
+            raise ValidationError("User is already banned.")
+
+        target_user.account_status = AccountStatus.BANNED
+        target_user.banned_reason = dto.reason
+        target_user.banned_at = datetime.utcnow()
+
+        details_msg = f"Banned user #{target_user.id}"
+        if dto.reason:
+            details_msg += f". Reason: {dto.reason}"
+
+        log_entry = AdminActionLog(
+            admin_id=admin_user.id,
+            action_type=AdminActionType.BAN_USER,
+            target_user_id=target_user.id,
+            details=details_msg,
+        )
+        sess.add(log_entry)
+        await sess.flush()
+
+        return UserDetailDTO(
+            user_id=target_user.id,
+            telegram_id=target_user.telegram_id,
+            full_name=target_user.full_name,
+            username=target_user.username,
+            phone_number=target_user.phone_number,
+            role=target_user.role.value if target_user.role else None,
+            account_status=target_user.account_status.value,
+            banned_reason=target_user.banned_reason,
+            banned_at=target_user.banned_at.strftime("%Y-%m-%d %H:%M:%S UTC") if target_user.banned_at else None,
+        )
+
+    if session is not None:
+        return await _execute(session)
+    else:
+        async with async_session() as sess:
+            try:
+                result_dto = await _execute(sess)
+                await sess.commit()
+                return result_dto
+            except Exception:
+                await sess.rollback()
+                raise
+
+
+async def unban_user(
+    dto: UnbanUserDTO,
+    session: Optional[AsyncSession] = None,
+) -> UserDetailDTO:
+    """Unbans a user, records AdminActionLog, and returns updated UserDetailDTO."""
+    async def _execute(sess: AsyncSession):
+        # Verify admin
+        admin_stmt = select(User).where(User.telegram_id == dto.admin_telegram_id)
+        admin_res = await sess.execute(admin_stmt)
+        admin_user = admin_res.scalar_one_or_none()
+        if not admin_user or admin_user.role != UserRole.ADMIN:
+            raise ValidationError("Admin permission required.")
+
+        # Target user
+        target_stmt = select(User).where(User.id == dto.target_user_id)
+        target_res = await sess.execute(target_stmt)
+        target_user = target_res.scalar_one_or_none()
+        if not target_user:
+            raise NotFoundError(f"User with ID {dto.target_user_id} not found.")
+
+        if target_user.account_status != AccountStatus.BANNED:
+            raise ValidationError("User is not currently banned.")
+
+        target_user.account_status = AccountStatus.ACTIVE
+        target_user.banned_reason = None
+        target_user.banned_at = None
+
+        details_msg = f"Unbanned user #{target_user.id}"
+        if dto.reason:
+            details_msg += f". Reason: {dto.reason}"
+
+        log_entry = AdminActionLog(
+            admin_id=admin_user.id,
+            action_type=AdminActionType.UNBAN_USER,
+            target_user_id=target_user.id,
+            details=details_msg,
+        )
+        sess.add(log_entry)
+        await sess.flush()
+
+        return UserDetailDTO(
+            user_id=target_user.id,
+            telegram_id=target_user.telegram_id,
+            full_name=target_user.full_name,
+            username=target_user.username,
+            phone_number=target_user.phone_number,
+            role=target_user.role.value if target_user.role else None,
+            account_status=target_user.account_status.value,
+            banned_reason=target_user.banned_reason,
+            banned_at=None,
+        )
+
+    if session is not None:
+        return await _execute(session)
+    else:
+        async with async_session() as sess:
+            try:
+                result_dto = await _execute(sess)
+                await sess.commit()
+                return result_dto
+            except Exception:
+                await sess.rollback()
+                raise
+
+
+async def promote_admin(
+    dto: PromoteAdminDTO,
+    session: Optional[AsyncSession] = None,
+) -> UserDetailDTO:
+    """Promotes a user to admin role, records AdminActionLog, and returns updated UserDetailDTO."""
+    async def _execute(sess: AsyncSession):
+        # Verify admin
+        admin_stmt = select(User).where(User.telegram_id == dto.admin_telegram_id)
+        admin_res = await sess.execute(admin_stmt)
+        admin_user = admin_res.scalar_one_or_none()
+        if not admin_user or admin_user.role != UserRole.ADMIN:
+            raise ValidationError("Admin permission required.")
+
+        # Target user
+        target_stmt = select(User).where(User.id == dto.target_user_id)
+        target_res = await sess.execute(target_stmt)
+        target_user = target_res.scalar_one_or_none()
+        if not target_user:
+            raise NotFoundError(f"User with ID {dto.target_user_id} not found.")
+
+        if target_user.role == UserRole.ADMIN:
+            raise ValidationError("User is already an admin.")
+
+        target_user.role = UserRole.ADMIN
+
+        log_entry = AdminActionLog(
+            admin_id=admin_user.id,
+            action_type=AdminActionType.PROMOTE_ADMIN,
+            target_user_id=target_user.id,
+            details=f"Promoted user #{target_user.id} to ADMIN",
+        )
+        sess.add(log_entry)
+        await sess.flush()
+
+        return UserDetailDTO(
+            user_id=target_user.id,
+            telegram_id=target_user.telegram_id,
+            full_name=target_user.full_name,
+            username=target_user.username,
+            phone_number=target_user.phone_number,
+            role=target_user.role.value if target_user.role else None,
+            account_status=target_user.account_status.value,
+            banned_reason=target_user.banned_reason,
+            banned_at=target_user.banned_at.strftime("%Y-%m-%d %H:%M:%S UTC") if target_user.banned_at else None,
+        )
+
+    if session is not None:
+        return await _execute(session)
+    else:
+        async with async_session() as sess:
+            try:
+                result_dto = await _execute(sess)
+                await sess.commit()
+                return result_dto
+            except Exception:
+                await sess.rollback()
+                raise
+
+
+async def search_user_by_identifier(
+    identifier: str,
+    session: Optional[AsyncSession] = None,
+) -> Optional[UserDetailDTO]:
+    """Finds user by User ID, Telegram ID, or Username."""
+    async def _execute(sess: AsyncSession):
+        clean_id = identifier.strip().lstrip("@")
+        stmt = None
+
+        if clean_id.isdigit():
+            val = int(clean_id)
+            stmt = select(User).where((User.id == val) | (User.telegram_id == val))
+        else:
+            stmt = select(User).where(func.lower(User.username) == clean_id.lower())
+
+        res = await sess.execute(stmt)
+        user = res.scalar_one_or_none()
+        if not user:
+            return None
+
+        return UserDetailDTO(
+            user_id=user.id,
+            telegram_id=user.telegram_id,
+            full_name=user.full_name,
+            username=user.username,
+            phone_number=user.phone_number,
+            role=user.role.value if user.role else None,
+            account_status=user.account_status.value,
+            banned_reason=user.banned_reason,
+            banned_at=user.banned_at.strftime("%Y-%m-%d %H:%M:%S UTC") if user.banned_at else None,
+        )
+
+    if session is not None:
+        return await _execute(session)
+    else:
+        async with async_session() as sess:
+            return await _execute(sess)
+

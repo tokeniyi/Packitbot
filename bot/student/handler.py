@@ -6,6 +6,7 @@ Refactoring Changes:
 4. Preserved single-field editing flag logic.
 """
 
+from bot.core.models.delivery_request import DeliveryRequest
 from bot.core.constants.commands import CMD_MY_REQUESTS
 from bot.core.constants.commands import CMD_NEW_REQUEST
 from bot.core.constants.enums import RequestStatus
@@ -1125,3 +1126,172 @@ async def confirm_cancel_request(callback: CallbackQuery, session=None) -> None:
         )
     except (NotFoundError, ValidationError, PackitbotError) as exc:
         await callback.message.answer(f"❌ Failed to cancel request: {exc}")
+
+
+# ------------------------------------------------------------------
+# Phase 22: Feedback Flow Handlers & Driver Rating Recalculation
+# ------------------------------------------------------------------
+
+from sqlalchemy import func, select
+from bot.core.models.feedback import Feedback
+from bot.request.schemas import CreateFeedbackDTO
+from bot.student.keyboards import feedback_rating_keyboard, feedback_comment_skip_keyboard
+from bot.student.states import FeedbackFSM
+
+
+async def _recalculate_driver_rating(session, driver_id: int) -> None:
+    """Recalculates driver's running average rating and total deliveries count."""
+    driver_profile = await session.get(DriverProfile, driver_id)
+    if not driver_profile:
+        return
+
+    stmt = (
+        select(func.avg(Feedback.rating), func.count(Feedback.id))
+        .join(DeliveryRequest, Feedback.request_id == DeliveryRequest.id)
+        .where(DeliveryRequest.driver_id == driver_id)
+    )
+    res = await session.execute(stmt)
+    avg_rating, total_count = res.one()
+
+    driver_profile.rating_avg = round(float(avg_rating or 0.0), 2)
+    driver_profile.total_deliveries = total_count or 0
+    await session.flush()
+
+
+@student_router.callback_query(F.data.startswith("my_req_rate:"))
+async def prompt_feedback_rating(callback: CallbackQuery, state: FSMContext, session=None) -> None:
+    await callback.answer()
+    req_id_str = callback.data.split(":")[1]
+    try:
+        req_id = int(req_id_str)
+    except ValueError:
+        await callback.message.answer("Invalid request ID.")
+        return
+
+    if session is None:
+        await callback.message.answer("Session unavailable.")
+        return
+
+    repo = RequestRepository(session)
+    req = await repo.get_by_id(req_id)
+
+    if not req or req.student_id != callback.from_user.id:
+        await callback.message.answer("Request not found or permission denied.")
+        return
+
+    if req.status != RequestStatus.DELIVERED:
+        await callback.message.answer("⚠️ Only DELIVERED requests can be rated.")
+        return
+
+    existing_feedback = await repo.session.execute(
+        select(Feedback).where(Feedback.request_id == req_id)
+    )
+    if existing_feedback.scalar_one_or_none():
+        await callback.message.answer("⚠️ You have already submitted feedback for this delivery.")
+        return
+
+    await state.clear()
+    await state.set_state(FeedbackFSM.selecting_rating)
+    await state.update_data(request_id=req_id)
+
+    kb = feedback_rating_keyboard(req_id)
+    await callback.message.edit_text(
+        f"⭐ <b>Rate Delivery #{req_id}</b>\n\n"
+        "How would you rate your driver's service? (1-5 stars)",
+        parse_mode="HTML",
+        reply_markup=kb,
+    )
+
+
+@student_router.callback_query(FeedbackFSM.selecting_rating, F.data.startswith("rate:"))
+async def process_rating_selection(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    parts = callback.data.split(":")
+    req_id = int(parts[1])
+    rating = int(parts[2])
+
+    await state.update_data(request_id=req_id, rating=rating)
+    await state.set_state(FeedbackFSM.entering_comment)
+
+    kb = feedback_comment_skip_keyboard(req_id)
+    await callback.message.edit_text(
+        f"⭐ <b>Rating: {'⭐' * rating} ({rating}/5)</b>\n\n"
+        "Would you like to leave an optional comment for your driver?\n"
+        "Type your comment below or click <b>Skip</b>.",
+        parse_mode="HTML",
+        reply_markup=kb,
+    )
+
+
+@student_router.callback_query(FeedbackFSM.entering_comment, F.data.startswith("feedback_skip_comment:"))
+async def process_feedback_skip_comment(callback: CallbackQuery, state: FSMContext, session=None) -> None:
+    await callback.answer()
+    await _finalize_feedback_submission(callback, state, session, comment=None)
+
+
+@student_router.message(FeedbackFSM.entering_comment)
+async def process_feedback_comment_message(message: Message, state: FSMContext, session=None) -> None:
+    comment = message.text.strip() if message.text else None
+    await _finalize_feedback_submission(message, state, session, comment=comment)
+
+
+async def _finalize_feedback_submission(
+    target: Message | CallbackQuery,
+    state: FSMContext,
+    session,
+    comment: str | None,
+) -> None:
+    data = await state.get_data()
+    req_id = data.get("request_id")
+    rating = data.get("rating")
+
+    if not req_id or not rating:
+        await state.clear()
+        err_msg = "Feedback session expired or invalid state."
+        if isinstance(target, CallbackQuery):
+            await target.message.answer(err_msg)
+        else:
+            await target.answer(err_msg)
+        return
+
+    if session is None:
+        err_msg = "Session unavailable."
+        if isinstance(target, CallbackQuery):
+            await target.message.answer(err_msg)
+        else:
+            await target.answer(err_msg)
+        return
+
+    service = RequestService(session)
+    user_id = target.from_user.id
+    dto = CreateFeedbackDTO(
+        request_id=req_id,
+        student_id=user_id,
+        rating=rating,
+        comment=comment,
+    )
+
+    try:
+        feedback, event = await service.submit_feedback(dto)
+
+        # Retrieve request to get driver_id and recalculate running average rating
+        req_repo = RequestRepository(session)
+        req = await req_repo.get_by_id(req_id)
+        if req and req.driver_id:
+            await _recalculate_driver_rating(session, req.driver_id)
+
+        await state.clear()
+        success_msg = f"🎉 <b>Thank you!</b> Your feedback for Request #{req_id} has been submitted."
+
+        if isinstance(target, CallbackQuery):
+            await target.message.edit_text(success_msg, parse_mode="HTML", reply_markup=student_persistent_menu())
+        else:
+            await target.answer(success_msg, parse_mode="HTML", reply_markup=student_persistent_menu())
+
+    except (PermissionDeniedError, ValidationError, PackitbotError) as exc:
+        await state.clear()
+        err_msg = f"❌ Failed to submit feedback: {exc}"
+        if isinstance(target, CallbackQuery):
+            await target.message.edit_text(err_msg, reply_markup=student_persistent_menu())
+        else:
+            await target.answer(err_msg, reply_markup=student_persistent_menu())

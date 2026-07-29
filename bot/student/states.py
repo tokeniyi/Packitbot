@@ -27,3 +27,8 @@ class RequestUpdateFSM(StatesGroup):
     selecting_field = State()
     editing_value = State()
     confirming_update = State()
+
+
+class FeedbackFSM(StatesGroup):
+    selecting_rating = State()
+    entering_comment = State()

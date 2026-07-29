@@ -1,8 +1,8 @@
 # bot/admin/keyboards.py
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from bot.core.constants.quick_replies import BTN_BACK, BTN_HOME
-from bot.core.utils.callback_data import AdminAssign, AdminDriverApproval, PaginationNav
-from bot.admin.schemas import AvailableDriverDTO
+from bot.core.utils.callback_data import AdminAssign, AdminDriverApproval, AdminUserAction, PaginationNav
+from bot.admin.schemas import AvailableDriverDTO, UserDetailDTO
 
 
 def driver_approval_keyboard(driver_id: int) -> InlineKeyboardMarkup:
@@ -144,3 +144,44 @@ def available_drivers_keyboard(
     )
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def user_action_keyboard(user_detail: UserDetailDTO) -> InlineKeyboardMarkup:
+    """Returns management action buttons (Ban/Unban, Promote Admin) for a specific user."""
+    buttons = []
+    action_row = []
+
+    if user_detail.account_status == "banned":
+        action_row.append(
+            InlineKeyboardButton(
+                text="🟢 Unban User",
+                callback_data=AdminUserAction(action="unban", user_id=user_detail.user_id).pack(),
+            )
+        )
+    else:
+        action_row.append(
+            InlineKeyboardButton(
+                text="🔴 Ban User",
+                callback_data=AdminUserAction(action="ban", user_id=user_detail.user_id).pack(),
+            )
+        )
+
+    if user_detail.role != "admin":
+        action_row.append(
+            InlineKeyboardButton(
+                text="⭐ Promote to Admin",
+                callback_data=AdminUserAction(action="promote", user_id=user_detail.user_id).pack(),
+            )
+        )
+
+    if action_row:
+        buttons.append(action_row)
+
+    buttons.append(
+        [
+            InlineKeyboardButton(text=BTN_HOME, callback_data="home"),
+        ]
+    )
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
