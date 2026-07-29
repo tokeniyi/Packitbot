@@ -474,7 +474,8 @@ async def active_delivery_dashboard_handler(message: Message, session=None) -> N
         active_req = res.scalars().first()
 
         if not active_req:
-            await message.answer("ℹ️ You currently have no active delivery.")
+            from bot.core.constants.messages import MSG_EMPTY_STATE_DRIVER
+            await message.answer(MSG_EMPTY_STATE_DRIVER, reply_markup=driver_persistent_menu(DriverAvailability.AVAILABLE))
             return
 
         student = active_req.student

@@ -18,6 +18,7 @@ def vehicle_type_keyboard() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(text="❌ Cancel", callback_data="driver_cancel_reg"),
+                InlineKeyboardButton(text="🏠 Home", callback_data="home"),
             ],
         ]
     )
@@ -40,6 +41,9 @@ def driver_registration_review_keyboard() -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(text="✅ Submit Registration", callback_data="driver_submit_reg"),
                 InlineKeyboardButton(text="❌ Cancel", callback_data="driver_cancel_reg"),
+            ],
+            [
+                InlineKeyboardButton(text="🏠 Home", callback_data="home"),
             ],
         ]
     )
@@ -91,6 +95,9 @@ def driver_assignment_response_keyboard(request_id: int) -> InlineKeyboardMarkup
                 InlineKeyboardButton(text="✅ Accept", callback_data=f"driver_accept:{request_id}"),
                 InlineKeyboardButton(text="❌ Reject", callback_data=f"driver_reject:{request_id}"),
             ],
+            [
+                InlineKeyboardButton(text="🏠 Home", callback_data="home"),
+            ],
         ]
     )
 
@@ -117,6 +124,7 @@ def delivery_status_update_keyboard(request_id: int, current_status: RequestStat
             InlineKeyboardButton(text="❌ Delivery Failed", callback_data=f"driver_step:failed:{request_id}"),
         ])
 
+    buttons.append([InlineKeyboardButton(text="🏠 Home", callback_data="home")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 

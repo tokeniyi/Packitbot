@@ -177,6 +177,10 @@ def user_action_keyboard(user_detail: UserDetailDTO) -> InlineKeyboardMarkup:
     if action_row:
         buttons.append(action_row)
 
+    buttons.append([
+        InlineKeyboardButton(text=BTN_HOME, callback_data="home"),
+    ])
+
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 

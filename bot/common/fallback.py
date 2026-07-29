@@ -15,7 +15,7 @@ fallback_router = Router()
 async def cmd_cancel(message: Message, state):
     await state.clear()
     markup = HomeButton()
-    await message.answer("Action cancelled.", reply_markup=markup)
+    await message.answer("🛑 Action cancelled.", reply_markup=markup)
 
 
 async def _send_fallback_response(update):

@@ -785,18 +785,18 @@ async def show_request_detail(callback: CallbackQuery, session=None) -> None:
     try:
         req_id = int(req_id_str)
     except ValueError:
-        await callback.message.answer("Invalid request ID.")
+        await callback.message.answer("⚠️ Invalid request ID.", reply_markup=HomeButton())
         return
 
     if session is None:
-        await callback.message.answer("Session unavailable.")
+        await callback.message.answer("⚠️ Session unavailable.", reply_markup=HomeButton())
         return
 
     repo = RequestRepository(session)
     req = await repo.get_by_id(req_id)
 
     if not req or req.student_id != callback.from_user.id:
-        await callback.message.answer("Request not found or permission denied.")
+        await callback.message.answer("⚠️ Request not found or permission denied.", reply_markup=HomeButton())
         return
 
     text = _format_request_detail(req)

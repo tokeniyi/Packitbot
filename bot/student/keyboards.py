@@ -25,6 +25,10 @@ def hall_selection_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text=hall, callback_data=f"hall_select:{hall}")]
         for hall in CU_HALLS
     ]
+    buttons.append([
+        InlineKeyboardButton(text=BTN_CANCEL, callback_data="cancel"),
+        InlineKeyboardButton(text=BTN_HOME, callback_data="home"),
+    ])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -32,12 +36,12 @@ def student_persistent_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [
-                KeyboardButton(text="\U0001F4E6 New Request"),
-                KeyboardButton(text="\U0001F4CB My Requests"),
+                KeyboardButton(text="📦 New Request"),
+                KeyboardButton(text="📋 My Requests"),
             ],
             [
-                KeyboardButton(text="\U0001F464 Profile"),
-                KeyboardButton(text="\U0001F6C8 Help"),
+                KeyboardButton(text="👤 Profile"),
+                KeyboardButton(text="ℹ️ Help"),
             ],
         ],
         resize_keyboard=True,
@@ -53,7 +57,10 @@ def date_quick_pick_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text=DATE_QUICK_PICK_TODAY, callback_data=f"req_date:{today_str}"),
                 InlineKeyboardButton(text=DATE_QUICK_PICK_TOMORROW, callback_data=f"req_date:{tomorrow_str}"),
             ],
-            [InlineKeyboardButton(text=BTN_CANCEL, callback_data="req_cancel")],
+            [
+                InlineKeyboardButton(text=BTN_CANCEL, callback_data="req_cancel"),
+                InlineKeyboardButton(text=BTN_HOME, callback_data="home"),
+            ],
         ]
     )
 
@@ -63,7 +70,10 @@ def frequent_address_keyboard(frequent_addresses: List[str]) -> InlineKeyboardMa
         [InlineKeyboardButton(text=addr, callback_data=f"req_addr:{idx}")]
         for idx, addr in enumerate(frequent_addresses)
     ]
-    buttons.append([InlineKeyboardButton(text=BTN_CANCEL, callback_data="req_cancel")])
+    buttons.append([
+        InlineKeyboardButton(text=BTN_CANCEL, callback_data="req_cancel"),
+        InlineKeyboardButton(text=BTN_HOME, callback_data="home"),
+    ])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -72,7 +82,10 @@ def req_hall_selection_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text=hall, callback_data=f"req_hall:{hall}")]
         for hall in CU_HALLS
     ]
-    buttons.append([InlineKeyboardButton(text=BTN_CANCEL, callback_data="req_cancel")])
+    buttons.append([
+        InlineKeyboardButton(text=BTN_CANCEL, callback_data="req_cancel"),
+        InlineKeyboardButton(text=BTN_HOME, callback_data="home"),
+    ])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -84,7 +97,10 @@ def luggage_size_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="Medium (🧳)", callback_data="req_size:medium"),
                 InlineKeyboardButton(text="Large (📦)", callback_data="req_size:large"),
             ],
-            [InlineKeyboardButton(text=BTN_CANCEL, callback_data="req_cancel")],
+            [
+                InlineKeyboardButton(text=BTN_CANCEL, callback_data="req_cancel"),
+                InlineKeyboardButton(text=BTN_HOME, callback_data="home"),
+            ],
         ]
     )
 
@@ -97,7 +113,10 @@ def time_window_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text=TIME_WINDOW_AFTERNOON, callback_data="req_time:12pm-3pm"),
                 InlineKeyboardButton(text=TIME_WINDOW_EVENING, callback_data="req_time:4pm-7pm"),
             ],
-            [InlineKeyboardButton(text=BTN_CANCEL, callback_data="req_cancel")],
+            [
+                InlineKeyboardButton(text=BTN_CANCEL, callback_data="req_cancel"),
+                InlineKeyboardButton(text=BTN_HOME, callback_data="home"),
+            ],
         ]
     )
 
@@ -106,7 +125,10 @@ def skip_or_cancel_keyboard(skip_callback: str = "req_skip") -> InlineKeyboardMa
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text=BTN_SKIP, callback_data=skip_callback)],
-            [InlineKeyboardButton(text=BTN_CANCEL, callback_data="req_cancel")],
+            [
+                InlineKeyboardButton(text=BTN_BACK, callback_data="req_cancel"),
+                InlineKeyboardButton(text=BTN_HOME, callback_data="home"),
+            ],
         ]
     )
 
@@ -140,6 +162,9 @@ def request_review_keyboard() -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(text=BTN_SUBMIT, callback_data="req_submit"),
                 InlineKeyboardButton(text=BTN_CANCEL, callback_data="req_cancel"),
+            ],
+            [
+                InlineKeyboardButton(text=BTN_HOME, callback_data="home"),
             ],
         ]
     )
@@ -220,6 +245,7 @@ def request_edit_fields_keyboard(request_id: int) -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(text="⬅ Cancel Edit", callback_data=f"my_req_detail:{request_id}"),
+                InlineKeyboardButton(text=BTN_HOME, callback_data="home"),
             ],
         ]
     )
@@ -232,7 +258,10 @@ def request_edit_confirm_keyboard(request_id: int) -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(text="✅ Confirm Update", callback_data=f"req_update_confirm:{request_id}"),
                 InlineKeyboardButton(text="❌ Cancel Edit", callback_data=f"my_req_detail:{request_id}"),
-            ]
+            ],
+            [
+                InlineKeyboardButton(text=BTN_HOME, callback_data="home"),
+            ],
         ]
     )
 
@@ -244,7 +273,10 @@ def request_cancel_confirm_keyboard(request_id: int) -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(text="Yes, Cancel Request", callback_data=f"my_req_cancel_confirm:{request_id}"),
                 InlineKeyboardButton(text="No, Keep Request", callback_data=f"my_req_detail:{request_id}"),
-            ]
+            ],
+            [
+                InlineKeyboardButton(text=BTN_HOME, callback_data="home"),
+            ],
         ]
     )
 
@@ -262,6 +294,7 @@ def feedback_rating_keyboard(request_id: int) -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(text=BTN_CANCEL, callback_data=f"my_req_detail:{request_id}"),
+                InlineKeyboardButton(text=BTN_HOME, callback_data="home"),
             ],
         ]
     )
@@ -276,6 +309,7 @@ def feedback_comment_skip_keyboard(request_id: int) -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(text=BTN_CANCEL, callback_data=f"my_req_detail:{request_id}"),
+                InlineKeyboardButton(text=BTN_HOME, callback_data="home"),
             ],
         ]
     )
