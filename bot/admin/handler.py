@@ -94,6 +94,11 @@ async def cmd_stats(
 
     try:
         stats = await get_stats()
+        avg_dur_str = (
+            f"{stats.avg_delivery_duration_minutes} mins"
+            if stats.avg_delivery_duration_minutes is not None
+            else "N/A"
+        )
         text = MSG_STATS.format(
             total_requests=stats.total_requests,
             pending_requests=stats.pending_requests,
@@ -106,11 +111,13 @@ async def cmd_stats(
             cancelled_requests=stats.cancelled_requests,
             failed_requests=stats.failed_requests,
             rejected_by_driver_requests=stats.rejected_by_driver_requests,
+            avg_delivery_duration=avg_dur_str,
             total_users=stats.total_users,
             total_students=stats.total_students,
             total_drivers=stats.total_drivers,
             total_admins=stats.total_admins,
             approved_drivers=stats.approved_drivers,
+            active_drivers=stats.active_drivers,
             pending_drivers=stats.pending_drivers,
             rejected_drivers=stats.rejected_drivers,
             suspended_drivers=stats.suspended_drivers,

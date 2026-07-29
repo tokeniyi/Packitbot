@@ -387,6 +387,12 @@ async def get_stats(
         approved_drivers = (await sess.execute(
             select(func.count(DriverProfile.id)).where(DriverProfile.status == DriverStatus.APPROVED)
         )).scalar() or 0
+        active_drivers = (await sess.execute(
+            select(func.count(DriverProfile.id)).where(
+                DriverProfile.status == DriverStatus.APPROVED,
+                DriverProfile.availability != DriverAvailability.OFFLINE,
+            )
+        )).scalar() or 0
         pending_drivers = (await sess.execute(
             select(func.count(DriverProfile.id)).where(DriverProfile.status == DriverStatus.PENDING_APPROVAL)
         )).scalar() or 0
@@ -399,6 +405,35 @@ async def get_stats(
 
         total_feedbacks = (await sess.execute(select(func.count(Feedback.id)))).scalar() or 0
         avg_rating = (await sess.execute(select(func.avg(Feedback.rating)))).scalar()
+
+        # Calculate average delivery duration from status logs (from ACCEPTED to DELIVERED)
+        from bot.core.models.status_log import RequestStatusLog
+        start_logs = select(
+            RequestStatusLog.request_id,
+            func.min(RequestStatusLog.created_at).label("start_time"),
+        ).where(
+            RequestStatusLog.new_status == RequestStatus.ACCEPTED
+        ).group_by(RequestStatusLog.request_id).subquery()
+
+        end_logs = select(
+            RequestStatusLog.request_id,
+            func.max(RequestStatusLog.created_at).label("end_time"),
+        ).where(
+            RequestStatusLog.new_status == RequestStatus.DELIVERED
+        ).group_by(RequestStatusLog.request_id).subquery()
+
+        duration_stmt = select(start_logs.c.start_time, end_logs.c.end_time).join(
+            end_logs, start_logs.c.request_id == end_logs.c.request_id
+        )
+        duration_res = await sess.execute(duration_stmt)
+        durations = [
+            (end_t - start_t).total_seconds() / 60.0
+            for start_t, end_t in duration_res.all()
+            if start_t and end_t and end_t > start_t
+        ]
+        avg_delivery_duration_minutes = (
+            round(sum(durations) / len(durations), 1) if durations else None
+        )
 
         return SystemStatsDTO(
             total_requests=total_requests,
@@ -417,11 +452,13 @@ async def get_stats(
             total_drivers=total_drivers,
             total_admins=total_admins,
             approved_drivers=approved_drivers,
+            active_drivers=active_drivers,
             pending_drivers=pending_drivers,
             rejected_drivers=rejected_drivers,
             suspended_drivers=suspended_drivers,
             total_feedbacks=total_feedbacks,
             avg_rating=round(avg_rating, 1) if avg_rating is not None else None,
+            avg_delivery_duration_minutes=avg_delivery_duration_minutes,
         )
 
     if session is not None:

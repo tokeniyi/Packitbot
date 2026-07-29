@@ -89,9 +89,11 @@ class SystemStatsDTO:
     total_drivers: int
     total_admins: int
     approved_drivers: int
-    pending_drivers: int
-    rejected_drivers: int
-    suspended_drivers: int
-    total_feedbacks: int
-    avg_rating: float | None
+    active_drivers: int = 0
+    pending_drivers: int = 0
+    rejected_drivers: int = 0
+    suspended_drivers: int = 0
+    total_feedbacks: int = 0
+    avg_rating: float | None = None
+    avg_delivery_duration_minutes: float | None = None
 
