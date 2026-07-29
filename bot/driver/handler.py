@@ -330,3 +330,174 @@ async def toggle_availability_handler(message: Message, session=None) -> None:
         reply_markup=driver_persistent_menu(updated_profile.availability),
     )
 
+
+@driver_router.callback_query(F.data.startswith("driver_accept:"))
+async def process_driver_accept(callback: CallbackQuery, session=None) -> None:
+    """Handles driver accepting an assigned delivery request."""
+    request_id = int(callback.data.split(":")[1])
+
+    if session is None:
+        await callback.answer("Session unavailable.", show_alert=True)
+        return
+
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from bot.core.constants.enums import RequestStatus
+    from bot.core.db.session import async_session
+    from bot.core.exceptions import PackitbotError
+    from bot.core.models.delivery_request import DeliveryRequest
+    from bot.core.models.user import User
+    from bot.request.schemas import TransitionDTO
+    from bot.request.service import RequestService
+
+    try:
+        # Fetch driver user
+        driver_user_res = await session.execute(
+            select(User).where(User.telegram_id == callback.from_user.id)
+        )
+        driver_user = driver_user_res.scalar_one_or_none()
+        if not driver_user:
+            await callback.answer("Driver profile not found.", show_alert=True)
+            return
+
+        req_service = RequestService(session)
+        dto = TransitionDTO(
+            request_id=request_id,
+            new_status=RequestStatus.ACCEPTED,
+            actor_id=driver_user.id,
+            note=f"Accepted by driver {driver_user.id}",
+        )
+        updated_req, event = await req_service.transition_status(dto)
+        await session.commit()
+
+        # Re-fetch request with loaded student and driver relationships
+        req_res = await session.execute(
+            select(DeliveryRequest)
+            .options(
+                selectinload(DeliveryRequest.student),
+                selectinload(DeliveryRequest.driver),
+            )
+            .where(DeliveryRequest.id == request_id)
+        )
+        req = req_res.scalar_one()
+
+        student = req.student
+        driver = req.driver
+
+        student_phone = student.phone_number if student else "N/A"
+        student_name = student.full_name if student else "Student"
+        driver_phone = driver.phone_number if driver else (driver_user.phone_number or "N/A")
+        driver_name = driver.full_name if driver else (driver_user.full_name or "Driver")
+
+        # Edit original message for driver
+        await callback.message.edit_text(
+            f"✅ <b>Assignment Accepted!</b>\n\n"
+            f"📦 <b>Request #{req.id}</b>\n"
+            f"📍 Pickup: {req.pickup_detail} ({req.hall_of_residence})\n"
+            f"🎯 Dropoff: {req.dropoff_address}\n"
+            f"👤 Recipient: {req.recipient_name} ({req.recipient_phone})\n\n"
+            f"📞 <b>Student Contact Details:</b>\n"
+            f"• Name: {student_name}\n"
+            f"• Phone: {student_phone}",
+            parse_mode="HTML",
+        )
+        await callback.answer("Request accepted!")
+
+        # Send notification to student with driver details
+        if student and student.telegram_id:
+            try:
+                await callback.bot.send_message(
+                    chat_id=student.telegram_id,
+                    text=(
+                        f"🎉 <b>Driver Accepted Your Request!</b>\n\n"
+                        f"📦 <b>Request #{req.id}</b>\n"
+                        f"📞 <b>Driver Contact Details:</b>\n"
+                        f"• Name: {driver_name}\n"
+                        f"• Phone: {driver_phone}"
+                    ),
+                    parse_mode="HTML",
+                )
+            except Exception as notif_err:
+                logger.error(f"Failed to notify student {student.telegram_id}: {notif_err}")
+
+    except PackitbotError as exc:
+        await session.rollback()
+        await callback.answer(str(exc), show_alert=True)
+    except Exception as exc:
+        await session.rollback()
+        logger.error(f"Error in driver_accept: {exc}")
+        await callback.answer("Something went wrong. Please try again.", show_alert=True)
+
+
+@driver_router.callback_query(F.data.startswith("driver_reject:"))
+async def process_driver_reject(callback: CallbackQuery, session=None) -> None:
+    """Handles driver rejecting an assigned delivery request."""
+    request_id = int(callback.data.split(":")[1])
+
+    if session is None:
+        await callback.answer("Session unavailable.", show_alert=True)
+        return
+
+    from sqlalchemy import select
+    from bot.core.constants.enums import RequestStatus, UserRole
+    from bot.core.exceptions import PackitbotError
+    from bot.core.models.delivery_request import DeliveryRequest
+    from bot.core.models.user import User
+    from bot.request.repository import RequestRepository
+
+    try:
+        # Fetch driver user
+        driver_user_res = await session.execute(
+            select(User).where(User.telegram_id == callback.from_user.id)
+        )
+        driver_user = driver_user_res.scalar_one_or_none()
+        if not driver_user:
+            await callback.answer("Driver profile not found.", show_alert=True)
+            return
+
+        req_repo = RequestRepository(session)
+        # Update request: set status back to PENDING and clear driver_id
+        updated_req = await req_repo.update(
+            request_id,
+            status=RequestStatus.PENDING,
+            driver_id=None,
+        )
+        await session.commit()
+
+        await callback.message.edit_text(
+            f"❌ <b>Assignment Rejected.</b>\nRequest #{request_id} has been returned to PENDING.",
+            parse_mode="HTML",
+        )
+        await callback.answer("Request rejected.")
+
+        # Alert admins about the rejected request
+        admin_res = await session.execute(
+            select(User).where(User.role == UserRole.ADMIN)
+        )
+        admins = admin_res.scalars().all()
+
+        alert_text = (
+            f"⚠️ <b>Request Assignment Rejected!</b>\n\n"
+            f"📦 <b>Request #{request_id}</b> was rejected by Driver {driver_user.full_name or driver_user.id}.\n"
+            f"Status has been reset to <b>PENDING</b> and requires reassignment."
+        )
+
+        for admin in admins:
+            if admin.telegram_id:
+                try:
+                    await callback.bot.send_message(
+                        chat_id=admin.telegram_id,
+                        text=alert_text,
+                        parse_mode="HTML",
+                    )
+                except Exception as notif_err:
+                    logger.error(f"Failed to alert admin {admin.telegram_id}: {notif_err}")
+
+    except PackitbotError as exc:
+        await session.rollback()
+        await callback.answer(str(exc), show_alert=True)
+    except Exception as exc:
+        await session.rollback()
+        logger.error(f"Error in driver_reject: {exc}")
+        await callback.answer("Something went wrong. Please try again.", show_alert=True)
+

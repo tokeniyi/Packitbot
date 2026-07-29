@@ -77,10 +77,19 @@ def driver_persistent_menu(availability: DriverAvailability = DriverAvailability
                 KeyboardButton(text="📊 Active Delivery"),
                 KeyboardButton(text="👤 Driver Profile"),
             ],
-            [
-                KeyboardButton(text="ℹ️ Help / Support"),
-            ],
         ],
         resize_keyboard=True,
+    )
+
+
+def driver_assignment_response_keyboard(request_id: int) -> InlineKeyboardMarkup:
+    """Inline keyboard for driver to accept or reject an assigned delivery request."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Accept", callback_data=f"driver_accept:{request_id}"),
+                InlineKeyboardButton(text="❌ Reject", callback_data=f"driver_reject:{request_id}"),
+            ],
+        ]
     )
 

@@ -247,9 +247,11 @@ async def handle_confirm_driver_assignment(
             # Notify driver
             if driver_profile.user and driver_profile.user.telegram_id:
                 try:
+                    from bot.driver.keyboards import driver_assignment_response_keyboard
                     await callback.bot.send_message(
                         chat_id=driver_profile.user.telegram_id,
                         text=f"{MSG_NOTIFY_DRIVER_ASSIGNED}\n\n📦 **Request #{updated_req.id}**\n📍 Pickup: {updated_req.hall_of_residence}\n🎯 Dropoff: {updated_req.dropoff_address}",
+                        reply_markup=driver_assignment_response_keyboard(updated_req.id),
                         parse_mode="Markdown",
                     )
                 except Exception as notif_err:
