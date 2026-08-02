@@ -861,8 +861,25 @@ async def submit_request_creation(callback: CallbackQuery, state: FSMContext, se
     await callback.answer()
     data = await state.get_data()
 
+    if session is None:
+        await callback.message.answer("Something went wrong. Please try again.", reply_markup=student_persistent_menu())
+        return
+
+    # Look up the user's internal id from the users table
+    from sqlalchemy import select
+    from bot.core.models.user import User
+
+    user_id = callback.from_user.id
+    result = await session.execute(select(User).where(User.telegram_id == user_id))
+    user = result.scalar_one_or_none()
+
+    if user is None:
+        await callback.message.answer("User profile not found. Please start the bot again.", reply_markup=student_persistent_menu())
+        await state.clear()
+        return
+
     dto = CreateRequestDTO(
-        student_id=callback.from_user.id,
+        student_id=user.id,
         pickup_detail=data["pickup_detail"],
         dropoff_address=data["dropoff_address"],
         dropoff_landmark=data.get("dropoff_landmark"),
@@ -876,24 +893,17 @@ async def submit_request_creation(callback: CallbackQuery, state: FSMContext, se
         preferred_time_window=data["preferred_time_window"],
     )
 
-    if session is not None:
-        service = RequestService(session)
-        try:
-            req, event = await service.create_request(dto)
-            await state.clear()
-            await callback.message.edit_text(
-                f"✅ Delivery request #{req.id} created successfully!",
-                reply_markup=student_persistent_menu(),
-            )
-        except Exception as exc:
-            logger.error(f"Failed to create request: {exc}")
-            await callback.message.answer(f"❌ Error creating request: {exc}")
-    else:
+    service = RequestService(session)
+    try:
+        req, event = await service.create_request(dto)
         await state.clear()
         await callback.message.edit_text(
-            "✅ Delivery request created successfully!",
+            f"✅ Delivery request #{req.id} created successfully!",
             reply_markup=student_persistent_menu(),
         )
+    except Exception as exc:
+        logger.error(f"Failed to create request: {exc}")
+        await callback.message.answer(f"❌ Error creating request: {exc}")
 
 
 # ------------------------------------------------------------------
