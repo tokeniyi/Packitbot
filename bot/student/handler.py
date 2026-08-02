@@ -322,26 +322,32 @@ async def show_help(message: Message) -> None:
 
 @student_router.message(Command(CMD_PROFILE))
 @student_router.message(F.text == BTN_MY_PROFILE)
-async def show_profile(message: Message, session=None) -> None:
+async def _show_profile(target: Message | CallbackQuery, state: FSMContext, session=None, user_id: int | None = None) -> None:
+    """Renders the student profile view. Used by show_profile and after profile updates."""
     if session is None:
-        await message.answer("Something went wrong. Please try again.", reply_markup=student_persistent_menu())
+        markup = student_persistent_menu()
+        if isinstance(target, CallbackQuery):
+            await target.message.answer("Something went wrong. Please try again.", reply_markup=markup)
+        else:
+            await target.answer("Something went wrong. Please try again.", reply_markup=markup)
         return
 
-    user_id = message.from_user.id
+    uid = user_id or (target.from_user.id if isinstance(target, CallbackQuery) else target.from_user.id)
 
-    # Fetch the User record
-    result = await session.execute(select(User).where(User.telegram_id == user_id))
+    result = await session.execute(select(User).where(User.telegram_id == uid))
     user = result.scalar_one_or_none()
 
     if user is None:
-        await message.answer("Profile not found.", reply_markup=student_persistent_menu())
+        markup = student_persistent_menu()
+        if isinstance(target, CallbackQuery):
+            await target.message.answer("Profile not found.", reply_markup=markup)
+        else:
+            await target.answer("Profile not found.", reply_markup=markup)
         return
 
-    # Fetch the StudentProfile (if it exists)
     result = await session.execute(select(StudentProfile).where(StudentProfile.user_id == user.id))
     profile = result.scalar_one_or_none()
 
-    # Format verification / account status
     if user.account_status == AccountStatus.BANNED:
         status_text = "🔴 Suspended"
     elif profile is None or profile.verification_status == VerificationStatus.UNVERIFIED:
@@ -349,23 +355,18 @@ async def show_profile(message: Message, session=None) -> None:
     else:
         status_text = "🟢 Active"
 
-    # Format phone number
     phone = user.phone_number or "Not Set"
-
-    # Format default hall (from student profile)
     default_hall = profile.hall_of_residence if profile else "Not Set"
 
-    # Extract first name from full_name
     full_name = user.full_name or "Not Set"
     first_name = full_name.split(" ")[0] if full_name != "Not Set" else "N/A"
     last_name = " ".join(full_name.split(" ")[1:]) if full_name != "Not Set" and len(full_name.split(" ")) > 1 else ""
     name_display = f"{first_name} {last_name}".strip() if last_name else first_name
 
-    # Delivery stats
     result = await session.execute(
         select(func.count(DeliveryRequest.id))
         .where(
-            DeliveryRequest.student_id == user_id,
+            DeliveryRequest.student_id == uid,
             DeliveryRequest.status.in_(
                 {
                     RequestStatus.PENDING,
@@ -383,7 +384,7 @@ async def show_profile(message: Message, session=None) -> None:
     result = await session.execute(
         select(func.count(DeliveryRequest.id))
         .where(
-            DeliveryRequest.student_id == user_id,
+            DeliveryRequest.student_id == uid,
             DeliveryRequest.status == RequestStatus.DELIVERED,
         )
     )
@@ -392,17 +393,16 @@ async def show_profile(message: Message, session=None) -> None:
     result = await session.execute(
         select(func.count(DeliveryRequest.id))
         .where(
-            DeliveryRequest.student_id == user_id,
+            DeliveryRequest.student_id == uid,
             DeliveryRequest.status == RequestStatus.CANCELLED,
         )
     )
     cancelled_requests = result.scalar() or 0
 
-    # Build the profile text
     text = (
         "👤 <b>Student Profile</b>\n\n"
         f"• <b>Name:</b> {name_display}\n"
-        f"• <b>Telegram ID:</b> <code>{user_id}</code>\n"
+        f"• <b>Telegram ID:</b> <code>{uid}</code>\n"
         f"• <b>Phone Number:</b> {phone}\n"
         f"• <b>Default Hall:</b> {default_hall}\n"
         f"• <b>Status:</b> {status_text}\n\n"
@@ -426,10 +426,20 @@ async def show_profile(message: Message, session=None) -> None:
         ]
     )
 
-    await message.answer(text, parse_mode="HTML", reply_markup=kb)
+    if isinstance(target, CallbackQuery):
+        await target.message.answer(text, parse_mode="HTML", reply_markup=kb)
+    else:
+        await target.answer(text, parse_mode="HTML", reply_markup=kb)
 
 
+@student_router.message(Command(CMD_PROFILE))
+@student_router.message(F.text == BTN_MY_PROFILE)
+async def show_profile(message: Message, state: FSMContext, session=None) -> None:
+    await state.clear()
+    await _show_profile(message, state, session=session)
 
+
+# @student_router.message(StudentProfileFSM.editing_phone)
 @student_router.callback_query(F.data == "profile_edit_phone")
 async def profile_edit_phone(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
@@ -472,6 +482,7 @@ async def process_profile_phone_edit(message: Message, state: FSMContext, sessio
     await session.commit()
     await state.clear()
     await message.answer("✅ Phone number updated successfully.", reply_markup=student_persistent_menu())
+    await _show_profile(message, state, session=session, user_id=user_id)
 
 
 @student_router.callback_query(StudentProfileFSM.editing_hall, F.data.startswith("req_hall:"))
@@ -510,7 +521,7 @@ async def process_profile_hall_edit(callback: CallbackQuery, state: FSMContext, 
     await session.commit()
     await state.clear()
     await callback.message.answer("✅ Default hall updated successfully.", reply_markup=student_persistent_menu())
-
+    await _show_profile(callback, state, session=session, user_id=user_id)
 
 @student_router.callback_query(F.data == "my_reqs_list")
 async def profile_my_requests(callback: CallbackQuery, state: FSMContext, session=None) -> None:
