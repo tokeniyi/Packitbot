@@ -897,7 +897,7 @@ async def submit_request_creation(callback: CallbackQuery, state: FSMContext, se
     try:
         req, event = await service.create_request(dto)
         await state.clear()
-        await callback.message.edit_text(
+        await callback.message.answer(
             f"✅ Delivery request #{req.id} created successfully!",
             reply_markup=student_persistent_menu(),
         )
