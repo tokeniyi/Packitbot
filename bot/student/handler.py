@@ -428,6 +428,46 @@ async def show_profile(message: Message, session=None) -> None:
     await message.answer(text, parse_mode="HTML", reply_markup=kb)
 
 
+
+@student_router.callback_query(F.data == "profile_edit_phone")
+async def profile_edit_phone(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    await state.update_data(is_editing=True)
+    await state.set_state(RequestCreateFSM.entering_recipient_phone)
+    await callback.message.answer("✏️ Enter your new phone number (e.g. 08012345678):")
+
+
+@student_router.callback_query(F.data == "profile_set_hall")
+async def profile_set_hall(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    await state.update_data(is_editing=True)
+    await state.set_state(RequestCreateFSM.entering_hall)
+    await callback.message.answer("🏢 Select your default Hall of Residence:", reply_markup=req_hall_selection_keyboard())
+
+
+@student_router.callback_query(F.data == "my_reqs_list")
+async def profile_my_requests(callback: CallbackQuery, state: FSMContext, session=None) -> None:
+    await callback.answer()
+    await state.clear()
+    if session is None:
+        await callback.message.answer(MSG_EMPTY_STATE_REQUESTS, reply_markup=student_persistent_menu())
+        return
+
+    repo = RequestRepository(session)
+    user_id = callback.from_user.id
+    requests = await repo.get_history_for_student(student_id=user_id, page=1)
+
+    if not requests:
+        await callback.answer()
+        await callback.message.answer(MSG_EMPTY_STATE_REQUESTS, reply_markup=student_persistent_menu())
+        return
+
+    paginated_page = paginate(requests, page=1)
+    kb = my_requests_list_keyboard(paginated_page.items, page=paginated_page.page, total_pages=paginated_page.total_pages)
+    await callback.message.edit_text("📋 <b>Your Delivery Requests:</b>", parse_mode="HTML", reply_markup=kb)
+
+
+# await callback.message.edit_text(MSG_EMPTY_STATE_REQUESTS, reply_markup=student_persistent_menu())
 @student_router.message(RequestCreateFSM.entering_pickup_detail)
 async def process_pickup_detail(message: Message, state: FSMContext) -> None:
     try:
@@ -637,7 +677,7 @@ async def process_preferred_date_message(message: Message, state: FSMContext) ->
         reply_markup=time_window_keyboard(),
     )
 
-
+#  profile_my_requests
 @student_router.callback_query(RequestCreateFSM.selecting_time_window, F.data.startswith("req_time:"))
 async def process_time_window_callback(callback: CallbackQuery, state: FSMContext) -> None:
     slot = callback.data.split(":", 1)[1]
@@ -897,7 +937,7 @@ async def my_requests_page_callback(callback: CallbackQuery, session=None) -> No
             page = 1
 
     if session is None:
-        await callback.message.edit_text(MSG_EMPTY_STATE_REQUESTS, reply_markup=student_persistent_menu())
+        await callback.message.answer(MSG_EMPTY_STATE_REQUESTS, reply_markup=student_persistent_menu())
         return
 
     repo = RequestRepository(session)
