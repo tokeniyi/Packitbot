@@ -1,5 +1,6 @@
 import os
-from pydantic_settings import BaseSettings
+from urllib.parse import quote
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -12,15 +13,16 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     webhook_url: str = ""
 
-    class Config:
-        env_file = ".env"
+    # Modern Pydantic V2 configuration
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        extra="ignore",  # Tells Pydantic to safely ignore extra vars like PYTHONPATH
+    )
 
 
 def get_settings() -> Settings:
     return Settings()
 
-
-from urllib.parse import quote
 
 # Define your primary support contact username (without @)
 SUPPORT_USERNAME = "tokeniyi"  # Change to "Dayo_the_Great" or any other username whenever needed!
