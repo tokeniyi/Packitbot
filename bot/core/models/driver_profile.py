@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, String
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, String, BigInteger
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from bot.core.constants.enums import DriverAvailability, DriverStatus
@@ -21,6 +21,7 @@ class DriverProfile(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(
+        BigInteger,
         ForeignKey("users.id", ondelete="CASCADE"),
         unique=True,
         nullable=False,
@@ -47,6 +48,7 @@ class DriverProfile(Base, TimestampMixin):
         Integer, default=0, nullable=False
     )
     approved_by_admin_id: Mapped[int | None] = mapped_column(
+        BigInteger,
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
         index=True,

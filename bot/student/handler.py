@@ -600,7 +600,21 @@ async def edit_request_field(callback: CallbackQuery, state: FSMContext) -> None
     if field in field_map:
         target_state, prompt_text = field_map[field]
         await state.set_state(target_state)
-        await callback.message.answer(f"✏️ Editing {field.replace('_', ' ').title()}:\n{prompt_text}")
+
+        keyboard_map = {
+            "hall": req_hall_selection_keyboard(),
+            "luggage_size": luggage_size_keyboard(),
+            "preferred_date": date_quick_pick_keyboard(),
+            "preferred_time_window": time_window_keyboard(),
+            "special_instructions": skip_or_cancel_keyboard(skip_callback="req_skip_instructions"),
+            "dropoff_landmark": skip_or_cancel_keyboard(skip_callback="req_skip_landmark"),
+        }
+        reply_markup = keyboard_map.get(field)
+
+        await callback.message.answer(
+            f"✏️ Editing {field.replace('_', ' ').title()}:\n{prompt_text}",
+            reply_markup=reply_markup,
+        )
 
 
 @student_router.callback_query(RequestCreateFSM.confirming_request, F.data == "req_submit")

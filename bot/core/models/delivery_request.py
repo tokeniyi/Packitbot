@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Date, Enum, ForeignKey, Integer, String
+from sqlalchemy import Date, Enum, ForeignKey, Integer, String, BigInteger
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from bot.core.constants.enums import CancelledBy, LuggageSize, RequestStatus
@@ -22,12 +22,18 @@ class DeliveryRequest(Base, TimestampMixin):
     __tablename__ = "delivery_requests"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+
+
     student_id: Mapped[int] = mapped_column(
+        BigInteger,
         ForeignKey("users.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )
+
+
     driver_id: Mapped[int | None] = mapped_column(
+        BigInteger,
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
