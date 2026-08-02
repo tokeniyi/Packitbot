@@ -9,6 +9,7 @@ Refactoring Changes:
 from bot.core.constants.quick_replies import BTN_MY_REQUESTS, BTN_HELP, BTN_MY_PROFILE
 from bot.core.models.delivery_request import DeliveryRequest
 from bot.core.models.student_profile import StudentProfile
+from bot.student.states import StudentRegistrationFSM, StudentProfileFSM
 from bot.core.models.user import User
 from bot.core.constants.commands import CMD_NEW_REQUEST, CMD_MY_REQUESTS, CMD_PROFILE
 from bot.core.constants.enums import AccountStatus, RequestStatus, VerificationStatus
@@ -432,17 +433,83 @@ async def show_profile(message: Message, session=None) -> None:
 @student_router.callback_query(F.data == "profile_edit_phone")
 async def profile_edit_phone(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
-    await state.update_data(is_editing=True)
-    await state.set_state(RequestCreateFSM.entering_recipient_phone)
+    await state.set_state(StudentProfileFSM.editing_phone)
     await callback.message.answer("✏️ Enter your new phone number (e.g. 08012345678):")
 
 
 @student_router.callback_query(F.data == "profile_set_hall")
 async def profile_set_hall(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
-    await state.update_data(is_editing=True)
-    await state.set_state(RequestCreateFSM.entering_hall)
+    await state.set_state(StudentProfileFSM.editing_hall)
     await callback.message.answer("🏢 Select your default Hall of Residence:", reply_markup=req_hall_selection_keyboard())
+
+
+@student_router.message(StudentProfileFSM.editing_phone)
+async def process_profile_phone_edit(message: Message, state: FSMContext, session=None) -> None:
+    from bot.core.utils.validators import validate_phone
+    from bot.core.models.user import User
+
+    try:
+        phone = validate_phone(message.text)
+    except Exception as exc:
+        await message.answer(f"❌ {exc}")
+        return
+
+    if session is None:
+        await message.answer("Something went wrong. Please try again.", reply_markup=student_persistent_menu())
+        return
+
+    user_id = message.from_user.id
+    result = await session.execute(select(User).where(User.telegram_id == user_id))
+    user = result.scalar_one_or_none()
+
+    if user is None:
+        await message.answer("Profile not found.", reply_markup=student_persistent_menu())
+        await state.clear()
+        return
+
+    user.phone_number = phone
+    await session.commit()
+    await state.clear()
+    await message.answer("✅ Phone number updated successfully.", reply_markup=student_persistent_menu())
+
+
+@student_router.callback_query(StudentProfileFSM.editing_hall, F.data.startswith("req_hall:"))
+async def process_profile_hall_edit(callback: CallbackQuery, state: FSMContext, session=None) -> None:
+    from bot.core.models.student_profile import StudentProfile
+    from bot.core.models.user import User
+
+    hall = callback.data.split(":", 1)[1]
+    await callback.answer(f"Selected Hall: {hall}")
+
+    if session is None:
+        await callback.message.answer("Something went wrong. Please try again.", reply_markup=student_persistent_menu())
+        return
+
+    user_id = callback.from_user.id
+
+    # Fetch the User to get the student profile
+    result = await session.execute(select(User).where(User.telegram_id == user_id))
+    user = result.scalar_one_or_none()
+
+    if user is None:
+        await callback.message.answer("Profile not found.", reply_markup=student_persistent_menu())
+        await state.clear()
+        return
+
+    # Fetch the StudentProfile
+    result = await session.execute(select(StudentProfile).where(StudentProfile.user_id == user.id))
+    profile = result.scalar_one_or_none()
+
+    if profile is None:
+        await callback.message.answer("Student profile not found.", reply_markup=student_persistent_menu())
+        await state.clear()
+        return
+
+    profile.hall_of_residence = hall
+    await session.commit()
+    await state.clear()
+    await callback.message.answer("✅ Default hall updated successfully.", reply_markup=student_persistent_menu())
 
 
 @student_router.callback_query(F.data == "my_reqs_list")

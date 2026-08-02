@@ -32,3 +32,7 @@ class RequestUpdateFSM(StatesGroup):
 class FeedbackFSM(StatesGroup):
     selecting_rating = State()
     entering_comment = State()
+
+class StudentProfileFSM(StatesGroup):
+    editing_phone = State()
+    editing_hall = State()
