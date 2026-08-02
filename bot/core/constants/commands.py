@@ -16,6 +16,7 @@ CMD_ABOUT = "about"
 # Student Constants
 CMD_NEW_REQUEST = "request"
 CMD_MY_REQUESTS = "my_requests"
+CMD_PROFILE = "profile"
 
 
 # Driver Constants
@@ -52,6 +53,7 @@ STUDENT_COMMANDS = DEFAULT_COMMANDS + [
     BotCommand(command=CMD_ABOUT, description="About the bot & services"),
     BotCommand(command=CMD_HELP, description="Get help & support"),
     BotCommand(command=CMD_CANCEL, description="Cancel active action"),
+    BotCommand(command=CMD_PROFILE, description="View Profile"),
 ]
 
 # 3. DRIVER COMMANDS

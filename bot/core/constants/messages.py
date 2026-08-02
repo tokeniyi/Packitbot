@@ -107,6 +107,9 @@ MSG_STUDENT_WELCOME = (
     "🚀 **Get Started**\n"
     "• /request — Create a new delivery request\n"
     "• /my_requests — View and track your requests\n\n"
+    "👤 **Your Profile:**\n"
+    "• View your details, default hall, and track your active or past delivery requests anytime.\n"
+    "• Access it directly via the **Profile** button on your main menu or send /profile!\n\n"
     "⚙️ Want to update your profile? Send /menu to open your profile and settings."
 )
 

@@ -6,15 +6,18 @@ Refactoring Changes:
 4. Preserved single-field editing flag logic.
 """
 
+from bot.core.constants.quick_replies import BTN_MY_REQUESTS, BTN_HELP, BTN_MY_PROFILE
 from bot.core.models.delivery_request import DeliveryRequest
-from bot.core.constants.commands import CMD_MY_REQUESTS
-from bot.core.constants.commands import CMD_NEW_REQUEST
-from bot.core.constants.enums import RequestStatus
+from bot.core.models.student_profile import StudentProfile
+from bot.core.models.user import User
+from bot.core.constants.commands import CMD_NEW_REQUEST, CMD_MY_REQUESTS, CMD_PROFILE
+from bot.core.constants.enums import AccountStatus, RequestStatus, VerificationStatus
 import logging
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from sqlalchemy import func, select
 
 from bot.core.constants.messages import (
     MSG_REG_EDIT,
@@ -27,6 +30,7 @@ from bot.core.constants.messages import (
     MSG_REG_STEP_PROMPT,
     MSG_REG_SUBMIT,
     MSG_REG_SUCCESS,
+    MSG_HELP,
 )
 from bot.core.keyboards.common_kb import HomeButton
 from bot.core.utils.validators import validate_full_name, validate_phone
@@ -305,6 +309,123 @@ async def cancel_request_creation(event: Message | CallbackQuery, state: FSMCont
     else:
         # Standard text message command response
         await event.answer(msg, reply_markup=student_persistent_menu())
+
+
+@student_router.message(F.text == BTN_HELP)
+async def show_help(message: Message) -> None:
+    await message.answer(
+        MSG_HELP,
+        parse_mode="HTML",
+        reply_markup=student_persistent_menu()
+    )
+
+@student_router.message(Command(CMD_PROFILE))
+@student_router.message(F.text == BTN_MY_PROFILE)
+async def show_profile(message: Message, session=None) -> None:
+    if session is None:
+        await message.answer("Something went wrong. Please try again.", reply_markup=student_persistent_menu())
+        return
+
+    user_id = message.from_user.id
+
+    # Fetch the User record
+    result = await session.execute(select(User).where(User.telegram_id == user_id))
+    user = result.scalar_one_or_none()
+
+    if user is None:
+        await message.answer("Profile not found.", reply_markup=student_persistent_menu())
+        return
+
+    # Fetch the StudentProfile (if it exists)
+    result = await session.execute(select(StudentProfile).where(StudentProfile.user_id == user.id))
+    profile = result.scalar_one_or_none()
+
+    # Format verification / account status
+    if user.account_status == AccountStatus.BANNED:
+        status_text = "🔴 Suspended"
+    elif profile is None or profile.verification_status == VerificationStatus.UNVERIFIED:
+        status_text = "🟡 Pending Verification"
+    else:
+        status_text = "🟢 Active"
+
+    # Format phone number
+    phone = user.phone_number or "Not Set"
+
+    # Format default hall (from student profile)
+    default_hall = profile.hall_of_residence if profile else "Not Set"
+
+    # Extract first name from full_name
+    full_name = user.full_name or "Not Set"
+    first_name = full_name.split(" ")[0] if full_name != "Not Set" else "N/A"
+    last_name = " ".join(full_name.split(" ")[1:]) if full_name != "Not Set" and len(full_name.split(" ")) > 1 else ""
+    name_display = f"{first_name} {last_name}".strip() if last_name else first_name
+
+    # Delivery stats
+    result = await session.execute(
+        select(func.count(DeliveryRequest.id))
+        .where(
+            DeliveryRequest.student_id == user_id,
+            DeliveryRequest.status.in_(
+                {
+                    RequestStatus.PENDING,
+                    RequestStatus.ASSIGNED,
+                    RequestStatus.ACCEPTED,
+                    RequestStatus.EN_ROUTE_TO_PICKUP,
+                    RequestStatus.PICKED_UP,
+                    RequestStatus.IN_TRANSIT,
+                }
+            ),
+        )
+    )
+    active_requests = result.scalar() or 0
+
+    result = await session.execute(
+        select(func.count(DeliveryRequest.id))
+        .where(
+            DeliveryRequest.student_id == user_id,
+            DeliveryRequest.status == RequestStatus.DELIVERED,
+        )
+    )
+    completed_deliveries = result.scalar() or 0
+
+    result = await session.execute(
+        select(func.count(DeliveryRequest.id))
+        .where(
+            DeliveryRequest.student_id == user_id,
+            DeliveryRequest.status == RequestStatus.CANCELLED,
+        )
+    )
+    cancelled_requests = result.scalar() or 0
+
+    # Build the profile text
+    text = (
+        "👤 <b>Student Profile</b>\n\n"
+        f"• <b>Name:</b> {name_display}\n"
+        f"• <b>Telegram ID:</b> <code>{user_id}</code>\n"
+        f"• <b>Phone Number:</b> {phone}\n"
+        f"• <b>Default Hall:</b> {default_hall}\n"
+        f"• <b>Status:</b> {status_text}\n\n"
+        "📊 <b>Delivery Stats:</b>\n"
+        f"• Active Requests: {active_requests}\n"
+        f"• Completed Deliveries: {completed_deliveries}\n"
+        f"• Cancelled Requests: {cancelled_requests}\n\n"
+        "──────────────────"
+    )
+
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✏️ Edit Phone", callback_data="profile_edit_phone"),
+                InlineKeyboardButton(text="🏢 Set Default Hall", callback_data="profile_set_hall"),
+            ],
+            [
+                InlineKeyboardButton(text="📦 My Requests", callback_data="my_reqs_list"),
+                InlineKeyboardButton(text="🏠 Main Menu", callback_data="home"),
+            ],
+        ]
+    )
+
+    await message.answer(text, parse_mode="HTML", reply_markup=kb)
 
 
 @student_router.message(RequestCreateFSM.entering_pickup_detail)
@@ -744,7 +865,7 @@ def _format_request_detail(req) -> str:
     return text
 
 
-@student_router.message(F.text == CMD_MY_REQUESTS)
+@student_router.message(F.text == BTN_MY_REQUESTS)
 @student_router.message(Command(CMD_MY_REQUESTS))
 async def show_my_requests_list(message: Message, session=None, page: int = 1) -> None:
     if session is None:
