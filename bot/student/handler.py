@@ -43,6 +43,16 @@ logger = logging.getLogger(__name__)
 student_router = Router()
 
 
+async def _resolve_user_id(telegram_id: int, session) -> int | None:
+    """Resolves a Telegram user ID to the internal users.id."""
+    from sqlalchemy import select
+    from bot.core.models.user import User
+
+    result = await session.execute(select(User).where(User.telegram_id == telegram_id))
+    user = result.scalar_one_or_none()
+    return user.id if user else None
+
+
 def _progress_bar(current: int, total: int) -> str:
     filled = "\u2588" * current
     empty = "\u2591" * (total - current)
@@ -869,17 +879,13 @@ async def submit_request_creation(callback: CallbackQuery, state: FSMContext, se
     from sqlalchemy import select
     from bot.core.models.user import User
 
-    user_id = callback.from_user.id
-    result = await session.execute(select(User).where(User.telegram_id == user_id))
-    user = result.scalar_one_or_none()
-
-    if user is None:
-        await callback.message.answer("User profile not found. Please start the bot again.", reply_markup=student_persistent_menu())
-        await state.clear()
+    user_id = await _resolve_user_id(callback.from_user.id, session)
+    if user_id is None:
+        await callback.message.answer("User profile not found.", reply_markup=student_persistent_menu())
         return
 
     dto = CreateRequestDTO(
-        student_id=user.id,
+        student_id=user_id,
         pickup_detail=data["pickup_detail"],
         dropoff_address=data["dropoff_address"],
         dropoff_landmark=data.get("dropoff_landmark"),
@@ -1001,7 +1007,10 @@ async def show_my_requests_list(message: Message, session=None, page: int = 1) -
         return
 
     repo = RequestRepository(session)
-    user_id = message.from_user.id
+    user_id = await _resolve_user_id(message.from_user.id, session)
+    if user_id is None:
+        await message.answer("User profile not found.", reply_markup=student_persistent_menu())
+        return
     requests = await repo.get_history_for_student(student_id=user_id, page=1)
 
     if not requests:
@@ -1058,7 +1067,8 @@ async def show_request_detail(callback: CallbackQuery, session=None) -> None:
     repo = RequestRepository(session)
     req = await repo.get_by_id(req_id)
 
-    if not req or req.student_id != callback.from_user.id:
+    user_id = await _resolve_user_id(callback.from_user.id, session)
+    if not req or req.student_id != user_id:
         await callback.message.answer("⚠️ Request not found or permission denied.", reply_markup=HomeButton())
         return
 
@@ -1108,7 +1118,8 @@ async def start_request_edit(callback: CallbackQuery, state: FSMContext, session
     repo = RequestRepository(session)
     req = await repo.get_by_id(req_id)
 
-    if not req or req.student_id != callback.from_user.id:
+    user_id = await _resolve_user_id(callback.from_user.id, session)
+    if not req or req.student_id != user_id:
         await callback.message.answer("Request not found or permission denied.")
         return
 
@@ -1330,7 +1341,8 @@ async def prompt_cancel_request(callback: CallbackQuery, session=None) -> None:
     repo = RequestRepository(session)
     req = await repo.get_by_id(req_id)
 
-    if not req or req.student_id != callback.from_user.id:
+    user_id = await _resolve_user_id(callback.from_user.id, session)
+    if not req or req.student_id != user_id:
         await callback.message.answer("Request not found or permission denied.")
         return
 
@@ -1438,7 +1450,8 @@ async def prompt_feedback_rating(callback: CallbackQuery, state: FSMContext, ses
     repo = RequestRepository(session)
     req = await repo.get_by_id(req_id)
 
-    if not req or req.student_id != callback.from_user.id:
+    user_id = await _resolve_user_id(callback.from_user.id, session)
+    if not req or req.student_id != user_id:
         await callback.message.answer("Request not found or permission denied.")
         return
 

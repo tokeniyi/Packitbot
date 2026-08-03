@@ -71,6 +71,17 @@ from bot.student.states import RequestUpdateFSM, FeedbackFSM
 logger = logging.getLogger(__name__)
 student_router = Router()
 
+
+async def _resolve_user_id(telegram_id: int, session) -> int | None:
+    """Resolves a Telegram user ID to the internal users.id."""
+    from sqlalchemy import select
+    from bot.core.models.user import User
+
+    result = await session.execute(select(User).where(User.telegram_id == telegram_id))
+    user = result.scalar_one_or_none()
+    return user.id if user else None
+
+
 STATUS_DISPLAY_MAP = {
     "pending": MSG_STATUS_PENDING,
     "assigned": MSG_STATUS_ASSIGNED,
@@ -145,7 +156,10 @@ async def show_my_requests_list(message: Message, session=None, page: int = 1) -
         return
 
     repo = RequestRepository(session)
-    user_id = message.from_user.id
+    user_id = await _resolve_user_id(message.from_user.id, session)
+    if user_id is None:
+        await message.answer("User profile not found.", reply_markup=student_persistent_menu())
+        return
     requests = await repo.get_history_for_student(student_id=user_id, page=page)
 
     if not requests:
@@ -173,7 +187,10 @@ async def my_requests_page_callback(callback: CallbackQuery, session=None) -> No
         return
 
     repo = RequestRepository(session)
-    user_id = callback.from_user.id
+    user_id = await _resolve_user_id(callback.from_user.id, session)
+    if user_id is None:
+        await callback.message.edit_text("User profile not found.", reply_markup=student_persistent_menu())
+        return
     requests = await repo.get_history_for_student(student_id=user_id, page=page)
 
     if not requests:
@@ -202,7 +219,8 @@ async def show_request_detail(callback: CallbackQuery, session=None) -> None:
     repo = RequestRepository(session)
     req = await repo.get_by_id(req_id)
 
-    if not req or req.student_id != callback.from_user.id:
+    user_id = await _resolve_user_id(callback.from_user.id, session)
+    if not req or req.student_id != user_id:
         await callback.message.answer("⚠️ Request not found or permission denied.", reply_markup=HomeButton())
         return
 
@@ -233,7 +251,8 @@ async def start_request_edit(callback: CallbackQuery, state: FSMContext, session
     repo = RequestRepository(session)
     req = await repo.get_by_id(req_id)
 
-    if not req or req.student_id != callback.from_user.id:
+    user_id = await _resolve_user_id(callback.from_user.id, session)
+    if not req or req.student_id != user_id:
         await callback.message.answer("Request not found or permission denied.")
         return
 
@@ -445,7 +464,8 @@ async def prompt_cancel_request(callback: CallbackQuery, session=None) -> None:
     repo = RequestRepository(session)
     req = await repo.get_by_id(req_id)
 
-    if not req or req.student_id != callback.from_user.id:
+    user_id = await _resolve_user_id(callback.from_user.id, session)
+    if not req or req.student_id != user_id:
         await callback.message.answer("Request not found or permission denied.")
         return
 
@@ -540,7 +560,8 @@ async def prompt_feedback_rating(callback: CallbackQuery, state: FSMContext, ses
     repo = RequestRepository(session)
     req = await repo.get_by_id(req_id)
 
-    if not req or req.student_id != callback.from_user.id:
+    user_id = await _resolve_user_id(callback.from_user.id, session)
+    if not req or req.student_id != user_id:
         await callback.message.answer("Request not found or permission denied.")
         return
 
@@ -628,7 +649,10 @@ async def _finalize_feedback_submission(
         return
 
     service = RequestService(session)
-    user_id = target.from_user.id
+    user_id = await _resolve_user_id(target.from_user.id, session)
+    if user_id is None:
+        await target.answer("User profile not found.", reply_markup=student_persistent_menu())
+        return
     dto = CreateFeedbackDTO(
         request_id=req_id,
         student_id=user_id,
