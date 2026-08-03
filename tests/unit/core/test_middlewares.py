@@ -13,9 +13,42 @@ from bot.core.middlewares.throttling import ThrottlingMiddleware
 
 
 # ---------------------------------------------------------------------------
+# Code Logic:
+#   This module contains unit tests for core middlewares and common handlers.
+#   It validates:
+#     1. DbSessionMiddleware rollback/commit behavior on exception/success
+#     2. AuthMiddleware user creation on first update
+#     3. AuthMiddleware short-circuiting banned users
+#     4. ThrottlingMiddleware rate-limiting behavior
+#     5. /start handler role button display
+#     6. /help handler response
+#     7. /about handler response
+#     8. Fallback handler reply with Home button
+#
+# Function Calls:
+#   - test_db_session_middleware_rolls_back_on_exception
+#   - test_db_session_middleware_commits_on_success
+#   - test_auth_middleware_creates_user_on_first_update
+#   - test_auth_middleware_short_circuits_banned_user
+#   - test_throttling_middleware_denies_rapid_updates
+#   - test_start_handler_shows_role_buttons
+#   - test_help_handler_responds
+#   - test_about_handler_responds
+#   - test_fallback_handler_replies_with_home
+#
+# Cross-References:
+#   - Depends on: bot.core.middlewares.auth, bot.core.middlewares.db_session,
+#       bot.core.middlewares.throttling, bot.common.start, bot.common.help,
+#       bot.common.fallback, aiogram types, pytest, unittest.mock
+#   - Imported by: pytest runner
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 def _make_update(user_id: int = 1, text: str = "hello") -> Update:
+    """Build a minimal aiogram Update object for middleware testing."""
     chat = Chat(id=1, type="private")
     user = User(id=user_id, is_bot=False, first_name="Test", username="t")
     message = Message(
@@ -29,6 +62,7 @@ def _make_update(user_id: int = 1, text: str = "hello") -> Update:
 
 
 def _make_fake_session():
+    """Create an AsyncMock SQLAlchemy session with common methods mocked."""
     session = AsyncMock()
     session.in_transaction = MagicMock(return_value=True)
     session.close = AsyncMock()
@@ -41,6 +75,7 @@ def _make_fake_session():
 
 
 def _make_mock_update(user_id: int = 1, mock_answer: bool = True) -> MagicMock:
+    """Build a mock Update-like object for lightweight handler testing."""
     mock_user = MagicMock()
     mock_user.id = user_id
     mock_user.is_bot = False
@@ -72,6 +107,7 @@ def _make_mock_update(user_id: int = 1, mock_answer: bool = True) -> MagicMock:
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_db_session_middleware_rolls_back_on_exception(monkeypatch):
+    """Verify that DbSessionMiddleware rolls back and closes session on handler exception."""
     fake_session = _make_fake_session()
     fake_session.execute = AsyncMock(
         return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=None))
@@ -97,6 +133,7 @@ async def test_db_session_middleware_rolls_back_on_exception(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_db_session_middleware_commits_on_success(monkeypatch):
+    """Verify that DbSessionMiddleware commits and closes session on successful handler execution."""
     fake_session = _make_fake_session()
     fake_session.execute = AsyncMock(
         return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=None))
@@ -124,6 +161,7 @@ async def test_db_session_middleware_commits_on_success(monkeypatch):
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_auth_middleware_creates_user_on_first_update(monkeypatch):
+    """Verify that AuthMiddleware persists a new User when no user exists yet."""
     settings = MagicMock()
     settings.seed_admin_telegram_ids = ""
 
@@ -164,6 +202,7 @@ async def test_auth_middleware_creates_user_on_first_update(monkeypatch):
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_auth_middleware_short_circuits_banned_user(monkeypatch):
+    """Verify that AuthMiddleware rejects banned users without invoking downstream handlers."""
     settings = MagicMock()
     settings.seed_admin_telegram_ids = ""
 
@@ -206,6 +245,7 @@ async def test_auth_middleware_short_circuits_banned_user(monkeypatch):
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_throttling_middleware_denies_rapid_updates():
+    """Verify that ThrottlingMiddleware blocks updates when rate limit is exhausted."""
     settings = MagicMock()
     settings.default_throttle_rate = 0  # effectively no tokens regenerate
 
@@ -233,6 +273,7 @@ async def test_throttling_middleware_denies_rapid_updates():
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_start_handler_shows_role_buttons():
+    """Verify that /start presents a menu with Student and Driver role options."""
     from bot.common.start import cmd_start
 
     fake_user = MagicMock()
@@ -263,6 +304,7 @@ async def test_start_handler_shows_role_buttons():
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_help_handler_responds():
+    """Verify that /help handler sends a help message to the user."""
     from bot.common.help import cmd_help
 
     message = MagicMock()
@@ -277,6 +319,7 @@ async def test_help_handler_responds():
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_about_handler_responds():
+    """Verify that /about handler sends an about message mentioning PackitBot."""
     from bot.common.help import cmd_about
 
     message = MagicMock()
@@ -291,6 +334,7 @@ async def test_about_handler_responds():
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_fallback_handler_replies_with_home():
+    """Verify that unrecognized input triggers the catch-all fallback with a Home button."""
     from bot.common.fallback import catch_all_message
 
     message = MagicMock()

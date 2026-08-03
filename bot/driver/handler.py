@@ -1,4 +1,35 @@
 # bot/driver/handler.py
+# ---------------------------------------------------------------------------
+# Code Logic:
+#   This module defines the aiogram Router for all driver-related conversation
+#   flows and callback interactions. It handles driver registration (FSM-based),
+#   approval status checks, availability toggling, and active delivery tracking
+#   including accept/reject flows and step-by-step status updates.
+#
+# Function Calls:
+#   - start_driver_registration() -> /register_driver command or text button
+#   - cancel_driver_registration() -> /cancel_driver_reg command or callback
+#   - process_full_name() -> FSM state: entering_full_name
+#   - process_phone_number() -> FSM state: entering_phone_number
+#   - process_vehicle_type() -> FSM state: selecting_vehicle_type
+#   - process_plate_number() -> FSM state: entering_plate_number
+#   - process_license_number() -> FSM state: entering_license_number
+#   - process_edit_field() -> callback: driver_edit:<field>
+#   - process_submit_registration() -> callback: driver_submit_reg
+#   - check_approval_status() -> "Check Approval Status" text button
+#   - toggle_availability_handler() -> "Go Available/Offline" text button or /toggle_availability
+#   - process_driver_accept() -> callback: driver_accept:<request_id>
+#   - active_delivery_dashboard_handler() -> "Active Delivery" text button or /active_delivery
+#   - process_delivery_status_step() -> callback: driver_step:<action>:<request_id>
+#   - process_driver_reject() -> callback: driver_reject:<request_id>
+#
+# Cross-References:
+#   - Depends on: aiogram Router/FSM, bot.driver.keyboards, bot.driver.service,
+#       bot.driver.schemas, bot.driver.states, bot.core.utils.validators,
+#       bot.core.constants.enums, bot.core.constants.messages, logging
+#   - Imported by: bot/driver/__init__.py (router inclusion)
+# ---------------------------------------------------------------------------
+
 import logging
 from aiogram import F, Router
 from aiogram.filters import Command
@@ -31,17 +62,21 @@ driver_router = Router()
 
 
 def _progress_bar(current: int, total: int = 5) -> str:
+    """Build a text-based progress bar for multi-step registration."""
+    # Use block characters to indicate filled vs remaining steps.
     filled = "█" * current
     empty = "░" * (total - current)
     return f"{filled}{empty}"
 
 
 def _step_prompt(step: int, total: int, prompt: str) -> str:
+    """Format a step prompt with a progress bar for the registration flow."""
     bar = _progress_bar(step, total)
     return f"Step {step}/{total} [{bar}]\n\n{prompt}"
 
 
 async def _show_review_screen(target: Message | CallbackQuery, state: FSMContext) -> None:
+    """Present collected driver registration data for final review and confirmation."""
     await state.set_state(DriverRegistrationFSM.confirming_registration)
     data = await state.get_data()
 
@@ -65,6 +100,7 @@ async def _show_review_screen(target: Message | CallbackQuery, state: FSMContext
 @driver_router.message(Command("register_driver"))
 @driver_router.message(F.text == "🚘 Register as Driver")
 async def start_driver_registration(message: Message, state: FSMContext, session=None) -> None:
+    """Initiate the driver registration flow or inform the user of their current status."""
     # Check if driver is already registered
     profile = await get_driver_profile_by_telegram_id(message.from_user.id, session=session)
     if profile:
@@ -91,6 +127,7 @@ async def start_driver_registration(message: Message, state: FSMContext, session
 @driver_router.message(Command("cancel_driver_reg"))
 @driver_router.callback_query(F.data == "driver_cancel_reg")
 async def cancel_driver_registration(event: Message | CallbackQuery, state: FSMContext) -> None:
+    """Cancel the driver registration process and reset the FSM."""
     await state.clear()
     msg = "Driver registration cancelled."
     if isinstance(event, CallbackQuery):
@@ -102,6 +139,7 @@ async def cancel_driver_registration(event: Message | CallbackQuery, state: FSMC
 
 @driver_router.message(DriverRegistrationFSM.entering_full_name)
 async def process_full_name(message: Message, state: FSMContext) -> None:
+    """Validate and store the driver's full name, then advance to phone number."""
     try:
         val = validate_full_name(message.text)
     except ValidationError as exc:
@@ -121,6 +159,7 @@ async def process_full_name(message: Message, state: FSMContext) -> None:
 
 @driver_router.message(DriverRegistrationFSM.entering_phone_number)
 async def process_phone_number(message: Message, state: FSMContext) -> None:
+    """Validate and store the driver's phone number, then advance to vehicle type."""
     try:
         val = validate_phone(message.text)
     except ValidationError as exc:
@@ -143,6 +182,7 @@ async def process_phone_number(message: Message, state: FSMContext) -> None:
 
 @driver_router.callback_query(DriverRegistrationFSM.selecting_vehicle_type, F.data.startswith("driver_vtype:"))
 async def process_vehicle_type(callback: CallbackQuery, state: FSMContext) -> None:
+    """Validate and store the selected vehicle type, then advance to plate number."""
     vtype = callback.data.split(":", 1)[1]
     try:
         val = validate_vehicle_type(vtype)
@@ -164,6 +204,7 @@ async def process_vehicle_type(callback: CallbackQuery, state: FSMContext) -> No
 
 @driver_router.message(DriverRegistrationFSM.entering_plate_number)
 async def process_plate_number(message: Message, state: FSMContext) -> None:
+    """Validate and store the vehicle plate number, then advance to license number."""
     try:
         val = validate_plate_number(message.text)
     except ValidationError as exc:
@@ -183,6 +224,7 @@ async def process_plate_number(message: Message, state: FSMContext) -> None:
 
 @driver_router.message(DriverRegistrationFSM.entering_license_number)
 async def process_license_number(message: Message, state: FSMContext) -> None:
+    """Validate and store the driver's license number, then show the review screen."""
     try:
         val = validate_license_number(message.text)
     except ValidationError as exc:
@@ -196,6 +238,7 @@ async def process_license_number(message: Message, state: FSMContext) -> None:
 
 @driver_router.callback_query(DriverRegistrationFSM.confirming_registration, F.data.startswith("driver_edit:"))
 async def process_edit_field(callback: CallbackQuery, state: FSMContext) -> None:
+    """Handle inline edit requests for individual registration fields."""
     field = callback.data.split(":", 1)[1]
     await callback.answer()
     await state.update_data(is_editing=True)
@@ -217,6 +260,7 @@ async def process_edit_field(callback: CallbackQuery, state: FSMContext) -> None
 
 @driver_router.callback_query(DriverRegistrationFSM.confirming_registration, F.data == "driver_submit_reg")
 async def process_submit_registration(callback: CallbackQuery, state: FSMContext, session=None) -> None:
+    """Persist driver registration DTO and clear the FSM on success."""
     await callback.answer()
     data = await state.get_data()
 
@@ -252,6 +296,7 @@ async def process_submit_registration(callback: CallbackQuery, state: FSMContext
 
 @driver_router.message(F.text == "🔄 Check Approval Status")
 async def check_approval_status(message: Message, session=None) -> None:
+    """Display the current approval status for the requesting driver."""
     profile = await get_driver_profile_by_telegram_id(message.from_user.id, session=session)
     if not profile:
         await message.answer("You have not registered as a driver yet. Use /register_driver to begin.")
@@ -284,6 +329,7 @@ async def check_approval_status(message: Message, session=None) -> None:
 @driver_router.message(F.text.in_({"🟢 Go Available", "🔴 Go Offline"}))
 @driver_router.message(Command("toggle_availability"))
 async def toggle_availability_handler(message: Message, session=None) -> None:
+    """Toggle the driver's availability status between AVAILABLE and OFFLINE."""
     profile = await get_driver_profile_by_telegram_id(message.from_user.id, session=session)
     if not profile:
         await message.answer("You are not registered as a driver. Use /register_driver to get started.")
@@ -704,4 +750,3 @@ async def process_driver_reject(callback: CallbackQuery, session=None) -> None:
         await session.rollback()
         logger.error(f"Error in driver_reject: {exc}")
         await callback.answer("Something went wrong. Please try again.", show_alert=True)
-

@@ -1,10 +1,33 @@
 # bot/driver/keyboards.py
+# ---------------------------------------------------------------------------
+# Code Logic:
+#   This module defines all aiogram keyboard factories used by the driver flow.
+#   It provides inline and reply keyboards for registration, menu navigation,
+#   delivery assignment response, and step-by-step status progression.
+#
+# Function Calls:
+#   - vehicle_type_keyboard() -> used in process_vehicle_type() and process_edit_field()
+#   - driver_registration_review_keyboard() -> used in _show_review_screen()
+#   - driver_pending_menu() -> used in start_driver_registration(), check_approval_status(),
+#       toggle_availability_handler()
+#   - driver_persistent_menu() -> used in start_driver_registration(), check_approval_status(),
+#       toggle_availability_handler(), active_delivery_dashboard_handler()
+#   - driver_assignment_response_keyboard() -> used when a driver is assigned a request
+#   - delivery_status_update_keyboard() -> used in process_driver_accept(),
+#       process_delivery_status_step()
+#
+# Cross-References:
+#   - Depends on: aiogram InlineKeyboardButton/Markup, ReplyKeyboardMarkup, KeyboardButton,
+#       bot.core.constants.enums (DriverAvailability, DriverStatus, RequestStatus)
+#   - Imported by: bot/driver/handler.py, bot/admin/handler.py (likely for assignment)
+# ---------------------------------------------------------------------------
+
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from bot.core.constants.enums import DriverAvailability, DriverStatus, RequestStatus
 
 
-
 def vehicle_type_keyboard() -> InlineKeyboardMarkup:
+    """Build inline keyboard for selecting a vehicle type during registration."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -25,6 +48,7 @@ def vehicle_type_keyboard() -> InlineKeyboardMarkup:
 
 
 def driver_registration_review_keyboard() -> InlineKeyboardMarkup:
+    """Build inline keyboard for reviewing and editing registration fields before submission."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -63,7 +87,7 @@ def driver_pending_menu() -> ReplyKeyboardMarkup:
 
 
 def driver_persistent_menu(availability: DriverAvailability = DriverAvailability.OFFLINE) -> ReplyKeyboardMarkup:
-    """Full persistent menu for approved drivers."""
+    """Full persistent menu for approved drivers, with dynamic availability toggle text."""
     if availability == DriverAvailability.AVAILABLE:
         toggle_text = "🔴 Go Offline"
     elif availability == DriverAvailability.OFFLINE:
@@ -126,5 +150,3 @@ def delivery_status_update_keyboard(request_id: int, current_status: RequestStat
 
     buttons.append([InlineKeyboardButton(text="🏠 Home", callback_data="home")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-
