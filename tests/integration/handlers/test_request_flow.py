@@ -101,6 +101,12 @@ class TestRequestCreationFlowIntegration:
         req.id = 1
         session.get.return_value = req
 
+        user_row = MagicMock()
+        user_row.id = 1
+        user_result = MagicMock()
+        user_result.scalar_one_or_none.return_value = user_row
+        session.execute.return_value = user_result
+
         repo = RequestRepository(session)
         repo.create = AsyncMock(return_value=req)
 
@@ -135,6 +141,13 @@ class TestRequestEditFlowIntegration:
         req.status = RequestStatus.ASSIGNED
 
         session = AsyncMock()
+
+        user_row = MagicMock()
+        user_row.id = 1
+        user_result = MagicMock()
+        user_result.scalar_one_or_none.return_value = user_row
+        session.execute.return_value = user_result
+
         repo = RequestRepository(session)
         repo.get_by_id = AsyncMock(return_value=req)
 
@@ -153,6 +166,13 @@ class TestRequestCancelFlowIntegration:
         req.status = RequestStatus.DELIVERED
 
         session = AsyncMock()
+
+        user_row = MagicMock()
+        user_row.id = 1
+        user_result = MagicMock()
+        user_result.scalar_one_or_none.return_value = user_row
+        session.execute.return_value = user_result
+
         repo = RequestRepository(session)
         repo.get_by_id = AsyncMock(return_value=req)
 
@@ -172,6 +192,12 @@ class TestRequestCancelFlowIntegration:
         req.driver_id = 7
 
         session = AsyncMock()
+
+        user_row = MagicMock()
+        user_row.id = 1
+        user_result = MagicMock()
+        user_result.scalar_one_or_none.return_value = user_row
+        session.execute.return_value = user_result
 
         repo = RequestRepository(session)
         repo.get_by_id = AsyncMock(return_value=req)

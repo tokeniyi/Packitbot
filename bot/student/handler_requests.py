@@ -1,3 +1,4 @@
+from aiogram.filters import state
 from bot.core.utils.validators import (
     validate_dropoff_address,
     validate_pickup_detail,
@@ -423,10 +424,16 @@ async def confirm_request_update(callback: CallbackQuery, state: FSMContext, ses
         await callback.message.answer("Session unavailable.")
         return
 
+    actor_id = await _resolve_user_id(callback.from_user.id, session)
+    if actor_id is None:
+        await callback.message.answer("User profile not found.")
+        await state.clear()
+        return
+
     service = RequestService(session)
     dto = UpdateRequestDTO(
         request_id=req_id,
-        actor_id=callback.from_user.id,
+        actor_id=actor_id,
         changed_fields=changes,
     )
 
@@ -495,10 +502,16 @@ async def confirm_cancel_request(callback: CallbackQuery, session=None) -> None:
         await callback.message.answer("Session unavailable.")
         return
 
+    actor_id = await _resolve_user_id(callback.from_user.id, session)
+    if actor_id is None:
+        await callback.message.answer("User profile not found.")
+        await state.clear()
+        return
+
     service = RequestService(session)
     dto = CancelRequestDTO(
         request_id=req_id,
-        actor_id=callback.from_user.id,
+        actor_id=actor_id,
         cancelled_by=CancelledBy.STUDENT,
         cancellation_reason="Cancelled by student via bot",
     )

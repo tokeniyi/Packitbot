@@ -6,6 +6,7 @@ Refactoring Changes:
 4. Preserved single-field editing flag logic.
 """
 
+from aiogram.filters import state
 from bot.core.constants.quick_replies import BTN_MY_REQUESTS, BTN_HELP, BTN_MY_PROFILE
 from bot.core.models.delivery_request import DeliveryRequest
 from bot.core.models.student_profile import StudentProfile
@@ -376,7 +377,7 @@ async def _show_profile(target: Message | CallbackQuery, state: FSMContext, sess
     result = await session.execute(
         select(func.count(DeliveryRequest.id))
         .where(
-            DeliveryRequest.student_id == uid,
+            DeliveryRequest.student_id == user.id,
             DeliveryRequest.status.in_(
                 {
                     RequestStatus.PENDING,
@@ -394,7 +395,7 @@ async def _show_profile(target: Message | CallbackQuery, state: FSMContext, sess
     result = await session.execute(
         select(func.count(DeliveryRequest.id))
         .where(
-            DeliveryRequest.student_id == uid,
+            DeliveryRequest.student_id == user.id,
             DeliveryRequest.status == RequestStatus.DELIVERED,
         )
     )
@@ -403,7 +404,7 @@ async def _show_profile(target: Message | CallbackQuery, state: FSMContext, sess
     result = await session.execute(
         select(func.count(DeliveryRequest.id))
         .where(
-            DeliveryRequest.student_id == uid,
+            DeliveryRequest.student_id == user.id,
             DeliveryRequest.status == RequestStatus.CANCELLED,
         )
     )
@@ -532,27 +533,6 @@ async def process_profile_hall_edit(callback: CallbackQuery, state: FSMContext, 
     await state.clear()
     await callback.message.answer("✅ Default hall updated successfully.", reply_markup=student_persistent_menu())
     await _show_profile(callback, state, session=session, user_id=user_id)
-
-@student_router.callback_query(F.data == "my_reqs_list")
-async def profile_my_requests(callback: CallbackQuery, state: FSMContext, session=None) -> None:
-    await callback.answer()
-    await state.clear()
-    if session is None:
-        await callback.message.answer(MSG_EMPTY_STATE_REQUESTS, reply_markup=student_persistent_menu())
-        return
-
-    repo = RequestRepository(session)
-    user_id = callback.from_user.id
-    requests = await repo.get_history_for_student(student_id=user_id, page=1)
-
-    if not requests:
-        await callback.answer()
-        await callback.message.answer(MSG_EMPTY_STATE_REQUESTS, reply_markup=student_persistent_menu())
-        return
-
-    paginated_page = paginate(requests, page=1)
-    kb = my_requests_list_keyboard(paginated_page.items, page=paginated_page.page, total_pages=paginated_page.total_pages)
-    await callback.message.edit_text("📋 <b>Your Delivery Requests:</b>", parse_mode="HTML", reply_markup=kb)
 
 
 # await callback.message.edit_text(MSG_EMPTY_STATE_REQUESTS, reply_markup=student_persistent_menu())
@@ -1011,7 +991,7 @@ async def show_my_requests_list(message: Message, session=None, page: int = 1) -
     if user_id is None:
         await message.answer("User profile not found.", reply_markup=student_persistent_menu())
         return
-    requests = await repo.get_history_for_student(student_id=user_id, page=1)
+    requests = await repo.get_history_for_student(student_id=user_id, page=page)
 
     if not requests:
         await message.answer(MSG_EMPTY_STATE_REQUESTS, reply_markup=student_persistent_menu())
@@ -1038,8 +1018,11 @@ async def my_requests_page_callback(callback: CallbackQuery, session=None) -> No
         return
 
     repo = RequestRepository(session)
-    user_id = callback.from_user.id
-    requests = await repo.get_history_for_student(student_id=user_id, page=1)
+    user_id = await _resolve_user_id(callback.from_user.id, session)
+    if user_id is None:
+        await callback.message.answer("User profile not found.", reply_markup=student_persistent_menu())
+        return
+    requests = await repo.get_history_for_student(student_id=user_id, page=page)
 
     if not requests:
         await callback.message.answer(MSG_EMPTY_STATE_REQUESTS, reply_markup=student_persistent_menu())
@@ -1290,10 +1273,16 @@ async def confirm_request_update(callback: CallbackQuery, state: FSMContext, ses
         await callback.message.answer("Session unavailable.")
         return
 
+    actor_id = await _resolve_user_id(callback.from_user.id, session)
+    if actor_id is None:
+        await callback.message.answer("User profile not found.")
+        await state.clear()
+        return
+
     service = RequestService(session)
     dto = UpdateRequestDTO(
         request_id=req_id,
-        actor_id=callback.from_user.id,
+        actor_id=actor_id,
         changed_fields=changes,
     )
 
@@ -1372,10 +1361,16 @@ async def confirm_cancel_request(callback: CallbackQuery, session=None) -> None:
         await callback.message.answer("Session unavailable.")
         return
 
+    actor_id = await _resolve_user_id(callback.from_user.id, session)
+    if actor_id is None:
+        await callback.message.answer("User profile not found.")
+        await state.clear()
+        return
+
     service = RequestService(session)
     dto = CancelRequestDTO(
         request_id=req_id,
-        actor_id=callback.from_user.id,
+        actor_id=actor_id,
         cancelled_by=CancelledBy.STUDENT,
         cancellation_reason="Cancelled by student via bot",
     )
@@ -1539,7 +1534,14 @@ async def _finalize_feedback_submission(
         return
 
     service = RequestService(session)
-    user_id = target.from_user.id
+    user_id = await _resolve_user_id(target.from_user.id, session)
+    if user_id is None:
+        err_msg = "User profile not found."
+        if isinstance(target, CallbackQuery):
+            await target.message.answer(err_msg, reply_markup=student_persistent_menu())
+        else:
+            await target.answer(err_msg, reply_markup=student_persistent_menu())
+        return
     dto = CreateFeedbackDTO(
         request_id=req_id,
         student_id=user_id,
