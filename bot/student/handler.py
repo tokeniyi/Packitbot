@@ -203,7 +203,7 @@ async def submit_registration(callback: CallbackQuery, state: FSMContext) -> Non
         return
 
     await state.clear()
-    await callback.message.edit_text(
+    await callback.message.answer(
         MSG_REG_SUCCESS,
         reply_markup=student_persistent_menu(),
     )
@@ -1042,7 +1042,7 @@ async def my_requests_page_callback(callback: CallbackQuery, session=None) -> No
     requests = await repo.get_history_for_student(student_id=user_id, page=1)
 
     if not requests:
-        await callback.message.edit_text(MSG_EMPTY_STATE_REQUESTS, reply_markup=student_persistent_menu())
+        await callback.message.answer(MSG_EMPTY_STATE_REQUESTS, reply_markup=student_persistent_menu())
         return
 
     paginated_page = paginate(requests, page=page)
@@ -1300,13 +1300,13 @@ async def confirm_request_update(callback: CallbackQuery, state: FSMContext, ses
     try:
         updated_req = await service.update_request(dto)
         await state.clear()
-        await callback.message.edit_text(
+        await callback.message.answer(
             f"✅ Request #{updated_req.id} updated successfully!",
             reply_markup=student_persistent_menu(),
         )
     except PermissionDeniedError:
         await state.clear()
-        await callback.message.edit_text(
+        await callback.message.answer(
             "⚠️ Request can no longer be edited because its status is no longer PENDING.",
             reply_markup=student_persistent_menu(),
         )
@@ -1390,12 +1390,12 @@ async def confirm_cancel_request(callback: CallbackQuery, session=None) -> None:
                 driver.availability = DriverAvailability.AVAILABLE
                 await session.flush()
 
-        await callback.message.edit_text(
+        await callback.message.answer(
             f"🚫 Request #{updated_req.id} has been cancelled successfully.",
             reply_markup=student_persistent_menu(),
         )
     except (PermissionDeniedError, InvalidStatusTransitionError) as exc:
-        await callback.message.edit_text(
+        await callback.message.answer(
             f"⚠️ Request cancellation failed: {exc}",
             reply_markup=student_persistent_menu(),
         )
@@ -1560,7 +1560,7 @@ async def _finalize_feedback_submission(
         success_msg = f"🎉 <b>Thank you!</b> Your feedback for Request #{req_id} has been submitted."
 
         if isinstance(target, CallbackQuery):
-            await target.message.edit_text(success_msg, parse_mode="HTML", reply_markup=student_persistent_menu())
+            await target.message.answer(success_msg, parse_mode="HTML", reply_markup=student_persistent_menu())
         else:
             await target.answer(success_msg, parse_mode="HTML", reply_markup=student_persistent_menu())
 
@@ -1568,6 +1568,6 @@ async def _finalize_feedback_submission(
         await state.clear()
         err_msg = f"❌ Failed to submit feedback: {exc}"
         if isinstance(target, CallbackQuery):
-            await target.message.edit_text(err_msg, reply_markup=student_persistent_menu())
+            await target.message.answer(err_msg, reply_markup=student_persistent_menu())
         else:
             await target.answer(err_msg, reply_markup=student_persistent_menu())

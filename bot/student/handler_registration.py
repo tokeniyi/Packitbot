@@ -172,7 +172,7 @@ async def submit_registration(callback: CallbackQuery, state: FSMContext) -> Non
         return
 
     await state.clear()
-    await callback.message.edit_text(
+    await callback.message.answer(
         MSG_REG_SUCCESS,
         reply_markup=student_persistent_menu(),
     )
