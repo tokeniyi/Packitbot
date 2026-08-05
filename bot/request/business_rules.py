@@ -9,6 +9,7 @@ from bot.core.models.driver_profile import DriverProfile
 
 
 def can_student_cancel(request: DeliveryRequest, actor_id: int) -> bool:
+    """Validate whether student can cancel the given delivery request."""
     if request.student_id != actor_id:
         return False
     return request.status in {
@@ -18,11 +19,13 @@ def can_student_cancel(request: DeliveryRequest, actor_id: int) -> bool:
     }
 
 
-def can_edit_request(request: DeliveryRequest) -> bool:
-    return request.status == RequestStatus.PENDING
+def can_edit_request(request: DeliveryRequest, actor_id: int) -> bool:
+    """Validate whether student can edit the given request details."""
+    return request.student_id == actor_id and request.status == RequestStatus.PENDING
 
 
 def can_assign_driver(driver: DriverProfile) -> bool:
+    """Validate whether a driver is in valid status and available for assignment."""
     return (
         driver.status == DriverStatus.APPROVED
         and driver.availability == DriverAvailability.AVAILABLE
@@ -30,5 +33,6 @@ def can_assign_driver(driver: DriverProfile) -> bool:
 
 
 def can_rate_delivery(request: DeliveryRequest, existing_feedback: Any = None) -> bool:
+    """Validate whether a completed delivery request can receive feedback."""
     feedback = existing_feedback or getattr(request, "feedback", None)
     return request.status == RequestStatus.DELIVERED and feedback is None

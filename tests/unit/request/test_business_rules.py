@@ -71,25 +71,29 @@ class TestCanStudentCancel:
 
 
 class TestCanEditRequest:
-    def test_can_edit_pending(self):
-        req = _make_request(status=RequestStatus.PENDING)
-        assert can_edit_request(req) is True
+    def test_can_edit_pending_own_request(self):
+        req = _make_request(status=RequestStatus.PENDING, student_id=1)
+        assert can_edit_request(req, actor_id=1) is True
 
-    def test_cannot_edit_assigned(self):
-        req = _make_request(status=RequestStatus.ASSIGNED)
-        assert can_edit_request(req) is False
+    def test_cannot_edit_pending_other_user_request(self):
+        req = _make_request(status=RequestStatus.PENDING, student_id=1)
+        assert can_edit_request(req, actor_id=999) is False
 
-    def test_cannot_edit_accepted(self):
-        req = _make_request(status=RequestStatus.ACCEPTED)
-        assert can_edit_request(req) is False
+    def test_cannot_edit_assigned_even_if_owner(self):
+        req = _make_request(status=RequestStatus.ASSIGNED, student_id=1)
+        assert can_edit_request(req, actor_id=1) is False
 
-    def test_cannot_edit_delivered(self):
-        req = _make_request(status=RequestStatus.DELIVERED)
-        assert can_edit_request(req) is False
+    def test_cannot_edit_accepted_even_if_owner(self):
+        req = _make_request(status=RequestStatus.ACCEPTED, student_id=1)
+        assert can_edit_request(req, actor_id=1) is False
 
-    def test_cannot_edit_cancelled(self):
-        req = _make_request(status=RequestStatus.CANCELLED)
-        assert can_edit_request(req) is False
+    def test_cannot_edit_delivered_even_if_owner(self):
+        req = _make_request(status=RequestStatus.DELIVERED, student_id=1)
+        assert can_edit_request(req, actor_id=1) is False
+
+    def test_cannot_edit_cancelled_even_if_owner(self):
+        req = _make_request(status=RequestStatus.CANCELLED, student_id=1)
+        assert can_edit_request(req, actor_id=1) is False
 
 
 class TestCanAssignDriver:

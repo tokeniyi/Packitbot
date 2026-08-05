@@ -26,6 +26,37 @@ MSG_MANAGEMENT_PORTAL = (
     "💡 *Tip: You can also use the inline buttons below to navigate quick actions!(not implemented yet 😁*"
 )
 
+MSG_STATS = (
+    "📊 **System Statistics**\n\n"
+    "📦 **Delivery Metrics**\n"
+    "• Total Requests: `{total_requests}`\n"
+    "• Pending: `{pending_requests}`\n"
+    "• Assigned: `{assigned_requests}`\n"
+    "• Accepted: `{accepted_requests}`\n"
+    "• En Route: `{en_route_requests}`\n"
+    "• Picked Up: `{picked_up_requests}`\n"
+    "• In Transit: `{in_transit_requests}`\n"
+    "• Delivered: `{delivered_requests}`\n"
+    "• Cancelled: `{cancelled_requests}`\n"
+    "• Failed: `{failed_requests}`\n"
+    "• Rejected by Driver: `{rejected_by_driver_requests}`\n"
+    "• Avg Delivery Time: `{avg_delivery_duration}`\n\n"
+    "👥 **User Overview**\n"
+    "• Total Users: `{total_users}`\n"
+    "• Students: `{total_students}`\n"
+    "• Drivers: `{total_drivers}`\n"
+    "• Admins: `{total_admins}`\n\n"
+    "🚗 **Driver Status**\n"
+    "• Approved: `{approved_drivers}`\n"
+    "• Active (Online/Busy): `{active_drivers}`\n"
+    "• Pending Approval: `{pending_drivers}`\n"
+    "• Rejected: `{rejected_drivers}`\n"
+    "• Suspended: `{suspended_drivers}`\n\n"
+    "⭐ **Feedback**\n"
+    "• Total Ratings: `{total_feedbacks}`\n"
+    "• Avg Rating: `{avg_rating}`\n"
+)
+
 
 MSG_START_ROLE_SELECTION_STUDENT = "📚 Student"
 MSG_START_ROLE_SELECTION_DRIVER = "🚗 Driver"
@@ -70,7 +101,17 @@ MSG_WELCOME_GENERAL = (
 
 
 # Student registration flow
-MSG_STUDENT_WELCOME = "🎓 **Student Portal**\n\nReady to send packages? Let's get you set up!"
+MSG_STUDENT_WELCOME = (
+    "🎓 **Welcome to the Student Portal!**\n\n"
+    "We're ready whenever you are! 📦\n\n"
+    "🚀 **Get Started**\n"
+    "• /request — Create a new delivery request\n"
+    "• /my_requests — View and track your requests\n\n"
+    "👤 **Your Profile:**\n"
+    "• View your details, default hall, and track your active or past delivery requests anytime.\n"
+    "• Access it directly via the **Profile** button on your main menu or send /profile!\n\n"
+    "⚙️ Want to update your profile? Send /profile to open your profile!"
+)
 
 
 MSG_REG_STEP_PROMPT = "📌 **Step {current} of {total}** {progress_bar}\n\n{prompt}"

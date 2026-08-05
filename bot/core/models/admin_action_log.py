@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Enum, ForeignKey, String
+from sqlalchemy import Enum, ForeignKey, String, BigInteger
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from bot.core.constants.enums import AdminActionType
@@ -21,6 +21,7 @@ class AdminActionLog(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     admin_id: Mapped[int] = mapped_column(
+        BigInteger,
         ForeignKey("users.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
@@ -29,11 +30,13 @@ class AdminActionLog(Base, TimestampMixin):
         Enum(AdminActionType), nullable=False, index=True
     )
     target_user_id: Mapped[int | None] = mapped_column(
+        BigInteger,
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
     target_request_id: Mapped[int | None] = mapped_column(
+        BigInteger,
         ForeignKey("delivery_requests.id", ondelete="SET NULL"),
         nullable=True,
         index=True,

@@ -2,8 +2,10 @@ import asyncio
 import logging
 
 from aiogram.client.bot import Bot
-from aiogram.types import BotCommand, BotCommandScopeChat, BotCommandScopeDefault
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.types import BotCommand, BotCommandScopeChat, BotCommandScopeDefault, ErrorEvent
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 # 1. Register all SQLAlchemy models before running any DB queries
 import bot.core.models  # noqa: F401
@@ -19,9 +21,12 @@ from bot.core.constants.commands import (
     STUDENT_COMMANDS,
 )
 from bot.core.constants.enums import AccountStatus, UserRole
+from bot.core.constants.messages import MSG_SOMETHING_WENT_WRONG
 from bot.core.db.base_class import Base
 from bot.core.db.session import async_session as make_session
 from bot.core.db.session import engine
+from bot.core.exceptions import PackitbotError
+from bot.core.keyboards.common_kb import HomeButton
 from bot.core.loader import get_bot, get_dispatch
 from bot.core.middlewares.auth import AuthMiddleware
 from bot.core.middlewares.db_session import DbSessionMiddleware
@@ -113,6 +118,97 @@ def setup_routers(dp) -> None:
 
     # ALWAYS KEEP FALLBACK ROUTER LAST!
     dp.include_router(fallback_router)
+
+
+def setup_error_handlers(dp) -> None:
+    """Global exception handler for Packitbot domain errors, IntegrityError, and stale callback queries."""
+
+    @dp.errors()
+    async def global_error_handler(event: ErrorEvent) -> bool:
+        exception = event.exception
+        update = event.update
+
+        message = update.message if update else None
+        callback_query = update.callback_query if update else None
+
+        if isinstance(exception, PackitbotError):
+            logger.warning("Domain exception caught by global handler: %s", exception)
+            user_msg = str(exception) or MSG_SOMETHING_WENT_WRONG
+            markup = HomeButton()
+            if callback_query:
+                try:
+                    await callback_query.answer(user_msg, show_alert=True)
+                except TelegramBadRequest as exc:
+                    logger.info("Stale callback query in PackitbotError handler: %s", exc)
+                if callback_query.message:
+                    try:
+                        await callback_query.message.answer(user_msg, reply_markup=markup)
+                    except TelegramBadRequest:
+                        pass
+            elif message:
+                try:
+                    await message.answer(user_msg, reply_markup=markup)
+                except TelegramBadRequest:
+                    pass
+            return True
+
+        if isinstance(exception, IntegrityError):
+            logger.error("Database IntegrityError caught by global handler: %s", exception, exc_info=True)
+            user_msg = "A database error occurred or resource already exists. Please try again."
+            markup = HomeButton()
+            if callback_query:
+                try:
+                    await callback_query.answer(user_msg, show_alert=True)
+                except TelegramBadRequest:
+                    pass
+                if callback_query.message:
+                    try:
+                        await callback_query.message.answer(user_msg, reply_markup=markup)
+                    except TelegramBadRequest:
+                        pass
+            elif message:
+                try:
+                    await message.answer(user_msg, reply_markup=markup)
+                except TelegramBadRequest:
+                    pass
+            return True
+
+        if isinstance(exception, TelegramBadRequest):
+            err_msg = str(exception).lower()
+            if (
+                "query is too old" in err_msg
+                or "query id is invalid" in err_msg
+                or "message is not modified" in err_msg
+                or "message to edit not found" in err_msg
+            ):
+                logger.warning("Handled stale or invalid TelegramBadRequest smoothly: %s", exception)
+                if callback_query:
+                    try:
+                        await callback_query.answer("This request or button has expired.", show_alert=True)
+                    except Exception:
+                        pass
+                return True
+            logger.error("Unhandled TelegramBadRequest caught by global handler: %s", exception, exc_info=True)
+            return True
+
+        logger.error("Unhandled exception caught by global handler: %s", exception, exc_info=True)
+        markup = HomeButton()
+        if callback_query:
+            try:
+                await callback_query.answer(MSG_SOMETHING_WENT_WRONG, show_alert=True)
+            except Exception:
+                pass
+            if callback_query.message:
+                try:
+                    await callback_query.message.answer(MSG_SOMETHING_WENT_WRONG, reply_markup=markup)
+                except Exception:
+                    pass
+        elif message:
+            try:
+                await message.answer(MSG_SOMETHING_WENT_WRONG, reply_markup=markup)
+            except Exception:
+                pass
+        return True
 
 
 async def set_bot_commands(bot: Bot) -> None:
@@ -209,6 +305,7 @@ def main() -> None:
     bot = get_bot()
 
     setup_routers(dp)
+    setup_error_handlers(dp)
 
     # Middleware Order (Inflow order: Logging -> DbSession -> Throttling -> Auth)
     dp.update.outer_middleware(LoggingMiddleware())

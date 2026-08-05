@@ -6,6 +6,8 @@ Refactoring Summary:
 4. Added Bot instance dependency injection to update commands dynamically.
 """
 
+from aiogram.exceptions import TelegramBadRequest
+from bot.student.keyboards import student_persistent_menu
 import logging
 
 from aiogram import Bot, F, Router
@@ -123,6 +125,58 @@ async def cmd_start(
 
     else:
         await message.answer(MSG_WELCOME_GENERAL)
+
+
+@start_router.callback_query(F.data == "home")
+async def home_callback(callback: CallbackQuery, state: FSMContext, bot: Bot, user: User | None = None) -> None:
+    await callback.answer()
+    await state.clear()
+
+    if callback.message is None:
+        return
+
+    try:
+        await callback.message.delete()
+    except TelegramBadRequest:
+        pass
+
+    if user is None:
+        await callback.message.answer("Something went wrong. Please try again.", reply_markup=student_persistent_menu())
+        return
+
+    if user.role is None:
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=MSG_START_ROLE_SELECTION_STUDENT,
+                        callback_data="role:student",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text=MSG_START_ROLE_SELECTION_DRIVER,
+                        callback_data="role:driver",
+                    )
+                ],
+            ]
+        )
+        await callback.message.answer(MSG_START_ROLE_SELECTION, reply_markup=keyboard)
+
+    elif user.role == UserRole.STUDENT:
+        await _set_user_menu(bot, callback.message.chat.id, STUDENT_COMMANDS)
+        await callback.message.answer(MSG_STUDENT_WELCOME)
+
+    elif user.role == UserRole.DRIVER:
+        await _set_user_menu(bot, callback.message.chat.id, DRIVER_COMMANDS)
+        await callback.message.answer(MSG_DRIVER_WELCOME)
+
+    elif user.role == UserRole.ADMIN:
+        await _set_user_menu(bot, callback.message.chat.id, ADMIN_COMMANDS)
+        await callback.message.answer(MSG_START_ADMIN_WELCOME)
+
+    else:
+        await callback.message.answer(MSG_WELCOME_GENERAL)
 
 
 @start_router.callback_query(F.data == "role:student")

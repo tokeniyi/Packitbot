@@ -38,5 +38,6 @@ ALLOWED_TRANSITIONS: dict[RequestStatus, set[RequestStatus]] = {
 
 
 def can_transition(old_status: RequestStatus, new_status: RequestStatus) -> bool:
+    """Check if transitioning from old_status to new_status is allowed by domain rules."""
     allowed = ALLOWED_TRANSITIONS.get(old_status, set())
     return new_status in allowed

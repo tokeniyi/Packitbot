@@ -22,3 +22,7 @@ class InvalidStatusTransitionError(PackitbotError):
 
 class DriverUnavailableError(PackitbotError):
     """Raised when a driver is not available for assignment."""
+
+
+class DuplicateResourceError(PackitbotError):
+    """Raised when a resource already exists (e.g., unique constraint violation)."""

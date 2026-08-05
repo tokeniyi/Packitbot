@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Enum, ForeignKey, String
+from sqlalchemy import Enum, ForeignKey, String, BigInteger
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from bot.core.constants.enums import RequestStatus
@@ -32,6 +32,7 @@ class RequestStatusLog(Base, TimestampMixin):
         Enum(RequestStatus), nullable=False, index=True
     )
     changed_by_user_id: Mapped[int | None] = mapped_column(
+        BigInteger,
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
