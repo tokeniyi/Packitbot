@@ -343,5 +343,5 @@ async def test_fallback_handler_replies_with_home():
     message.chat.id = 1
     message.chat.type = "private"
 
-    await catch_all_message(message, MagicMock())
+    await catch_all_message(message)
     message.answer.assert_awaited_once()
