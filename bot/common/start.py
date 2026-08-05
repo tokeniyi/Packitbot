@@ -132,11 +132,13 @@ async def home_callback(callback: CallbackQuery, state: FSMContext, bot: Bot, us
     await callback.answer()
     await state.clear()
 
-    if callback.message:
-        try:
-            await callback.message.delete()
-        except TelegramBadRequest:
-            pass
+    if callback.message is None:
+        return
+
+    try:
+        await callback.message.delete()
+    except TelegramBadRequest:
+        pass
 
     if user is None:
         await callback.message.answer("Something went wrong. Please try again.", reply_markup=student_persistent_menu())
