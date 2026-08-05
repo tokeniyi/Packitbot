@@ -158,5 +158,7 @@ class TestDriverRegistrationFlowIntegration:
                 license_number="DL-987654",
             )
 
-            with pytest.raises(Exception):
+            from bot.core.exceptions import DuplicateResourceError
+
+            with pytest.raises(DuplicateResourceError):
                 await register_driver(dto, session=session)
