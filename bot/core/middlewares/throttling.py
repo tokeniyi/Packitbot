@@ -1,3 +1,25 @@
+"""Rate-limiting middleware for the Packitbot Telegram bot.
+
+This middleware implements a token-bucket throttling algorithm
+to prevent users from sending too many updates in rapid
+succession. It tracks token counts per user in an in-memory
+dictionary and replenishes tokens based on a configurable
+rate.
+
+Classes:
+    - ThrottlingMiddleware: aiogram BaseMiddleware subclass for rate limiting.
+
+Function Calls:
+    - __call__(handler, event, data) -> Any
+    - _get_redis() -> Redis
+
+Cross-References:
+    - Depends on: aiogram BaseMiddleware, redis.asyncio.Redis,
+        bot.core.config.Settings, bot.core.constants.messages.MSG_SLOW_DOWN,
+        bot.core.keyboards.common_kb.HomeButton
+    - Imported by: bot/main.py
+"""
+
 import asyncio
 import logging
 import time
@@ -16,12 +38,36 @@ T = TypeVar("T")
 
 
 class ThrottlingMiddleware(BaseMiddleware):
+    """Middleware that rate-limits user updates using a token bucket algorithm.
+
+    Tracks a token count per Telegram user. Tokens regenerate
+    over time based on ``throttle_rate``. When tokens are
+    exhausted the user receives a slow-down message and the
+    handler is not invoked.
+
+    Attributes:
+        settings: Application settings providing throttle rate and Redis URL.
+        throttle_rate: The rate at which tokens regenerate per second.
+        tokens: In-memory dict mapping user Telegram IDs to token state.
+    """
+
     def __init__(self, settings: Settings):
+        """Initialize the throttling middleware with application settings.
+
+        Args:
+            settings: The application Settings object providing
+                default_throttle_rate and redis_url.
+        """
         self.settings = settings
         self.throttle_rate = self.settings.default_throttle_rate
         self.tokens: dict[int, dict] = {}
 
     async def _get_redis(self) -> Redis:
+        """Create and return a Redis client from the configured URL.
+
+        Returns:
+            A connected Redis async client.
+        """
         return Redis.from_url(self.settings.redis_url)
 
     async def __call__(
@@ -30,6 +76,22 @@ class ThrottlingMiddleware(BaseMiddleware):
         event: Update,
         data: dict[str, Any],
     ) -> Any:
+        """Check the user's token balance before invoking the handler.
+
+        Extracts the Telegram user ID from the update, computes
+        token regeneration since the last check, denies the request
+        if no tokens remain, or decrements a token and forwards
+        to the handler.
+
+        Args:
+            handler: The next handler in the middleware chain.
+            event: The incoming aiogram Update object.
+            data: The handler data dict to pass along.
+
+        Returns:
+            The result of the downstream handler, or None if
+            the request was throttled.
+        """
         user_telegram_id = None
         if event.message:
             user_telegram_id = event.message.from_user.id

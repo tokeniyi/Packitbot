@@ -1,3 +1,21 @@
+"""Logging middleware for the Packitbot Telegram bot.
+
+This middleware logs every inbound update with sanitized
+content (PII such as phone numbers and matric numbers are
+masked) before passing the update to the next handler.
+
+Classes:
+    - LoggingMiddleware: aiogram BaseMiddleware subclass for update logging.
+
+Function Calls:
+    - sanitize_pii(text) -> str | None
+    - __call__(handler, event, data) -> Any
+
+Cross-References:
+    - Depends on: aiogram BaseMiddleware, aiogram.types.Update, re
+    - Imported by: bot/main.py
+"""
+
 import logging
 import re
 from aiogram import BaseMiddleware
@@ -10,6 +28,17 @@ MATRIC_PII_REGEX = re.compile(r"\b\d{2}/?[A-Za-z0-9]{4,6}\b", re.IGNORECASE)
 
 
 def sanitize_pii(text: str | None) -> str | None:
+    """Mask phone numbers and matric numbers in text to prevent PII leakage in logs.
+
+    Replaces Nigerian phone numbers and matriculation numbers
+    with placeholder tokens before logging.
+
+    Args:
+        text: The raw text to sanitize, or None.
+
+    Returns:
+        The sanitized text with PII masked, or None if input was None.
+    """
     if not text:
         return text
     sanitized = PHONE_PII_REGEX.sub("[PHONE MASKED]", text)
@@ -18,7 +47,24 @@ def sanitize_pii(text: str | None) -> str | None:
 
 
 class LoggingMiddleware(BaseMiddleware):
+    """Middleware that logs inbound updates with PII sanitization.
+
+    Extracts user ID, update type, timestamp, and content from
+    each incoming update, sanitizes PII from the content, and
+    logs the information before forwarding to the next handler.
+    """
+
     async def __call__(self, handler, event: Update, data: dict):
+        """Log the inbound update and forward it to the next handler.
+
+        Args:
+            handler: The next handler in the middleware chain.
+            event: The incoming aiogram Update object.
+            data: The handler data dict to pass along.
+
+        Returns:
+            The result of the downstream handler.
+        """
         user_id = None
         update_type = None
         timestamp = None

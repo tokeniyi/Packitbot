@@ -1,25 +1,25 @@
-"""initial schema
+"""Initial database schema for the Packitbot application.
+
+This Alembic migration establishes the foundational database schema,
+creating all core tables, foreign key relationships, indexes, and
+PostgreSQL ENUM types required for users, drivers, students, delivery
+requests, admin actions, feedbacks, and status change logs.
 
 Revision ID: 9082dd8c65fd
 Revises: 3ec380728795
 Create Date: 2026-07-23 18:12:54.343781
 
+upgrade() -> None
+    Creates all tables and ENUM types in dependency order.
+
+downgrade() -> None
+    Drops all tables and ENUM types in reverse dependency order.
+
+Cross-References:
+    - Depends on: alembic op utilities, sqlalchemy types
+    - Imported by: alembic runtime when migrating the database
 """
-# ---------------------------------------------------------------------------
-# Code Logic:
-#   This Alembic migration establishes the foundational database schema for the
-#   PackitBot application. It creates the core tables, foreign key relationships,
-#   indexes, and PostgreSQL ENUM types required for users, drivers, students,
-#   delivery requests, admin actions, feedbacks, and status change logs.
-#
-# Function Calls:
-#   - upgrade() -> applies all schema changes in order
-#   - downgrade() -> reverses the upgrade by dropping tables and types
-#
-# Cross-References:
-#   - Depends on: alembic op utilities, sqlalchemy types
-#   - Imported by: alembic runtime when migrating the database
-# ---------------------------------------------------------------------------
+
 from typing import Sequence, Union
 
 from alembic import op
@@ -36,6 +36,12 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    """Apply the initial schema: create ENUM types and all core tables.
+
+    The order of operations respects foreign key dependencies:
+    1. Create ENUM types used by columns.
+    2. Create tables with primary keys, foreign keys, and indexes.
+    """
     # ---------------------------------------------------------------------------
     # Enum type: userrole
     # Values: STUDENT, DRIVER, ADMIN
@@ -50,6 +56,8 @@ def upgrade() -> None:
 
     # ---------------------------------------------------------------------------
     # Table: users
+    # Primary key: id
+    # Unique index: ix_users_telegram_id on telegram_id
     # ---------------------------------------------------------------------------
     op.create_table(
         'users',
@@ -83,6 +91,9 @@ def upgrade() -> None:
 
     # ---------------------------------------------------------------------------
     # Table: admin_profiles
+    # Primary key: id
+    # Unique constraint: user_id (one profile per user)
+    # Foreign keys: user_id -> users.id (CASCADE), added_by_admin_id -> users.id
     # ---------------------------------------------------------------------------
     op.create_table(
         'admin_profiles',
@@ -108,6 +119,8 @@ def upgrade() -> None:
 
     # ---------------------------------------------------------------------------
     # Table: delivery_requests
+    # Primary key: id
+    # Foreign keys: student_id -> users.id, driver_id -> users.id
     # ---------------------------------------------------------------------------
     op.create_table(
         'delivery_requests',
@@ -159,6 +172,9 @@ def upgrade() -> None:
 
     # ---------------------------------------------------------------------------
     # Table: driver_profiles
+    # Primary key: id
+    # Unique constraints: plate_number, user_id
+    # Foreign keys: user_id -> users.id (CASCADE), approved_by_admin_id -> users.id
     # ---------------------------------------------------------------------------
     op.create_table(
         'driver_profiles',
@@ -202,6 +218,10 @@ def upgrade() -> None:
 
     # ---------------------------------------------------------------------------
     # Table: student_profiles
+    # Primary key: id
+    # Unique constraint: user_id
+    # Unique index: ix_student_profiles_matric_number on matric_number
+    # Foreign key: user_id -> users.id (CASCADE delete)
     # ---------------------------------------------------------------------------
     op.create_table(
         'student_profiles',
@@ -233,6 +253,9 @@ def upgrade() -> None:
 
     # ---------------------------------------------------------------------------
     # Table: admin_action_logs
+    # Primary key: id
+    # Foreign keys: admin_id -> users.id, target_request_id -> delivery_requests.id,
+    #               target_user_id -> users.id
     # ---------------------------------------------------------------------------
     op.create_table(
         'admin_action_logs',
@@ -264,6 +287,10 @@ def upgrade() -> None:
 
     # ---------------------------------------------------------------------------
     # Table: feedbacks
+    # Primary key: id
+    # Unique constraint: request_id (one feedback per delivery request)
+    # Foreign keys: request_id -> delivery_requests.id (CASCADE delete),
+    #               student_id -> users.id
     # ---------------------------------------------------------------------------
     op.create_table(
         'feedbacks',
@@ -293,6 +320,9 @@ def upgrade() -> None:
 
     # ---------------------------------------------------------------------------
     # Table: request_status_logs
+    # Primary key: id
+    # Foreign keys: changed_by_user_id -> users.id,
+    #               request_id -> delivery_requests.id (CASCADE delete)
     # ---------------------------------------------------------------------------
     op.create_table(
         'request_status_logs',
@@ -322,6 +352,12 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Reverse the initial schema: drop tables and ENUM types in reverse order.
+
+    Tables are dropped in reverse dependency order to avoid
+    foreign key constraint violations. ENUM types are dropped
+    after all tables that reference them have been removed.
+    """
     # Drop tables in reverse dependency order
     op.execute(sa.text('DROP TABLE IF EXISTS request_status_logs CASCADE'))
     op.execute(sa.text('DROP TABLE IF EXISTS feedbacks CASCADE'))

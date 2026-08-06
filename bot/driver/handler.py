@@ -1,34 +1,38 @@
-# bot/driver/handler.py
-# ---------------------------------------------------------------------------
-# Code Logic:
-#   This module defines the aiogram Router for all driver-related conversation
-#   flows and callback interactions. It handles driver registration (FSM-based),
-#   approval status checks, availability toggling, and active delivery tracking
-#   including accept/reject flows and step-by-step status updates.
-#
-# Function Calls:
-#   - start_driver_registration() -> /register_driver command or text button
-#   - cancel_driver_registration() -> /cancel_driver_reg command or callback
-#   - process_full_name() -> FSM state: entering_full_name
-#   - process_phone_number() -> FSM state: entering_phone_number
-#   - process_vehicle_type() -> FSM state: selecting_vehicle_type
-#   - process_plate_number() -> FSM state: entering_plate_number
-#   - process_license_number() -> FSM state: entering_license_number
-#   - process_edit_field() -> callback: driver_edit:<field>
-#   - process_submit_registration() -> callback: driver_submit_reg
-#   - check_approval_status() -> "Check Approval Status" text button
-#   - toggle_availability_handler() -> "Go Available/Offline" text button or /toggle_availability
-#   - process_driver_accept() -> callback: driver_accept:<request_id>
-#   - active_delivery_dashboard_handler() -> "Active Delivery" text button or /active_delivery
-#   - process_delivery_status_step() -> callback: driver_step:<action>:<request_id>
-#   - process_driver_reject() -> callback: driver_reject:<request_id>
-#
-# Cross-References:
-#   - Depends on: aiogram Router/FSM, bot.driver.keyboards, bot.driver.service,
-#       bot.driver.schemas, bot.driver.states, bot.core.utils.validators,
-#       bot.core.constants.enums, bot.core.constants.messages, logging
-#   - Imported by: bot/driver/__init__.py (router inclusion)
-# ---------------------------------------------------------------------------
+"""Driver module router - registration FSM, availability, and active delivery flows.
+
+This module defines the aiogram Router for all driver-related conversation
+flows and callback interactions. It handles driver registration (FSM-based),
+approval status checks, availability toggling, and active delivery tracking
+including accept/reject flows and step-by-step status updates.
+
+Registered Handlers
+-------------------
+- ``start_driver_registration``       -> ``/register_driver`` command or text button
+- ``cancel_driver_registration``      -> ``/cancel_driver_reg`` command or callback
+- ``process_full_name``               -> FSM state: ``entering_full_name``
+- ``process_phone_number``            -> FSM state: ``entering_phone_number``
+- ``process_vehicle_type``            -> FSM state: ``selecting_vehicle_type``
+- ``process_plate_number``            -> FSM state: ``entering_plate_number``
+- ``process_license_number``          -> FSM state: ``entering_license_number``
+- ``process_edit_field``              -> callback: ``driver_edit:<field>``
+- ``process_submit_registration``     -> callback: ``driver_submit_reg``
+- ``check_approval_status``           -> "Check Approval Status" text button
+- ``toggle_availability_handler``     -> "Go Available/Offline" text button or ``/toggle_availability``
+- ``process_driver_accept``           -> callback: ``driver_accept:<request_id>``
+- ``active_delivery_dashboard_handler`` -> "Active Delivery" text button or ``/active_delivery``
+- ``process_delivery_status_step``    -> callback: ``driver_step:<action>:<request_id>``
+- ``process_driver_reject``           -> callback: ``driver_reject:<request_id>``
+
+Depends on
+----------
+aiogram Router/FSM, ``bot.driver.keyboards``, ``bot.driver.service``,
+``bot.driver.schemas``, ``bot.driver.states``, ``bot.core.utils.validators``,
+``bot.core.constants.enums``, ``bot.core.constants.messages``, ``logging``.
+
+Imported by
+-----------
+``bot/driver/__init__.py`` (router inclusion).
+"""
 
 import logging
 from aiogram import F, Router
@@ -62,7 +66,21 @@ driver_router = Router()
 
 
 def _progress_bar(current: int, total: int = 5) -> str:
-    """Build a text-based progress bar for multi-step registration."""
+    """Build a text-based progress bar for the multi-step registration wizard.
+
+    Uses Unicode block characters to visually represent progress: filled
+    blocks for completed steps and empty blocks for remaining steps.
+
+    Args:
+        current: The number of completed steps (inclusive).
+        total:   The total number of steps in the flow (default 5).
+
+    Returns:
+        A string like ``████░░░░░`` representing the progress.
+
+    Called by:
+        :func:`_step_prompt`.
+    """
     # Use block characters to indicate filled vs remaining steps.
     filled = "█" * current
     empty = "░" * (total - current)
@@ -70,13 +88,42 @@ def _progress_bar(current: int, total: int = 5) -> str:
 
 
 def _step_prompt(step: int, total: int, prompt: str) -> str:
-    """Format a step prompt with a progress bar for the registration flow."""
+    """Format a registration step prompt with an embedded progress bar.
+
+    Args:
+        step:   The current step number (1-indexed).
+        total:  The total number of steps.
+        prompt: The text prompt to display for this step.
+
+    Returns:
+        A formatted string combining the progress bar and the prompt text.
+
+    Calls / Depends on:
+        :func:`_progress_bar`.
+
+    Called by:
+        ``start_driver_registration``, ``process_full_name``,
+        ``process_phone_number``, ``process_vehicle_type``,
+        ``process_plate_number``, ``process_license_number``.
+    """
     bar = _progress_bar(step, total)
     return f"Step {step}/{total} [{bar}]\n\n{prompt}"
 
 
 async def _show_review_screen(target: Message | CallbackQuery, state: FSMContext) -> None:
-    """Present collected driver registration data for final review and confirmation."""
+    """Present collected driver registration data for final review and confirmation.
+
+    Reads all field values from FSM context data, formats them into a summary
+    message, and sends it with the registration review keyboard. Works for
+    both :class:`Message` and :class:`CallbackQuery` targets.
+
+    Args:
+        target: The triggering :class:`Message` or :class:`CallbackQuery`.
+        state:  The FSM context holding collected registration data.
+
+    Sets:
+        Transitions FSM state to ``confirming_registration``.
+    """
     await state.set_state(DriverRegistrationFSM.confirming_registration)
     data = await state.get_data()
 
@@ -100,7 +147,26 @@ async def _show_review_screen(target: Message | CallbackQuery, state: FSMContext
 @driver_router.message(Command("register_driver"))
 @driver_router.message(F.text == "🚘 Register as Driver")
 async def start_driver_registration(message: Message, state: FSMContext, session=None) -> None:
-    """Initiate the driver registration flow or inform the user of their current status."""
+    """Initiate the driver registration flow or inform the user of their current status.
+
+    Triggered by the ``/register_driver`` command or the "Register as Driver"
+    text button. If the user already has an approved or pending profile, the
+    appropriate menu is shown instead of restarting the FSM. Otherwise the
+    FSM is cleared and set to ``entering_full_name``.
+
+    Args:
+        message: The incoming :class:`Message` (command or text trigger).
+        state:   The FSM context to manage registration progress.
+        session: Optional injected SQLAlchemy ``AsyncSession``.
+
+    Calls / Depends on:
+        :func:`get_driver_profile_by_telegram_id`, :func:`_step_prompt`,
+        :class:`DriverRegistrationFSM`, :func:`driver_persistent_menu`,
+        :func:`driver_pending_menu`.
+
+    Registered on ``driver_router`` via ``Command("register_driver")``
+    and ``F.text == "Register as Driver"``.
+    """
     # Check if driver is already registered
     profile = await get_driver_profile_by_telegram_id(message.from_user.id, session=session)
     if profile:
@@ -127,7 +193,19 @@ async def start_driver_registration(message: Message, state: FSMContext, session
 @driver_router.message(Command("cancel_driver_reg"))
 @driver_router.callback_query(F.data == "driver_cancel_reg")
 async def cancel_driver_registration(event: Message | CallbackQuery, state: FSMContext) -> None:
-    """Cancel the driver registration process and reset the FSM."""
+    """Cancel the driver registration process and reset the FSM.
+
+    Clears all FSM data and sends a confirmation message with a Home button.
+    Triggered by the ``/cancel_driver_reg`` command or the
+    ``driver_cancel_reg`` callback.
+
+    Args:
+        event: The incoming :class:`Message` or :class:`CallbackQuery`.
+        state: The FSM context to clear.
+
+    Calls / Depends on:
+        :func:`HomeButton` (from ``bot.core.keyboards.common_kb``).
+    """
     await state.clear()
     msg = "Driver registration cancelled."
     if isinstance(event, CallbackQuery):
@@ -139,7 +217,19 @@ async def cancel_driver_registration(event: Message | CallbackQuery, state: FSMC
 
 @driver_router.message(DriverRegistrationFSM.entering_full_name)
 async def process_full_name(message: Message, state: FSMContext) -> None:
-    """Validate and store the driver's full name, then advance to phone number."""
+    """Validate and store the driver's full name, then advance to phone number.
+
+    If the FSM data contains ``is_editing=True``, the value is stored and
+    the user is returned to the review screen instead of advancing.
+
+    Args:
+        message: The incoming :class:`Message` containing the full name text.
+        state:   The FSM context (state: ``entering_full_name``).
+
+    Calls / Depends on:
+        :func:`validate_full_name`, :func:`_show_review_screen`,
+        :func:`_step_prompt`, :class:`DriverRegistrationFSM`.
+    """
     try:
         val = validate_full_name(message.text)
     except ValidationError as exc:
@@ -159,7 +249,20 @@ async def process_full_name(message: Message, state: FSMContext) -> None:
 
 @driver_router.message(DriverRegistrationFSM.entering_phone_number)
 async def process_phone_number(message: Message, state: FSMContext) -> None:
-    """Validate and store the driver's phone number, then advance to vehicle type."""
+    """Validate and store the driver's phone number, then advance to vehicle type.
+
+    If ``is_editing`` is set in FSM data, returns to the review screen
+    instead of advancing.
+
+    Args:
+        message: The incoming :class:`Message` containing the phone number.
+        state:   The FSM context (state: ``entering_phone_number``).
+
+    Calls / Depends on:
+        :func:`validate_phone`, :func:`_show_review_screen`,
+        :func:`_step_prompt`, :func:`vehicle_type_keyboard`,
+        :class:`DriverRegistrationFSM`.
+    """
     try:
         val = validate_phone(message.text)
     except ValidationError as exc:
@@ -182,7 +285,20 @@ async def process_phone_number(message: Message, state: FSMContext) -> None:
 
 @driver_router.callback_query(DriverRegistrationFSM.selecting_vehicle_type, F.data.startswith("driver_vtype:"))
 async def process_vehicle_type(callback: CallbackQuery, state: FSMContext) -> None:
-    """Validate and store the selected vehicle type, then advance to plate number."""
+    """Validate and store the selected vehicle type, then advance to plate number.
+
+    The callback data uses the ``driver_vtype:<type>`` schema; the type
+    portion is extracted via ``split(":", 1)``. If ``is_editing`` is set,
+    returns to the review screen.
+
+    Args:
+        callback: The incoming :class:`CallbackQuery` with ``driver_vtype:<type>`` data.
+        state:    The FSM context (state: ``selecting_vehicle_type``).
+
+    Calls / Depends on:
+        :func:`validate_vehicle_type`, :func:`_show_review_screen`,
+        :func:`_step_prompt`, :class:`DriverRegistrationFSM`.
+    """
     vtype = callback.data.split(":", 1)[1]
     try:
         val = validate_vehicle_type(vtype)
@@ -204,7 +320,19 @@ async def process_vehicle_type(callback: CallbackQuery, state: FSMContext) -> No
 
 @driver_router.message(DriverRegistrationFSM.entering_plate_number)
 async def process_plate_number(message: Message, state: FSMContext) -> None:
-    """Validate and store the vehicle plate number, then advance to license number."""
+    """Validate and store the vehicle plate number, then advance to license number.
+
+    If ``is_editing`` is set in FSM data, returns to the review screen
+    instead of advancing.
+
+    Args:
+        message: The incoming :class:`Message` containing the plate number.
+        state:   The FSM context (state: ``entering_plate_number``).
+
+    Calls / Depends on:
+        :func:`validate_plate_number`, :func:`_show_review_screen`,
+        :func:`_step_prompt`, :class:`DriverRegistrationFSM`.
+    """
     try:
         val = validate_plate_number(message.text)
     except ValidationError as exc:
@@ -224,7 +352,19 @@ async def process_plate_number(message: Message, state: FSMContext) -> None:
 
 @driver_router.message(DriverRegistrationFSM.entering_license_number)
 async def process_license_number(message: Message, state: FSMContext) -> None:
-    """Validate and store the driver's license number, then show the review screen."""
+    """Validate and store the driver's license number, then show the review screen.
+
+    After storing the final field, ``is_editing`` is reset to ``False``
+    and the review screen is displayed.
+
+    Args:
+        message: The incoming :class:`Message` containing the license number.
+        state:   The FSM context (state: ``entering_license_number``).
+
+    Calls / Depends on:
+        :func:`validate_license_number`, :func:`_show_review_screen`,
+        :class:`DriverRegistrationFSM`.
+    """
     try:
         val = validate_license_number(message.text)
     except ValidationError as exc:
@@ -238,9 +378,28 @@ async def process_license_number(message: Message, state: FSMContext) -> None:
 
 @driver_router.callback_query(DriverRegistrationFSM.confirming_registration, F.data.startswith("driver_edit:"))
 async def process_edit_field(callback: CallbackQuery, state: FSMContext) -> None:
-    """Handle inline edit requests for individual registration fields."""
+    """Handle inline edit requests for individual registration fields.
+
+    Parses the ``driver_edit:<field>`` callback, sets ``is_editing=True`` in
+    FSM data, and transitions to the appropriate input state so the user
+    can re-enter the value. When the field-processing handler completes, it
+    detects ``is_editing`` and returns to the review screen rather than
+    advancing to the next step.
+
+    Args:
+        callback: The incoming :class:`CallbackQuery` with ``driver_edit:<field>`` data.
+        state:    The FSM context (state: ``confirming_registration``).
+
+    Calls / Depends on:
+        :func:`vehicle_type_keyboard` (only for the ``vehicle_type`` field).
+
+    Registered on ``driver_router`` for callback data starting with
+    ``driver_edit:``.
+    """
+    # Extract the field name from the "driver_edit:<field>" callback payload.
     field = callback.data.split(":", 1)[1]
     await callback.answer()
+    # Flag the FSM so the target handler returns to review after saving.
     await state.update_data(is_editing=True)
 
     field_map = {
@@ -260,8 +419,26 @@ async def process_edit_field(callback: CallbackQuery, state: FSMContext) -> None
 
 @driver_router.callback_query(DriverRegistrationFSM.confirming_registration, F.data == "driver_submit_reg")
 async def process_submit_registration(callback: CallbackQuery, state: FSMContext, session=None) -> None:
-    """Persist driver registration DTO and clear the FSM on success."""
+    """Persist the driver registration DTO and clear the FSM on success.
+
+    Reads all collected fields from FSM data, constructs a
+    :class:`RegisterDriverDTO`, and calls :func:`register_driver` to
+    persist the profile. On success, the FSM is cleared and the user is
+    shown a confirmation message with the pending-menu keyboard.
+
+    Args:
+        callback: The incoming :class:`CallbackQuery` with ``driver_submit_reg`` data.
+        state:    The FSM context (state: ``confirming_registration``).
+        session:  Optional injected SQLAlchemy ``AsyncSession``.
+
+    Calls / Depends on:
+        :func:`register_driver`, :class:`RegisterDriverDTO`,
+        :func:`driver_pending_menu`.
+
+    Registered on ``driver_router`` for callback data ``driver_submit_reg``.
+    """
     await callback.answer()
+    # Read all collected fields from FSM context data.
     data = await state.get_data()
 
     dto = RegisterDriverDTO(
@@ -296,7 +473,22 @@ async def process_submit_registration(callback: CallbackQuery, state: FSMContext
 
 @driver_router.message(F.text == "🔄 Check Approval Status")
 async def check_approval_status(message: Message, session=None) -> None:
-    """Display the current approval status for the requesting driver."""
+    """Display the current approval status for the requesting driver.
+
+    Triggered by the "Check Approval Status" text button. Looks up the
+    driver profile and presents a status-specific message with the
+    appropriate menu (persistent for approved, pending for all other states).
+
+    Args:
+        message: The incoming :class:`Message` (text trigger).
+        session: Optional injected SQLAlchemy ``AsyncSession``.
+
+    Calls / Depends on:
+        :func:`get_driver_profile_by_telegram_id`, :func:`driver_persistent_menu`,
+        :func:`driver_pending_menu`, :class:`DriverStatus`.
+
+    Registered on ``driver_router`` for ``F.text == "Check Approval Status"``.
+    """
     profile = await get_driver_profile_by_telegram_id(message.from_user.id, session=session)
     if not profile:
         await message.answer("You have not registered as a driver yet. Use /register_driver to begin.")
@@ -329,7 +521,24 @@ async def check_approval_status(message: Message, session=None) -> None:
 @driver_router.message(F.text.in_({"🟢 Go Available", "🔴 Go Offline"}))
 @driver_router.message(Command("toggle_availability"))
 async def toggle_availability_handler(message: Message, session=None) -> None:
-    """Toggle the driver's availability status between AVAILABLE and OFFLINE."""
+    """Toggle the driver's availability between AVAILABLE and OFFLINE.
+
+    Triggered by the "Go Available/Offline" text buttons or the
+    ``/toggle_availability`` command. Rejects the request if the driver is
+    not approved or is currently ``BUSY`` (system-managed during a delivery).
+
+    Args:
+        message: The incoming :class:`Message` (text or command trigger).
+        session: Optional injected SQLAlchemy ``AsyncSession``.
+
+    Calls / Depends on:
+        :func:`get_driver_profile_by_telegram_id`, :func:`set_driver_availability`,
+        :func:`driver_persistent_menu`, :class:`DriverStatus`,
+        :class:`DriverAvailability`.
+
+    Registered on ``driver_router`` for ``F.text.in_({"Go Available", "Go Offline"})``
+    and ``Command("toggle_availability")``.
+    """
     profile = await get_driver_profile_by_telegram_id(message.from_user.id, session=session)
     if not profile:
         await message.answer("You are not registered as a driver. Use /register_driver to get started.")
@@ -380,7 +589,26 @@ async def toggle_availability_handler(message: Message, session=None) -> None:
 
 @driver_router.callback_query(F.data.startswith("driver_accept:"))
 async def process_driver_accept(callback: CallbackQuery, session=None) -> None:
-    """Handles driver accepting an assigned delivery request."""
+    """Handle a driver accepting an assigned delivery request.
+
+    Parses the ``driver_accept:<request_id>`` callback, resolves the driver
+    :class:`User` by Telegram ID, transitions the request status to
+    ``ACCEPTED`` via :class:`RequestService`, then edits the original
+    message with delivery details and a status-update keyboard. A
+    notification is also sent to the student.
+
+    Args:
+        callback: The incoming :class:`CallbackQuery` with ``driver_accept:<request_id>`` data.
+        session:  Optional injected SQLAlchemy ``AsyncSession``.
+
+    Calls / Depends on:
+        :class:`RequestService` (``transition_status``), :class:`TransitionDTO`,
+        :func:`delivery_status_update_keyboard`, :class:`PackitbotError`.
+
+    Registered on ``driver_router`` for callback data starting with
+    ``driver_accept:``.
+    """
+    # Extract request ID from the "driver_accept:<request_id>" callback payload.
     request_id = int(callback.data.split(":")[1])
 
     if session is None:
@@ -480,7 +708,25 @@ async def process_driver_accept(callback: CallbackQuery, session=None) -> None:
 @driver_router.message(F.text == "📊 Active Delivery")
 @driver_router.message(Command("active_delivery"))
 async def active_delivery_dashboard_handler(message: Message, session=None) -> None:
-    """Displays Current Delivery Dashboard with active order details and student contact info."""
+    """Display the active delivery dashboard for the requesting driver.
+
+    Finds the most recent delivery request in an active status (ACCEPTED,
+    EN_ROUTE_TO_PICKUP, PICKED_UP, or IN_TRANSIT) assigned to the driver.
+    If none exists, shows an empty-state message; otherwise displays full
+    request details with a status-update keyboard.
+
+    Args:
+        message: The incoming :class:`Message` (text or command trigger).
+        session: Optional injected SQLAlchemy ``AsyncSession``.
+
+    Calls / Depends on:
+        :func:`delivery_status_update_keyboard`, :func:`driver_persistent_menu`,
+        :class:`DriverAvailability`, :class:`RequestStatus`,
+        ``MSG_EMPTY_STATE_DRIVER`` (from ``bot.core.constants.messages``).
+
+    Registered on ``driver_router`` for ``F.text == "Active Delivery"``
+    and ``Command("active_delivery")``.
+    """
     if session is None:
         await message.answer("Session unavailable.")
         return
@@ -552,7 +798,29 @@ async def active_delivery_dashboard_handler(message: Message, session=None) -> N
 
 @driver_router.callback_query(F.data.startswith("driver_step:"))
 async def process_delivery_status_step(callback: CallbackQuery, session=None) -> None:
-    """Handles status updates for active deliveries (En Route -> Picked Up -> In Transit -> Delivered/Failed)."""
+    """Handle a delivery status progression step from the driver.
+
+    Parses the ``driver_step:<action>:<request_id>`` callback (3 parts),
+    maps the action to a :class:`RequestStatus`, transitions the request
+    via :class:`RequestService`, and on completion/failure resets the
+    driver's availability to ``AVAILABLE``. The original message is edited
+    with updated details and a contextual keyboard, and the student is
+    notified.
+
+    Args:
+        callback: The incoming :class:`CallbackQuery` with
+            ``driver_step:<action>:<request_id>`` data.
+        session:  Optional injected SQLAlchemy ``AsyncSession``.
+
+    Calls / Depends on:
+        :class:`RequestService` (``transition_status``), :class:`TransitionDTO`,
+        :func:`delivery_status_update_keyboard`, :class:`DriverProfile`,
+        :class:`PackitbotError`.
+
+    Registered on ``driver_router`` for callback data starting with
+    ``driver_step:``.
+    """
+    # Split "driver_step:<action>:<request_id>" into exactly 3 parts.
     parts = callback.data.split(":")
     if len(parts) != 3:
         await callback.answer("Invalid callback data.", show_alert=True)
@@ -681,7 +949,25 @@ async def process_delivery_status_step(callback: CallbackQuery, session=None) ->
 
 @driver_router.callback_query(F.data.startswith("driver_reject:"))
 async def process_driver_reject(callback: CallbackQuery, session=None) -> None:
-    """Handles driver rejecting an assigned delivery request."""
+    """Handle a driver rejecting an assigned delivery request.
+
+    Parses the ``driver_reject:<request_id>`` callback, resets the request
+    to ``PENDING`` status with ``driver_id`` cleared via
+    :class:`RequestRepository`, edits the original message, and alerts all
+    admins via direct message.
+
+    Args:
+        callback: The incoming :class:`CallbackQuery` with
+            ``driver_reject:<request_id>`` data.
+        session:  Optional injected SQLAlchemy ``AsyncSession``.
+
+    Calls / Depends on:
+        :class:`RequestRepository` (``update``), :class:`PackitbotError`.
+
+    Registered on ``driver_router`` for callback data starting with
+    ``driver_reject:``.
+    """
+    # Extract request ID from the "driver_reject:<request_id>" callback payload.
     request_id = int(callback.data.split(":")[1])
 
     if session is None:

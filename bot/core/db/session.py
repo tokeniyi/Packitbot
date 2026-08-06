@@ -4,6 +4,26 @@ Database session factory for the Packit bot.
 This module initializes the asynchronous SQLAlchemy engine and session factory
 used across the project for all database transactions. The engine is created
 once at import time using the ``database_url`` from the application settings.
+
+Key exports:
+    - ``engine`` — the async SQLAlchemy ``AsyncEngine`` instance.
+    - ``async_session`` — an ``async_sessionmaker[AsyncSession]`` factory used
+      to create scoped ``AsyncSession`` instances throughout the app.
+
+Used by:
+    - ``bot/core/middlewares/db_session.py`` — ``DbSessionMiddleware``
+      injects an ``AsyncSession`` into every aiogram update.
+    - ``bot/core/middlewares/auth.py`` — ``AuthMiddleware`` uses
+      ``async_session`` to persist/retrieve ``User`` records.
+    - ``bot/admin/service.py``, ``bot/admin/handler.py`` — admin data access.
+    - ``bot/driver/service.py``, ``bot/driver/handler.py`` — driver data access.
+    - ``bot/student/service.py``, ``bot/student/repository.py`` — student
+      data access.
+    - ``bot/request/service.py``, ``bot/request/repository.py`` — request
+      lifecycle and audit-log data access.
+    - ``bot/main.py`` — ``_init_db()`` uses ``engine`` to bootstrap tables.
+    - ``alembic/env.py`` — uses ``Base`` (from ``base_class``) and the
+      models' metadata for migrations.
 """
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession

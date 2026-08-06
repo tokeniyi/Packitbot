@@ -1,4 +1,43 @@
-# bot/admin/service.py
+"""
+Admin service layer for the Packit bot.
+
+This module contains the business logic for all admin operations, including:
+- Delivery request management (listing pending requests, assigning drivers)
+- Driver lifecycle management (listing pending applications, approving, rejecting)
+- User management (searching, banning, unbanning, promoting to admin)
+- System statistics aggregation
+- Broadcast target audience resolution
+
+All public functions follow a consistent pattern:
+    1. Verify the calling user has admin privileges.
+    2. Perform the database operation within a transaction.
+    3. Log the action in ``AdminActionLog`` for audit trail.
+    4. Return a DTO for the handler to render.
+
+Key exports:
+    - ``get_pending_requests``
+    - ``get_available_drivers_ranked``
+    - ``get_pending_drivers``
+    - ``get_driver_application_detail``
+    - ``approve_driver``
+    - ``reject_driver``
+    - ``get_stats``
+    - ``ban_user``
+    - ``unban_user``
+    - ``promote_admin``
+    - ``search_user_by_identifier``
+    - ``get_broadcast_target_telegram_ids``
+
+Dependencies:
+    - ``sqlalchemy``: Query construction and async execution.
+    - ``bot.core.db.session``: ``async_session`` factory.
+    - ``bot.core.models``: ORM models for database operations.
+    - ``bot.admin.schemas``: DTOs for input validation and output shaping.
+
+Called by:
+    - ``bot/admin/handler.py``: All admin command and callback handlers.
+"""
+
 import logging
 from typing import List, Optional, Tuple
 
@@ -33,7 +72,35 @@ async def get_pending_requests(
     per_page: int = 5,
     session: Optional[AsyncSession] = None,
 ) -> Tuple[List[DeliveryRequest], int]:
-    """Retrieves paginated PENDING delivery requests and total pages count."""
+    """Retrieve paginated delivery requests with PENDING status.
+
+    This function is used by the admin portal to display requests awaiting
+    driver assignment. It returns both the page of results and the total
+    page count for pagination UI rendering.
+
+    Args:
+        page (int): 1-indexed page number. Defaults to 1.
+        per_page (int): Number of records per page. Defaults to 5.
+        session (Optional[AsyncSession]): Optional existing database session.
+            If omitted, a new session is created and closed automatically.
+
+    Returns:
+        Tuple[List[DeliveryRequest], int]: A tuple of (requests, total_pages).
+
+    Raises:
+        None directly, but database errors propagate as ``PackitbotError``
+        via the global error handler.
+
+    Calls / Depends on:
+        - ``sqlalchemy.select``, ``func.count``
+        - ``bot.core.models.delivery_request.DeliveryRequest``
+        - ``bot.core.constants.enums.RequestStatus``
+
+    Called by:
+        - ``bot/admin/handler.py``: ``cmd_pending_requests``,
+          ``handle_pending_requests_pagination``,
+          ``handle_back_to_pending_requests``
+    """
     async def _execute(sess: AsyncSession):
         offset = (page - 1) * per_page
 
@@ -43,6 +110,7 @@ async def get_pending_requests(
         )
         total_res = await sess.execute(count_stmt)
         total_count = total_res.scalar() or 0
+        # Ceiling division to ensure at least 1 page when records exist.
         total_pages = max(1, (total_count + per_page - 1) // per_page)
 
         stmt = (
@@ -66,7 +134,31 @@ async def get_pending_requests(
 async def get_available_drivers_ranked(
     session: Optional[AsyncSession] = None,
 ) -> List[AvailableDriverDTO]:
-    """Retrieves approved drivers ranked by higher average rating (rating_avg desc, total_deliveries desc)."""
+    """Retrieve approved, non-offline drivers ranked by rating and delivery volume.
+
+    Drivers are ordered by descending average rating, then descending total
+    deliveries, then ascending ID as a tiebreaker. This ranking is used when
+    an admin assigns a driver to a pending request.
+
+    Args:
+        session (Optional[AsyncSession]): Optional existing database session.
+
+    Returns:
+        List[AvailableDriverDTO]: Ranked list of available drivers.
+
+    Raises:
+        None directly.
+
+    Calls / Depends on:
+        - ``sqlalchemy.select``
+        - ``bot.core.models.driver_profile.DriverProfile``
+        - ``bot.core.models.user.User``
+        - ``bot.core.constants.enums.DriverStatus``, ``DriverAvailability``
+        - ``bot.admin.schemas.AvailableDriverDTO``
+
+    Called by:
+        - ``bot/admin/handler.py``: ``handle_select_request_for_assignment``
+    """
     async def _execute(sess: AsyncSession):
         stmt = (
             select(DriverProfile, User)
@@ -113,7 +205,31 @@ async def get_pending_drivers(
     per_page: int = 5,
     session: Optional[AsyncSession] = None,
 ) -> Tuple[List[DriverApplicationDetailDTO], int]:
-    """Retrieves paginated pending driver applications and total pages count."""
+    """Retrieve paginated driver applications pending approval.
+
+    Args:
+        page (int): 1-indexed page number. Defaults to 1.
+        per_page (int): Number of records per page. Defaults to 5.
+        session (Optional[AsyncSession]): Optional existing database session.
+
+    Returns:
+        Tuple[List[DriverApplicationDetailDTO], int]: A tuple of
+        (driver_applications, total_pages).
+
+    Raises:
+        None directly.
+
+    Calls / Depends on:
+        - ``sqlalchemy.select``, ``func.count``
+        - ``bot.core.models.driver_profile.DriverProfile``
+        - ``bot.core.models.user.User``
+        - ``bot.core.constants.enums.DriverStatus``
+        - ``bot.admin.schemas.DriverApplicationDetailDTO``
+
+    Called by:
+        - ``bot/admin/handler.py``: ``cmd_verify_drivers``,
+          ``handle_back_to_pending_list``
+    """
     async def _execute(sess: AsyncSession):
         offset = (page - 1) * per_page
 
@@ -165,7 +281,27 @@ async def get_driver_application_detail(
     driver_id: int,
     session: Optional[AsyncSession] = None,
 ) -> DriverApplicationDetailDTO:
-    """Gets detailed application info for a driver by driver_id."""
+    """Fetch detailed information for a specific driver application.
+
+    Args:
+        driver_id (int): Primary key of the ``DriverProfile`` to inspect.
+        session (Optional[AsyncSession]): Optional existing database session.
+
+    Returns:
+        DriverApplicationDetailDTO: Populated DTO with driver and user details.
+
+    Raises:
+        NotFoundError: If no driver profile exists with the given ``driver_id``.
+
+    Calls / Depends on:
+        - ``sqlalchemy.select``
+        - ``bot.core.models.driver_profile.DriverProfile``
+        - ``bot.core.models.user.User``
+        - ``bot.admin.schemas.DriverApplicationDetailDTO``
+
+    Called by:
+        - ``bot/admin/handler.py``: ``handle_view_driver_detail``
+    """
     async def _execute(sess: AsyncSession):
         stmt = (
             select(DriverProfile, User)
@@ -202,16 +338,50 @@ async def approve_driver(
     dto: ReviewDriverDTO,
     session: Optional[AsyncSession] = None,
 ) -> DriverApplicationDetailDTO:
-    """Approves a pending driver application, logs admin action, and returns detail DTO."""
+    """Approve a pending driver application and log the admin action.
+
+    This function performs the following steps atomically:
+        1. Verifies the requesting user is an admin.
+        2. Loads the driver profile and associated user.
+        3. Validates that the profile is not already approved.
+        4. Sets the profile status to ``APPROVED`` and the user role to ``DRIVER``.
+        5. Creates an ``AdminActionLog`` entry for audit purposes.
+
+    Args:
+        dto (ReviewDriverDTO): Payload containing the driver ID and admin
+            Telegram ID.
+        session (Optional[AsyncSession]): Optional existing database session.
+
+    Returns:
+        DriverApplicationDetailDTO: Updated driver detail DTO reflecting the
+        new ``APPROVED`` status.
+
+    Raises:
+        ValidationError: If the caller is not an admin or the driver is
+            already approved.
+        NotFoundError: If the driver profile does not exist.
+
+    Calls / Depends on:
+        - ``sqlalchemy.select``
+        - ``bot.core.models.user.User``
+        - ``bot.core.models.driver_profile.DriverProfile``
+        - ``bot.core.models.admin_action_log.AdminActionLog``
+        - ``bot.core.constants.enums.UserRole``, ``DriverStatus``, ``AdminActionType``
+        - ``bot.core.exceptions.ValidationError``, ``NotFoundError``
+        - ``bot.admin.schemas.DriverApplicationDetailDTO``
+
+    Called by:
+        - ``bot/admin/handler.py``: ``handle_approve_driver``
+    """
     async def _execute(sess: AsyncSession):
-        # 1. Fetch admin user
+        # 1. Verify admin user
         admin_stmt = select(User).where(User.telegram_id == dto.admin_telegram_id)
         admin_res = await sess.execute(admin_stmt)
         admin_user = admin_res.scalar_one_or_none()
         if not admin_user or admin_user.role != UserRole.ADMIN:
             raise ValidationError("Admin permission required.")
 
-        # 2. Fetch driver profile & user
+        # 2. Fetch driver profile and associated user
         stmt = (
             select(DriverProfile, User)
             .join(User, DriverProfile.user_id == User.id)
@@ -227,11 +397,11 @@ async def approve_driver(
         if dp.status == DriverStatus.APPROVED:
             raise ValidationError("Driver application is already approved.")
 
-        # 3. Update driver profile status
+        # 3. Update driver profile and user role
         dp.status = DriverStatus.APPROVED
         driver_user.role = UserRole.DRIVER
 
-        # 4. Create admin action log
+        # 4. Create audit log entry
         log_entry = AdminActionLog(
             admin_id=admin_user.id,
             action_type=AdminActionType.APPROVE_DRIVER,
@@ -271,16 +441,48 @@ async def reject_driver(
     dto: ReviewDriverDTO,
     session: Optional[AsyncSession] = None,
 ) -> DriverApplicationDetailDTO:
-    """Rejects a pending driver application, logs admin action, and returns detail DTO."""
+    """Reject a pending driver application and log the admin action.
+
+    This function performs the following steps atomically:
+        1. Verifies the requesting user is an admin.
+        2. Loads the driver profile and associated user.
+        3. Sets the profile status to ``REJECTED``.
+        4. Creates an ``AdminActionLog`` entry for audit purposes.
+
+    Args:
+        dto (ReviewDriverDTO): Payload containing the driver ID, admin
+            Telegram ID, and optional rejection reason.
+        session (Optional[AsyncSession]): Optional existing database session.
+
+    Returns:
+        DriverApplicationDetailDTO: Updated driver detail DTO reflecting the
+        new ``REJECTED`` status.
+
+    Raises:
+        ValidationError: If the caller is not an admin.
+        NotFoundError: If the driver profile does not exist.
+
+    Calls / Depends on:
+        - ``sqlalchemy.select``
+        - ``bot.core.models.user.User``
+        - ``bot.core.models.driver_profile.DriverProfile``
+        - ``bot.core.models.admin_action_log.AdminActionLog``
+        - ``bot.core.constants.enums.UserRole``, ``DriverStatus``, ``AdminActionType``
+        - ``bot.core.exceptions.ValidationError``, ``NotFoundError``
+        - ``bot.admin.schemas.DriverApplicationDetailDTO``
+
+    Called by:
+        - ``bot/admin/handler.py``: ``handle_reject_driver``
+    """
     async def _execute(sess: AsyncSession):
-        # 1. Fetch admin user
+        # 1. Verify admin user
         admin_stmt = select(User).where(User.telegram_id == dto.admin_telegram_id)
         admin_res = await sess.execute(admin_stmt)
         admin_user = admin_res.scalar_one_or_none()
         if not admin_user or admin_user.role != UserRole.ADMIN:
             raise ValidationError("Admin permission required.")
 
-        # 2. Fetch driver profile & user
+        # 2. Fetch driver profile and associated user
         stmt = (
             select(DriverProfile, User)
             .join(User, DriverProfile.user_id == User.id)
@@ -296,7 +498,7 @@ async def reject_driver(
         # 3. Update driver profile status
         dp.status = DriverStatus.REJECTED
 
-        # 4. Create admin action log
+        # 4. Create audit log entry
         details_msg = f"Rejected driver profile #{dp.id}"
         if dto.rejection_reason:
             details_msg += f". Reason: {dto.rejection_reason}"
@@ -339,8 +541,37 @@ async def reject_driver(
 async def get_stats(
     session: Optional[AsyncSession] = None,
 ) -> SystemStatsDTO:
-    """Retrieves system-wide delivery metrics and user statistics."""
+    """Aggregate system-wide delivery metrics and user statistics.
+
+    This function runs multiple COUNT and AVG queries across the primary
+    entities and also computes average delivery duration by correlating
+    ``RequestStatusLog`` timestamps for ``ACCEPTED`` and ``DELIVERED`` events.
+
+    Args:
+        session (Optional[AsyncSession]): Optional existing database session.
+
+    Returns:
+        SystemStatsDTO: Populated DTO containing all aggregated metrics.
+
+    Raises:
+        None directly, but database errors propagate to the caller.
+
+    Calls / Depends on:
+        - ``sqlalchemy.select``, ``func.count``, ``func.avg``
+        - ``bot.core.models.delivery_request.DeliveryRequest``
+        - ``bot.core.models.driver_profile.DriverProfile``
+        - ``bot.core.models.feedback.Feedback``
+        - ``bot.core.models.user.User``
+        - ``bot.core.models.status_log.RequestStatusLog``
+        - ``bot.core.constants.enums.RequestStatus``, ``UserRole``,
+          ``DriverStatus``, ``DriverAvailability``
+        - ``bot.admin.schemas.SystemStatsDTO``
+
+    Called by:
+        - ``bot/admin/handler.py``: ``cmd_stats``
+    """
     async def _execute(sess: AsyncSession):
+        # Request status counts
         total_requests = (await sess.execute(select(func.count(DeliveryRequest.id)))).scalar() or 0
         pending_requests = (await sess.execute(
             select(func.count(DeliveryRequest.id)).where(DeliveryRequest.status == RequestStatus.PENDING)
@@ -373,6 +604,7 @@ async def get_stats(
             select(func.count(DeliveryRequest.id)).where(DeliveryRequest.status == RequestStatus.REJECTED_BY_DRIVER)
         )).scalar() or 0
 
+        # User role counts
         total_users = (await sess.execute(select(func.count(User.id)))).scalar() or 0
         total_students = (await sess.execute(
             select(func.count(User.id)).where(User.role == UserRole.STUDENT)
@@ -384,6 +616,7 @@ async def get_stats(
             select(func.count(User.id)).where(User.role == UserRole.ADMIN)
         )).scalar() or 0
 
+        # Driver profile status counts
         approved_drivers = (await sess.execute(
             select(func.count(DriverProfile.id)).where(DriverProfile.status == DriverStatus.APPROVED)
         )).scalar() or 0
@@ -403,10 +636,11 @@ async def get_stats(
             select(func.count(DriverProfile.id)).where(DriverProfile.status == DriverStatus.SUSPENDED)
         )).scalar() or 0
 
+        # Feedback metrics
         total_feedbacks = (await sess.execute(select(func.count(Feedback.id)))).scalar() or 0
         avg_rating = (await sess.execute(select(func.avg(Feedback.rating)))).scalar()
 
-        # Calculate average delivery duration from status logs (from ACCEPTED to DELIVERED)
+        # Average delivery duration: correlate ACCEPTED and DELIVERED log timestamps
         from bot.core.models.status_log import RequestStatusLog
         start_logs = select(
             RequestStatusLog.request_id,
@@ -472,7 +706,32 @@ async def ban_user(
     dto: BanUserDTO,
     session: Optional[AsyncSession] = None,
 ) -> UserDetailDTO:
-    """Bans a user, records AdminActionLog, and returns updated UserDetailDTO."""
+    """Ban a user and record the action in the audit log.
+
+    Args:
+        dto (BanUserDTO): Payload containing the target user ID, admin
+            Telegram ID, and optional ban reason.
+        session (Optional[AsyncSession]): Optional existing database session.
+
+    Returns:
+        UserDetailDTO: Updated user snapshot reflecting the banned state.
+
+    Raises:
+        ValidationError: If the caller is not an admin or the user is
+            already banned.
+        NotFoundError: If the target user does not exist.
+
+    Calls / Depends on:
+        - ``sqlalchemy.select``
+        - ``bot.core.models.user.User``
+        - ``bot.core.models.admin_action_log.AdminActionLog``
+        - ``bot.core.constants.enums.AccountStatus``, ``AdminActionType``
+        - ``bot.core.exceptions.ValidationError``, ``NotFoundError``
+        - ``bot.admin.schemas.UserDetailDTO``
+
+    Called by:
+        - ``bot/admin/handler.py``: ``process_ban_reason``
+    """
     async def _execute(sess: AsyncSession):
         # Verify admin
         admin_stmt = select(User).where(User.telegram_id == dto.admin_telegram_id)
@@ -537,7 +796,32 @@ async def unban_user(
     dto: UnbanUserDTO,
     session: Optional[AsyncSession] = None,
 ) -> UserDetailDTO:
-    """Unbans a user, records AdminActionLog, and returns updated UserDetailDTO."""
+    """Unban a user and record the action in the audit log.
+
+    Args:
+        dto (UnbanUserDTO): Payload containing the target user ID, admin
+            Telegram ID, and optional unban note.
+        session (Optional[AsyncSession]): Optional existing database session.
+
+    Returns:
+        UserDetailDTO: Updated user snapshot reflecting the active state.
+
+    Raises:
+        ValidationError: If the caller is not an admin or the user is
+            not currently banned.
+        NotFoundError: If the target user does not exist.
+
+    Calls / Depends on:
+        - ``sqlalchemy.select``
+        - ``bot.core.models.user.User``
+        - ``bot.core.models.admin_action_log.AdminActionLog``
+        - ``bot.core.constants.enums.AccountStatus``, ``AdminActionType``
+        - ``bot.core.exceptions.ValidationError``, ``NotFoundError``
+        - ``bot.admin.schemas.UserDetailDTO``
+
+    Called by:
+        - ``bot/admin/handler.py``: ``handle_unban_user``
+    """
     async def _execute(sess: AsyncSession):
         # Verify admin
         admin_stmt = select(User).where(User.telegram_id == dto.admin_telegram_id)
@@ -602,7 +886,32 @@ async def promote_admin(
     dto: PromoteAdminDTO,
     session: Optional[AsyncSession] = None,
 ) -> UserDetailDTO:
-    """Promotes a user to admin role, records AdminActionLog, and returns updated UserDetailDTO."""
+    """Promote a user to the admin role and log the action.
+
+    Args:
+        dto (PromoteAdminDTO): Payload containing the target user ID and
+            admin Telegram ID.
+        session (Optional[AsyncSession]): Optional existing database session.
+
+    Returns:
+        UserDetailDTO: Updated user snapshot reflecting the admin role.
+
+    Raises:
+        ValidationError: If the caller is not an admin or the target user
+            is already an admin.
+        NotFoundError: If the target user does not exist.
+
+    Calls / Depends on:
+        - ``sqlalchemy.select``
+        - ``bot.core.models.user.User``
+        - ``bot.core.models.admin_action_log.AdminActionLog``
+        - ``bot.core.constants.enums.UserRole``, ``AdminActionType``
+        - ``bot.core.exceptions.ValidationError``, ``NotFoundError``
+        - ``bot.admin.schemas.UserDetailDTO``
+
+    Called by:
+        - ``bot/admin/handler.py``: ``handle_promote_admin``
+    """
     async def _execute(sess: AsyncSession):
         # Verify admin
         admin_stmt = select(User).where(User.telegram_id == dto.admin_telegram_id)
@@ -661,7 +970,32 @@ async def search_user_by_identifier(
     identifier: str,
     session: Optional[AsyncSession] = None,
 ) -> Optional[UserDetailDTO]:
-    """Finds user by User ID, Telegram ID, or Username."""
+    """Find a user by internal DB ID, Telegram ID, or username.
+
+    The search logic is:
+        - If the identifier is numeric, it matches both ``User.id`` and
+          ``User.telegram_id`` using an OR condition.
+        - If the identifier is non-numeric, it performs a case-insensitive
+          match against ``User.username`` (after stripping any leading '@').
+
+    Args:
+        identifier (str): User ID, Telegram ID, or @username to search for.
+        session (Optional[AsyncSession]): Optional existing database session.
+
+    Returns:
+        Optional[UserDetailDTO]: Matching user snapshot, or ``None`` if not found.
+
+    Raises:
+        None directly.
+
+    Calls / Depends on:
+        - ``sqlalchemy.select``, ``func.lower``
+        - ``bot.core.models.user.User``
+        - ``bot.admin.schemas.UserDetailDTO``
+
+    Called by:
+        - ``bot/admin/handler.py``: ``process_user_search``
+    """
     async def _execute(sess: AsyncSession):
         clean_id = identifier.strip().lstrip("@")
         stmt = None
@@ -700,7 +1034,30 @@ async def get_broadcast_target_telegram_ids(
     audience: str,
     session: Optional[AsyncSession] = None,
 ) -> List[int]:
-    """Retrieves target telegram_ids for broadcast audience (students, drivers, or all)."""
+    """Resolve the list of target Telegram IDs for a broadcast audience.
+
+    Only ``ACTIVE`` users are included. The audience filter narrows the
+    result set by role when specified.
+
+    Args:
+        audience (str): Target audience identifier. Valid values:
+            "students", "drivers", or "all" (no role filter).
+        session (Optional[AsyncSession]): Optional existing database session.
+
+    Returns:
+        List[int]: Telegram IDs of users matching the audience criteria.
+
+    Raises:
+        None directly.
+
+    Calls / Depends on:
+        - ``sqlalchemy.select``
+        - ``bot.core.models.user.User``
+        - ``bot.core.constants.enums.AccountStatus``, ``UserRole``
+
+    Called by:
+        - ``bot/admin/handler.py``: ``execute_broadcast``
+    """
     async def _execute(sess: AsyncSession):
         stmt = select(User.telegram_id).where(User.account_status == AccountStatus.ACTIVE)
         if audience == "students":
@@ -716,5 +1073,3 @@ async def get_broadcast_target_telegram_ids(
     else:
         async with async_session() as sess:
             return await _execute(sess)
-
-

@@ -1,3 +1,30 @@
+"""Packitbot application entry point and bootstrap logic.
+
+This module initializes the Telegram bot, sets up the
+dispatcher with routers and middlewares, configures
+database tables, seeds admin users, and starts either
+polling or webhook mode based on configuration.
+
+Function Calls:
+    - _init_db() -> None
+    - get_admin_chats_from_settings() -> list[int]
+    - get_user_chats_by_role(role) -> list[int]
+    - _seed_admins() -> None
+    - setup_routers(dp) -> None
+    - setup_error_handlers(dp) -> None
+    - set_bot_commands(bot) -> None
+    - _run_polling(dp, bot) -> None
+    - _run_webhook(dp, bot) -> None
+    - main() -> None
+
+Cross-References:
+    - Depends on: aiogram Bot/Dispatcher, sqlalchemy, alembic,
+        bot.core.config, bot.core.db, bot.core.middlewares,
+        bot.core.models, bot.admin.handler, bot.common.*,
+        bot.student.handler, bot.core.constants.*
+    - Imported by: Python entry point (if __name__ == "__main__")
+"""
+
 import asyncio
 import logging
 
@@ -14,7 +41,7 @@ from bot.common.fallback import fallback_router
 from bot.common.help import help_router
 from bot.common.start import start_router
 from bot.core.config import get_settings
-from bot.core.constants.commands import (
+from bot.core.constants_commands import (
     ADMIN_COMMANDS,
     DEFAULT_COMMANDS,
     DRIVER_COMMANDS,
@@ -38,13 +65,25 @@ from bot.student.handler import student_router
 
 
 async def _init_db() -> None:
-    """Ensures database tables are created before operations run."""
+    """Create all database tables defined by the SQLAlchemy models.
+
+    This function should be called before any database
+    operations to ensure the schema is up to date.
+    """
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
 
 def get_admin_chats_from_settings() -> list[int]:
-    """Reads admin telegram IDs directly from settings as a fallback/helper."""
+    """Read admin Telegram IDs directly from settings as a fallback helper.
+
+    Parses the comma-separated seed_admin_telegram_ids string
+    from the application settings and returns a list of valid
+    integer Telegram IDs.
+
+    Returns:
+        A list of admin Telegram chat IDs.
+    """
     settings = get_settings()
     if not settings.seed_admin_telegram_ids:
         return []
@@ -54,7 +93,14 @@ def get_admin_chats_from_settings() -> list[int]:
 
 
 async def get_user_chats_by_role(role: UserRole) -> list[int]:
-    """Fetches Telegram IDs for active users with a given role."""
+    """Fetch Telegram chat IDs for all active users with a given role.
+
+    Args:
+        role: The UserRole enum value to filter by.
+
+    Returns:
+        A list of Telegram chat IDs for users with the specified role.
+    """
     async with make_session() as session:
         stmt = select(User.telegram_id).where(User.role == role)
         result = await session.execute(stmt)
@@ -62,6 +108,13 @@ async def get_user_chats_by_role(role: UserRole) -> list[int]:
 
 
 async def _seed_admins() -> None:
+    """Seed the database with admin users from the settings configuration.
+
+    Iterates over the comma-separated seed_admin_telegram_ids from
+    settings, creates User records for any that do not already exist,
+    promotes them to the Admin role, and ensures an AdminProfile
+    record exists for each.
+    """
     settings = get_settings()
     if not settings.seed_admin_telegram_ids:
         return
@@ -110,7 +163,15 @@ async def _seed_admins() -> None:
 
 
 def setup_routers(dp) -> None:
-    """Feature routers FIRST, Catch-all (fallback_router) LAST."""
+    """Register all feature routers on the dispatcher.
+
+    Feature routers are included first so their handlers take
+    precedence. The fallback router is always included last
+    to catch any unmatched updates.
+
+    Args:
+        dp: The aiogram Dispatcher instance.
+    """
     dp.include_router(start_router)
     dp.include_router(admin_router)
     dp.include_router(help_router)
@@ -121,10 +182,27 @@ def setup_routers(dp) -> None:
 
 
 def setup_error_handlers(dp) -> None:
-    """Global exception handler for Packitbot domain errors, IntegrityError, and stale callback queries."""
+    """Register a global error handler on the dispatcher.
+
+    The handler catches Packitbot domain errors, database
+    IntegrityErrors, stale TelegramBadRequests, and any
+    unhandled exceptions, responding with appropriate user
+    messages in each case.
+
+    Args:
+        dp: The aiogram Dispatcher instance.
+    """
 
     @dp.errors()
     async def global_error_handler(event: ErrorEvent) -> bool:
+        """Global error handler for all unhandled exceptions.
+
+        Args:
+            event: The ErrorEvent from aiogram.
+
+        Returns:
+            True to indicate the error was handled.
+        """
         exception = event.exception
         update = event.update
 
@@ -212,13 +290,28 @@ def setup_error_handlers(dp) -> None:
 
 
 async def set_bot_commands(bot: Bot) -> None:
-    """Sets role-tailored command menus across Telegram."""
+    """Set role-tailored command menus across Telegram.
+
+    Registers the default command list globally, then
+    sets role-specific command lists for each chat where
+    users with that role are found (students, drivers, admins).
+
+    Args:
+        bot: The aiogram Bot instance.
+    """
     # 1. Global default fallback menu for guests/unregistered users
     await bot.set_my_commands(DEFAULT_COMMANDS, scope=BotCommandScopeDefault())
 
     async def _apply_menu_for_chats(
         chat_ids: list[int], commands: list[BotCommand], role_label: str
     ) -> None:
+        """Apply a command menu to a list of chat IDs.
+
+        Args:
+            chat_ids: List of Telegram chat IDs.
+            commands: List of BotCommand objects to set.
+            role_label: Label used for logging.
+        """
         for chat_id in chat_ids:
             try:
                 await bot.set_my_commands(
@@ -249,6 +342,15 @@ async def set_bot_commands(bot: Bot) -> None:
 
 
 async def _run_polling(dp, bot: Bot) -> None:
+    """Start the bot in long-polling mode.
+
+    Initializes the database, seeds admin users, sets
+    command menus, and begins polling for updates.
+
+    Args:
+        dp: The aiogram Dispatcher instance.
+        bot: The aiogram Bot instance.
+    """
     await _init_db()
     await _seed_admins()
     await set_bot_commands(bot)
@@ -256,6 +358,16 @@ async def _run_polling(dp, bot: Bot) -> None:
 
 
 async def _run_webhook(dp, bot: Bot) -> None:
+    """Start the bot in webhook mode using aiohttp.
+
+    Initializes the database, seeds admin users, sets
+    command menus, configures the webhook URL, and
+    starts an aiohttp web server to receive updates.
+
+    Args:
+        dp: The aiogram Dispatcher instance.
+        bot: The aiogram Bot instance.
+    """
     from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
     from aiohttp import web
 
@@ -297,6 +409,13 @@ async def _run_webhook(dp, bot: Bot) -> None:
 
     
 def main() -> None:
+    """Entry point for the Packitbot application.
+
+    Loads settings, configures logging, sets up the
+    dispatcher with routers, error handlers, and
+    middlewares, then starts the bot in either polling
+    or webhook mode depending on configuration.
+    """
     settings = get_settings()
     log_level = getattr(logging, settings.log_level.upper(), logging.INFO)
     logging.getLogger().setLevel(log_level)

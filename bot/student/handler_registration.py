@@ -1,3 +1,25 @@
+"""Student registration handler module.
+
+This module contains aiogram handlers for the student registration
+flow, including role selection, full name entry, hall selection,
+phone number entry, and registration confirmation/review.
+
+Function Calls:
+    - cancel_registration(event, state) -> None
+    - receive_full_name(message, state) -> None
+    - select_hall(callback, state) -> None
+    - receive_phone(message, state) -> None
+    - edit_full_name(callback, state) -> None
+    - edit_phone(callback, state) -> None
+    - submit_registration(callback, state) -> None
+
+Cross-References:
+    - Depends on: aiogram Router, FSMContext, sqlalchemy, bot.student.states,
+        bot.student.service, bot.student.keyboards, bot.core.constants.*,
+        bot.core.utils.validators, bot.core.keyboards.common_kb
+    - Imported by: bot/main.py (via student_router)
+"""
+
 import logging
 from aiogram import F, Router
 from aiogram.filters import Command
