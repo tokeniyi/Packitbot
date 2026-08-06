@@ -1,22 +1,26 @@
+"""
+Feedback ORM model for the Packit bot.
+
+Represents a student's rating and optional comment for a completed delivery
+request.  Each ``DeliveryRequest`` can have at most one ``Feedback`` record
+(enforced by a unique constraint on ``request_id``), creating a one-to-one
+relationship between a request and its feedback.
+
+Used by:
+    - ``bot/request/service.py`` — ``RequestService.submit_feedback``
+      creates feedback records.
+    - ``bot/request/repository.py`` — ``FeedbackRepository`` wraps DB access.
+    - ``bot/student/handler_requests.py`` — displays existing feedback and
+      prompts for new feedback.
+    - ``bot/admin/service.py`` — aggregates feedback for system stats
+      (total feedback count, average rating).
+    - ``alembic/env.py`` — registered for Alembic migrations.
+    - ``tests/unit/core/test_models.py`` — model unit tests.
+"""
+
 from __future__ import annotations
 from typing import TYPE_CHECKING
 
-# =============================================================================
-# Cross-References (imports this file depends on):
-#   - bot.core.db.base_class.Base: The declarative base class for all SQLAlchemy
-#     ORM models in this project. Feedback inherits from Base to become a
-#     mapped class tied to the "feedbacks" database table.
-#   - bot.core.models.base.TimestampMixin: Provides created_at and updated_at
-#     timestamp columns automatically managed by SQLAlchemy. Feedback inherits
-#     from this mixin to track when feedback records are created and last
-#     updated.
-#   - bot.core.models.delivery_request.DeliveryRequest (TYPE_CHECKING): The
-#     delivery request model. Used for type hints only; the relationship
-#     "request" links a Feedback to its parent DeliveryRequest.
-#   - bot.core.models.user.User (TYPE_CHECKING): The user model. Used for type
-#     hints only; the relationship "student" links a Feedback to the User who
-#     submitted it.
-# =============================================================================
 from sqlalchemy import ForeignKey, Integer, String, BigInteger
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -28,36 +32,44 @@ if TYPE_CHECKING:
     from bot.core.models.user import User
 
 
-# =============================================================================
-# Code Logic:
-#   The Feedback SQLAlchemy ORM model represents student ratings and comments
-#   for completed delivery requests. It is stored in the "feedbacks" table.
-#
-#   Step-by-step explanation of the model structure:
-#   1. The class inherits from Base (the declarative base) and TimestampMixin
-#      (which adds created_at and updated_at columns automatically).
-#   2. __tablename__ = "feedbacks" maps the class to the feedbacks table.
-#   3. id: Primary key column, auto-incremented integer.
-#   4. request_id: A foreign key referencing delivery_requests.id with CASCADE
-#      delete behavior. It is unique (one feedback per request) and non-nullable.
-#      An index is created on this column for fast lookups by request.
-#   5. student_id: A BigInteger foreign key referencing users.id with CASCADE
-#      delete behavior. It is non-nullable and indexed for fast lookups by
-#      student. BigInteger is used because Telegram user IDs can exceed 32-bit
-#      integer range.
-#   6. rating: An integer column storing the student's rating (e.g., 1-5).
-#      Non-nullable.
-#   7. comment: An optional string column (max 500 chars) for the student's
-#      written feedback. Nullable.
-#   8. request: A one-to-one relationship to DeliveryRequest, with
-#      back_populates="feedback" so that DeliveryRequest.feedback can access
-#      this Feedback object. uselist=False indicates a single related object,
-#      not a list.
-#   9. student: A relationship to User (the student who submitted the feedback).
-#      uselist=False indicates a single related User object.
-# =============================================================================
 class Feedback(Base, TimestampMixin):
-    """Student feedback and rating for a completed delivery request."""
+    """Student feedback and rating for a completed delivery request.
+
+    The ``request_id`` column has a unique constraint, enforcing a
+    one-to-one relationship: a student can submit at most one feedback
+    per delivery request.  Both ``request_id`` and ``student_id`` use
+    ``ondelete="CASCADE"`` so that feedback is automatically removed if
+    the underlying request or user is deleted.
+
+    Attributes:
+        id (int): Primary key.
+        request_id (int): FK to ``delivery_requests.id``. Unique — one
+            feedback per request. ``CASCADE`` on delete.
+        student_id (int): FK to ``users.id`` of the rating student.
+            ``CASCADE`` on delete.  ``BigInteger`` because Telegram user
+            IDs can exceed the 32-bit integer range.
+        rating (int): Numeric rating (e.g. 1–5 scale). Non-nullable.
+        comment (str | None): Optional written feedback (max 500 chars).
+
+    Relationships:
+        request: The ``DeliveryRequest`` this feedback belongs to
+            (one-to-one via ``uselist=False``).
+        student: The ``User`` who submitted the feedback (one-to-one
+            via ``uselist=False``).
+
+    Calls / Depends on:
+        - ``bot.core.db.base_class.Base`` — declarative base.
+        - ``bot.core.models.base.TimestampMixin`` — audit timestamps.
+        - ``bot.core.constants.enums`` — not directly; rating is a plain
+          integer, not an enum column.
+
+    Called by:
+        - ``bot/request/service.py`` — ``RequestService.submit_feedback``
+          creates and persists ``Feedback`` instances.
+        - ``bot/request/repository.py`` — ``FeedbackRepository`` wraps the
+          ORM for create and query operations.
+        - ``alembic/env.py`` — table registration.
+    """
 
     __tablename__ = "feedbacks"
 

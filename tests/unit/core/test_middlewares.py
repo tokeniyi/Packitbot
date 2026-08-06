@@ -12,43 +12,46 @@ from bot.core.middlewares.db_session import DbSessionMiddleware
 from bot.core.middlewares.throttling import ThrottlingMiddleware
 
 
-# ---------------------------------------------------------------------------
-# Code Logic:
-#   This module contains unit tests for core middlewares and common handlers.
-#   It validates:
-#     1. DbSessionMiddleware rollback/commit behavior on exception/success
-#     2. AuthMiddleware user creation on first update
-#     3. AuthMiddleware short-circuiting banned users
-#     4. ThrottlingMiddleware rate-limiting behavior
-#     5. /start handler role button display
-#     6. /help handler response
-#     7. /about handler response
-#     8. Fallback handler reply with Home button
-#
-# Function Calls:
-#   - test_db_session_middleware_rolls_back_on_exception
-#   - test_db_session_middleware_commits_on_success
-#   - test_auth_middleware_creates_user_on_first_update
-#   - test_auth_middleware_short_circuits_banned_user
-#   - test_throttling_middleware_denies_rapid_updates
-#   - test_start_handler_shows_role_buttons
-#   - test_help_handler_responds
-#   - test_about_handler_responds
-#   - test_fallback_handler_replies_with_home
-#
-# Cross-References:
-#   - Depends on: bot.core.middlewares.auth, bot.core.middlewares.db_session,
-#       bot.core.middlewares.throttling, bot.common.start, bot.common.help,
-#       bot.common.fallback, aiogram types, pytest, unittest.mock
-#   - Imported by: pytest runner
-# ---------------------------------------------------------------------------
+"""Unit tests for core middlewares and common handlers.
+
+This module contains pytest test cases for the
+authentication, database session, and throttling
+middlewares, as well as common handler functions
+for start, help, about, and fallback flows.
+
+Test Functions:
+    - test_db_session_middleware_rolls_back_on_exception
+    - test_db_session_middleware_commits_on_success
+    - test_auth_middleware_creates_user_on_first_update
+    - test_auth_middleware_short_circuits_banned_user
+    - test_throttling_middleware_denies_rapid_updates
+    - test_start_handler_shows_role_buttons
+    - test_help_handler_responds
+    - test_about_handler_responds
+    - test_fallback_handler_replies_with_home
+
+Cross-References:
+    - Depends on: pytest, unittest.mock, aiogram types,
+        bot.core.middlewares.auth, bot.core.middlewares.db_session,
+        bot.core.middlewares.throttling, bot.common.start, bot.common.help,
+        bot.common.fallback
+    - Imported by: pytest runner
+"""
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 def _make_update(user_id: int = 1, text: str = "hello") -> Update:
-    """Build a minimal aiogram Update object for middleware testing."""
+    """Build a minimal aiogram Update object for middleware testing.
+
+    Args:
+        user_id: The Telegram user ID to embed in the mock message.
+        text: The text content of the mock message.
+
+    Returns:
+        A minimal Update object with a Message containing the given user.
+    """
     chat = Chat(id=1, type="private")
     user = User(id=user_id, is_bot=False, first_name="Test", username="t")
     message = Message(
@@ -62,7 +65,11 @@ def _make_update(user_id: int = 1, text: str = "hello") -> Update:
 
 
 def _make_fake_session():
-    """Create an AsyncMock SQLAlchemy session with common methods mocked."""
+    """Create an AsyncMock SQLAlchemy session with common methods mocked.
+
+    Returns:
+        An AsyncMock session with execute, commit, rollback, close, flush, and add methods.
+    """
     session = AsyncMock()
     session.in_transaction = MagicMock(return_value=True)
     session.close = AsyncMock()
@@ -75,7 +82,15 @@ def _make_fake_session():
 
 
 def _make_mock_update(user_id: int = 1, mock_answer: bool = True) -> MagicMock:
-    """Build a mock Update-like object for lightweight handler testing."""
+    """Build a mock Update-like object for lightweight handler testing.
+
+    Args:
+        user_id: The Telegram user ID to embed in the mock.
+        mock_answer: Whether to mock the answer method on the message.
+
+    Returns:
+        A MagicMock object mimicking an aiogram Update.
+    """
     mock_user = MagicMock()
     mock_user.id = user_id
     mock_user.is_bot = False

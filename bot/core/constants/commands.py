@@ -1,6 +1,15 @@
-"""
-bot/core/constants/commands.py
-Centralized repository for all bot command strings and descriptions.
+"""Centralized repository for all bot command strings and descriptions.
+
+This module defines command string constants (without leading
+slashes for aiogram Command filters) and the BotCommand
+objects used when registering command menus with Telegram.
+
+Constants:
+    - CMD_START, CMD_HOME, CMD_HELP, CMD_CANCEL, CMD_MENU, CMD_ABOUT
+    - CMD_NEW_REQUEST, CMD_MY_REQUESTS, CMD_PROFILE (Student)
+    - CMD_AVAILABLE_JOBS, CMD_ACTIVE_JOB, CMD_TOGGLE_DUTY (Driver)
+    - CMD_ADMIN, CMD_STATS, CMD_VERIFY, CMD_USERS, CMD_ORDERS, CMD_BROADCAST (Admin)
+    - DEFAULT_COMMANDS, STUDENT_COMMANDS, DRIVER_COMMANDS, ADMIN_COMMANDS
 """
 
 from aiogram.types import BotCommand

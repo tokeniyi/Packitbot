@@ -1,3 +1,22 @@
+"""Student registration and profile management service layer.
+
+This module provides async service functions for student-related operations
+including registration, profile retrieval, and registration status checks.
+It orchestrates database sessions, validates input, and coordinates with
+the repository and model layers.
+
+Function Calls:
+    - register_student(telegram_id, username, full_name, hall, phone) -> StudentProfile
+    - get_profile(user_id) -> StudentProfile | None
+    - is_registered(telegram_id) -> bool
+
+Cross-References:
+    - Depends on: bot.core.db.session.async_session, bot.core.models.user.User,
+        bot.core.models.student_profile.StudentProfile, bot.core.utils.validators,
+        bot.core.constants.enums.AccountStatus, bot.core.constants.enums.UserRole
+    - Imported by: bot/student/handler.py, bot/student/handler_registration.py
+"""
+
 from typing import Optional
 
 from sqlalchemy import select
@@ -13,9 +32,6 @@ from bot.core.utils.validators import (
 )
 
 
-from typing import Optional
-from sqlalchemy import select
-
 async def register_student(
     telegram_id: int,
     username: Optional[str],
@@ -23,6 +39,26 @@ async def register_student(
     hall: str,
     phone: Optional[str] = None,
 ) -> StudentProfile:
+    """Register a student user, creating or updating the User and StudentProfile records.
+
+    Validates the full name and phone number, then either updates an existing
+    User record or creates a new one. Ensures a corresponding StudentProfile
+    exists, creating it if missing. Commits the transaction and refreshes
+    the profile before returning.
+
+    Args:
+        telegram_id: The unique Telegram user identifier.
+        username: Optional Telegram username.
+        full_name: The student's full name; validated and normalized.
+        hall: The student's hall of residence.
+        phone: Optional phone number; validated if provided.
+
+    Returns:
+        The persisted StudentProfile record.
+
+    Raises:
+        ValidationError: If full_name or phone validation fails.
+    """
     validated_full_name = validate_full_name(full_name)
     validated_phone = validate_phone(phone) if phone else None
 
@@ -70,13 +106,21 @@ async def register_student(
                 )
                 session.add(profile)
 
-        # Entering / exiting `async with session.begin()` handles 
+        # Entering / exiting `async with session.begin()` handles
         # automatic commit on success or rollback on exception.
         await session.refresh(profile)
         return profile
 
 
 async def get_profile(user_id: int) -> Optional[StudentProfile]:
+    """Fetch a StudentProfile by the internal user ID.
+
+    Args:
+        user_id: The primary key of the related User record.
+
+    Returns:
+        The matching StudentProfile if found, otherwise None.
+    """
     session = async_session()
     try:
         stmt = select(StudentProfile).where(StudentProfile.user_id == user_id)
@@ -87,6 +131,16 @@ async def get_profile(user_id: int) -> Optional[StudentProfile]:
 
 
 async def is_registered(telegram_id: int) -> bool:
+    """Check whether a Telegram user is registered as a student.
+
+    Looks up the user by telegram_id and verifies their role is Student.
+
+    Args:
+        telegram_id: The unique Telegram user identifier.
+
+    Returns:
+        True if the user exists and has the Student role, False otherwise.
+    """
     session = async_session()
     try:
         stmt = select(User).where(User.telegram_id == telegram_id)

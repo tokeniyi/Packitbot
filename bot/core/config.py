@@ -4,6 +4,20 @@ Configuration module for the Packit bot.
 This module defines the Pydantic Settings model used to load the bot's
 configuration from environment variables and a .env file. It also provides
 a utility function to generate Telegram support deep links.
+
+Key exports:
+    - ``Settings`` — Pydantic ``BaseSettings`` subclass with all config fields.
+    - ``get_settings()`` — factory function returning a populated ``Settings``.
+    - ``get_support_url()`` — builds a ``t.me`` deep-link for support.
+
+Used by:
+    - ``bot/core/db/session.py`` — reads ``database_url`` for engine creation.
+    - ``alembic/env.py`` — reads ``database_url`` for migration configuration.
+    - ``bot/main.py`` — reads settings for admin seeding and bootstrap logic.
+    - ``bot/core/middlewares/auth.py`` — reads ``Settings`` (via
+      ``get_settings``) for ``seed_admin_telegram_ids`` to promote seed admins.
+    - ``bot/core/constants/messages.py`` — calls ``get_support_url()`` to
+      build ``SUPPORT_LINK`` embedded in reply messages.
 """
 
 import os
@@ -64,10 +78,17 @@ def get_settings() -> Settings:
     Returns:
         Settings: A fully populated Settings instance.
 
-    Cross-References:
-        - Called in ``bot/core/db/session.py`` (line ~3) to obtain
-          ``database_url`` for SQLAlchemy engine creation.
-        - Called in ``alembic/env.py`` during database migration configuration.
+    Calls / Depends on:
+        - ``bot.core.config.Settings`` — instantiates the Settings class
+          which reads from environment variables and ``.env``.
+
+    Called by:
+        - ``bot/core/db/session.py`` — to obtain ``database_url`` for
+          SQLAlchemy engine creation.
+        - ``alembic/env.py`` — ``run_async_migrations`` calls
+          ``get_settings()`` to obtain ``database_url``.
+        - ``bot/main.py`` — ``get_admin_chats_from_settings()`` calls
+          ``get_settings()`` to read ``seed_admin_telegram_ids``.
     """
     return Settings()
 
@@ -96,9 +117,14 @@ def get_support_url(
         str: A URL-safe ``t.me`` deep link, e.g.
             ``https://t.me/tokeniyi?text=From+Packit%3A+Issue``.
 
-    Function Calls:
-        - ``urllib.parse.quote``: Percent-encodes the text so that spaces and
-          special characters are safe inside a URL query string.
+    Calls / Depends on:
+        - ``urllib.parse.quote`` — Percent-encodes the text so that spaces
+          and special characters are safe inside a URL query string.
+
+    Called by:
+        - ``bot/core/constants/messages.py`` — ``SUPPORT_LINK =
+          get_support_url()`` (line 68), used to inject a support deep-link
+          into bot reply messages.
     """
     encoded_text = quote(text)
     return f"https://t.me/{username}?text={encoded_text}"

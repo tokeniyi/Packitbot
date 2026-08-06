@@ -1,3 +1,20 @@
+"""Quick reply button labels used across the Packitbot application.
+
+This module defines constant strings for commonly used
+inline and reply keyboard button labels. These are
+imported by keyboard builder functions to ensure
+consistency across the bot.
+
+Constants:
+    - BTN_HOME, BTN_BACK, BTN_CANCEL, BTN_YES, BTN_NO
+    - BTN_SKIP, BTN_EDIT, BTN_SUBMIT, BTN_CHANGE, BTN_USE_PROFILE
+    - BTN_MY_REQUESTS, BTN_MY_PROFILE, BTN_HELP
+    - DATE_QUICK_PICK_TODAY, DATE_QUICK_PICK_TOMORROW, DATE_QUICK_PICK_ANOTHER
+    - TIME_WINDOW_MORNING, TIME_WINDOW_AFTERNOON, TIME_WINDOW_EVENING
+    - VEHICLE_TYPE_SEDAN, VEHICLE_TYPE_SUV, VEHICLE_TYPE_BUS, VEHICLE_TYPE_BIKE, VEHICLE_TYPE_VAN
+    - ROLE_STUDENT, ROLE_DRIVER
+"""
+
 BTN_HOME = "🏠 Home"
 BTN_BACK = "⬅ Back"
 BTN_CANCEL = "❌ Cancel"

@@ -1,3 +1,40 @@
+"""Student handlers for delivery request management and feedback.
+
+This module contains aiogram handlers for student operations
+beyond registration, including:
+- Viewing and paginating delivery request history
+- Request detail display
+- Request editing (field selection, value editing, confirmation)
+- Request cancellation flow with confirmation
+- Feedback rating and comment submission for completed deliveries
+
+Function Calls:
+    - show_my_requests_list(message, session, page) -> None
+    - my_requests_page_callback(callback, session) -> None
+    - show_request_detail(callback, session) -> None
+    - start_request_edit(callback, state, session) -> None
+    - select_field_to_edit(callback, state) -> None
+    - process_edit_hall_callback(callback, state) -> None
+    - process_edit_size_callback(callback, state) -> None
+    - process_edit_date_callback(callback, state) -> None
+    - process_edit_time_callback(callback, state) -> None
+    - process_edit_value_message(message, state) -> None
+    - confirm_request_update(callback, state, session) -> None
+    - prompt_cancel_request(callback, session) -> None
+    - confirm_cancel_request(callback, session) -> None
+    - prompt_feedback_rating(callback, state, session) -> None
+    - process_rating_selection(callback, state) -> None
+    - process_feedback_skip_comment(callback, state, session) -> None
+    - process_feedback_comment_message(message, state, session) -> None
+
+Cross-References:
+    - Depends on: aiogram Router, FSMContext, sqlalchemy, bot.student.states,
+        bot.student.keyboards, bot.request.repository, bot.request.service,
+        bot.request.schemas, bot.core.models.*, bot.core.constants.*,
+        bot.core.utils.pagination, bot.core.exceptions
+    - Imported by: bot/main.py (via student_router)
+"""
+
 from aiogram.filters import state
 from bot.core.utils.validators import (
     validate_dropoff_address,

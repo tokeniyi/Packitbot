@@ -1,3 +1,26 @@
+"""Authentication middleware for the Packitbot Telegram bot.
+
+This middleware intercepts every incoming update, resolves the
+Telegram user to an internal User record (creating one if
+necessary), enforces banned-user restrictions, and injects the
+user object into the handler data dict for downstream access.
+
+Classes:
+    - AuthMiddleware: aiogram BaseMiddleware subclass for user auth.
+
+Function Calls:
+    - __call__(handler, event, data) -> Any
+    - _get_or_create_user(session, telegram_id) -> User
+    - _ensure_admin_profile(session, user_id) -> AdminProfile
+
+Cross-References:
+    - Depends on: aiogram BaseMiddleware, sqlalchemy, bot.core.config.Settings,
+        bot.core.db.session.async_session, bot.core.models.user.User,
+        bot.core.models.admin_profile.AdminProfile, bot.core.keyboards.common_kb.HomeButton,
+        bot.core.constants.enums.AccountStatus, bot.core.constants.enums.UserRole
+    - Imported by: bot/main.py
+"""
+
 import logging
 from typing import Any, Callable
 
@@ -15,11 +38,39 @@ logger = logging.getLogger(__name__)
 
 
 class AuthMiddleware(BaseMiddleware):
+    """Middleware that authenticates users via Telegram ID and enforces access control.
+
+    On each update, resolves the Telegram user to an internal User
+    record, creates the record if it does not exist, blocks banned
+    users, promotes seed-admin Telegram IDs to the Admin role, and
+    ensures an AdminProfile exists for admin users. The resolved
+    user is injected into ``data["user"]`` for downstream handlers.
+
+    Attributes:
+        settings: Application settings containing seed admin Telegram IDs.
+        home: HomeButton keyboard markup used in user-facing error messages.
+    """
+
     def __init__(self, settings: Settings):
+        """Initialize the AuthMiddleware with application settings.
+
+        Args:
+            settings: The application Settings object providing
+                seed_admin_telegram_ids for admin promotion.
+        """
         self.settings = settings
         self.home = HomeButton()
 
     async def _get_or_create_user(self, session, telegram_id: int):
+        """Fetch an existing User by telegram_id or create a new one.
+
+        Args:
+            session: The active async SQLAlchemy session.
+            telegram_id: The Telegram user identifier.
+
+        Returns:
+            The User record, either existing or newly created.
+        """
         from bot.core.models.user import User
 
         stmt = select(User).where(User.telegram_id == telegram_id)
@@ -35,6 +86,17 @@ class AuthMiddleware(BaseMiddleware):
         return user
 
     async def _ensure_admin_profile(self, session, user_id: int):
+        """Ensure an AdminProfile record exists for the given user.
+
+        Creates a new AdminProfile if one does not already exist.
+
+        Args:
+            session: The active async SQLAlchemy session.
+            user_id: The internal user ID.
+
+        Returns:
+            The AdminProfile record.
+        """
         from bot.core.models.admin_profile import AdminProfile
 
         stmt = select(AdminProfile).where(AdminProfile.user_id == user_id)
@@ -54,6 +116,24 @@ class AuthMiddleware(BaseMiddleware):
         event: types.Update,
         data: dict[str, Any],
     ) -> Any:
+        """Process the incoming update, resolve the user, and enforce access rules.
+
+        Extracts the Telegram user ID from the update, resolves or
+        creates the internal User record, blocks banned users, promotes
+        seed-admin IDs, and injects the user into handler data.
+
+        Args:
+            handler: The next handler in the middleware chain.
+            event: The incoming aiogram Update object.
+            data: The handler data dict to pass along.
+
+        Returns:
+            The result of the downstream handler, or None if the
+            update was short-circuited (e.g., banned user).
+
+        Raises:
+            RuntimeError: If no database session is present in data.
+        """
         session = data.get("session")
         if session is None:
             raise RuntimeError("Database session not provided to AuthMiddleware")

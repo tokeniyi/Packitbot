@@ -1,9 +1,43 @@
-"""
-Refactoring Changes:
-1. Removed matric_number from states, step handlers, and review keyboard.
-2. Direct Flow: Full Name -> Hall Selection -> Phone Number -> Confirm/Review Screen.
-3. Automatically retrieves `username` from Telegram's callback.from_user on submission.
-4. Preserved single-field editing flag logic.
+"""Student bot handlers for registration, profile management, and delivery requests.
+
+This module contains all aiogram handlers for the student role, including:
+- Student registration FSM (full name, hall selection, phone number, confirmation)
+- Delivery request creation FSM (multi-step form with validation)
+- Request viewing, editing, and cancellation
+- Profile viewing and editing (phone number, hall of residence)
+- Feedback rating for completed deliveries
+
+The module uses two routers: `student_router` for student-specific handlers
+and shares state machines from `bot.student.states`.
+
+Function Calls:
+    - cancel_registration(event, state) -> None
+    - receive_full_name(message, state) -> None
+    - select_hall(callback, state) -> None
+    - receive_phone(message, state) -> None
+    - edit_full_name(callback, state) -> None
+    - edit_phone(callback, state) -> None
+    - submit_registration(callback, state) -> None
+    - start_request_creation(message, state) -> None
+    - cancel_request_creation(event, state) -> None
+    - show_my_requests_list(message, session, page) -> None
+    - show_request_detail(callback, session) -> None
+    - start_request_edit(callback, state, session) -> None
+    - select_field_to_edit(callback, state) -> None
+    - confirm_request_update(callback, state, session) -> None
+    - prompt_cancel_request(callback, session) -> None
+    - confirm_cancel_request(callback, session) -> None
+    - prompt_feedback_rating(callback, state, session) -> None
+    - process_rating_selection(callback, state) -> None
+    - process_feedback_comment_message(message, state, session) -> None
+
+Cross-References:
+    - Depends on: aiogram Router, FSMContext, sqlalchemy, bot.student.states,
+        bot.student.service, bot.student.keyboards, bot.student.schemas,
+        bot.core.models.delivery_request, bot.core.models.student_profile,
+        bot.core.models.user, bot.core.constants.*, bot.core.utils.validators,
+        bot.core.utils.pagination, bot.request.repository, bot.request.service
+    - Imported by: bot/main.py (via student_router)
 """
 
 from aiogram.filters import state

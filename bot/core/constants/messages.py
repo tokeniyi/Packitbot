@@ -1,3 +1,28 @@
+"""User-facing message strings for the Packitbot Telegram bot.
+
+This module centralizes all text messages sent to users
+throughout the bot, including welcome messages, registration
+prompts, request status labels, notifications, and error
+messages. All strings use HTML parse mode where applicable.
+
+Constants:
+    - MSG_START_ROLE_SELECTION: Role selection prompt.
+    - MSG_START_ADMIN_WELCOME: Admin welcome message.
+    - MSG_MANAGEMENT_PORTAL: Admin management panel text.
+    - MSG_STATS: System statistics display.
+    - MSG_HELP: Help text.
+    - MSG_ABOUT: About text.
+    - MSG_STUDENT_WELCOME: Student portal welcome.
+    - MSG_DRIVER_WELCOME: Driver portal welcome.
+    - MSG_REG_*: Registration flow messages.
+    - MSG_REQ_*: Delivery request flow messages.
+    - MSG_STATUS_*: Request status labels.
+    - MSG_NOTIFY_*: Notification messages.
+    - MSG_SOMETHING_WENT_WRONG: Generic error message.
+    - MSG_SLOW_DOWN: Throttling message.
+    - MSG_BANNED: Ban notification.
+"""
+
 MSG_START_ROLE_SELECTION = "Welcome to Packitbot! Are you a Student or a Driver?"
 
 # Admins

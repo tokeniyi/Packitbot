@@ -1,3 +1,34 @@
+"""Keyboard builders for the student and common bot interfaces.
+
+This module provides factory functions that return aiogram
+InlineKeyboardMarkup and ReplyKeyboardMarkup objects used
+throughout the student and common handler flows.
+
+Function Calls:
+    - hall_selection_keyboard() -> InlineKeyboardMarkup
+    - student_persistent_menu() -> ReplyKeyboardMarkup
+    - date_quick_pick_keyboard() -> InlineKeyboardMarkup
+    - frequent_address_keyboard(frequent_addresses) -> InlineKeyboardMarkup
+    - req_hall_selection_keyboard() -> InlineKeyboardMarkup
+    - luggage_size_keyboard() -> InlineKeyboardMarkup
+    - time_window_keyboard() -> InlineKeyboardMarkup
+    - skip_or_cancel_keyboard(skip_callback) -> InlineKeyboardMarkup
+    - request_review_keyboard() -> InlineKeyboardMarkup
+    - my_requests_list_keyboard(requests, page, total_pages) -> InlineKeyboardMarkup
+    - request_detail_keyboard(req) -> InlineKeyboardMarkup
+    - request_edit_fields_keyboard(request_id) -> InlineKeyboardMarkup
+    - request_edit_confirm_keyboard(request_id) -> InlineKeyboardMarkup
+    - request_cancel_confirm_keyboard(request_id) -> InlineKeyboardMarkup
+    - feedback_rating_keyboard(request_id) -> InlineKeyboardMarkup
+    - feedback_comment_skip_keyboard(request_id) -> InlineKeyboardMarkup
+
+Cross-References:
+    - Depends on: aiogram.types, bot.core.constants.enums.LuggageSize,
+        bot.core.constants.halls.CU_HALLS, bot.core.constants.quick_replies,
+        bot.core.utils.validators.TIME_WINDOW_SLOTS
+    - Imported by: bot/student/handler.py, bot/student/handler_requests.py
+"""
+
 from datetime import date, timedelta
 from typing import List, Optional
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton

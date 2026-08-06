@@ -1,9 +1,22 @@
-"""
-Refactoring Summary:
-1. Dynamically sets chat-specific command menus upon user arrival based on role.
-2. Cleaned duplicate BTN_HOME condition in or_f filter.
-3. Clears FSM state unconditionally on home/start navigation.
-4. Added Bot instance dependency injection to update commands dynamically.
+"""Start and home command handlers for the Packitbot Telegram bot.
+
+This module handles the /start, /home, and home button
+interactions, presenting role selection for new users
+and navigating existing users back to the main menu.
+It also dynamically sets command menus based on the
+user's role.
+
+Function Calls:
+    - cmd_start(message, state, bot, user) -> None
+    - home_callback(callback, state, bot, user) -> None
+    - process_role_student(callback, state) -> None
+    - process_role_driver(callback) -> None
+
+Cross-References:
+    - Depends on: aiogram Router, FSMContext, Bot, sqlalchemy,
+        bot.student.states.StudentRegistrationFSM, bot.core.constants.*,
+        bot.core.keyboards.common_kb.HomeButton, bot.core.models.user.User
+    - Imported by: bot/main.py (via start_router)
 """
 
 from aiogram.exceptions import TelegramBadRequest
@@ -22,7 +35,7 @@ from aiogram.types import (
     Message,
 )
 
-from bot.core.constants.commands import (
+from bot.core.constants_commands import (
     ADMIN_COMMANDS,
     DRIVER_COMMANDS,
     STUDENT_COMMANDS,
@@ -48,7 +61,13 @@ start_router = Router()
 
 
 async def _set_user_menu(bot: Bot, chat_id: int, commands: list[BotCommand]) -> None:
-    """Helper to update user command scopes on the fly."""
+    """Helper to update user command scopes on the fly.
+
+    Args:
+        bot: The aiogram Bot instance.
+        chat_id: The Telegram chat ID.
+        commands: The list of BotCommand objects to set.
+    """
     try:
         await bot.set_my_commands(
             commands=commands, scope=BotCommandScopeChat(chat_id=chat_id)
@@ -58,12 +77,31 @@ async def _set_user_menu(bot: Bot, chat_id: int, commands: list[BotCommand]) -> 
 
 
 def _progress_bar(current: int, total: int) -> str:
+    """Render a text-based progress bar.
+
+    Args:
+        current: The current step number (1-indexed).
+        total: The total number of steps.
+
+    Returns:
+        A string of block characters representing progress.
+    """
     filled = "\u2588" * current
     empty = "\u2591" * (total - current)
     return f"{filled}{empty}"
 
 
 def _step_prompt(step: int, total: int, prompt: str) -> str:
+    """Format a step prompt with a progress bar.
+
+    Args:
+        step: The current step number.
+        total: The total number of steps.
+        prompt: The prompt text for the current step.
+
+    Returns:
+        A formatted string with step indicator and progress bar.
+    """
     bar = _progress_bar(step, total)
     return MSG_REG_STEP_PROMPT.format(
         current=step, total=total, progress_bar=bar, prompt=prompt
@@ -85,6 +123,20 @@ async def cmd_start(
     bot: Bot,
     user: User | None = None,  # Injected directly from AuthMiddleware
 ) -> None:
+    """Handle the /start and /home commands and home button presses.
+
+    Clears the FSM state, then dispatches the user to
+    the appropriate welcome flow based on their role.
+    For users with no role, presents a role selection
+    keyboard. For known roles, sends a role-specific
+    welcome message and updates the command menu.
+
+    Args:
+        message: The incoming Message object.
+        state: The FSM context for managing conversation state.
+        bot: The aiogram Bot instance for setting command menus.
+        user: The resolved User object from AuthMiddleware.
+    """
     await state.clear()
 
     if user is None:
@@ -129,6 +181,18 @@ async def cmd_start(
 
 @start_router.callback_query(F.data == "home")
 async def home_callback(callback: CallbackQuery, state: FSMContext, bot: Bot, user: User | None = None) -> None:
+    """Handle the home button callback.
+
+    Clears FSM state, deletes the current message, and
+    dispatches the user to the appropriate welcome flow
+    based on their role.
+
+    Args:
+        callback: The incoming CallbackQuery object.
+        state: The FSM context for managing conversation state.
+        bot: The aiogram Bot instance for setting command menus.
+        user: The resolved User object from AuthMiddleware.
+    """
     await callback.answer()
     await state.clear()
 
@@ -181,6 +245,15 @@ async def home_callback(callback: CallbackQuery, state: FSMContext, bot: Bot, us
 
 @start_router.callback_query(F.data == "role:student")
 async def process_role_student(callback: CallbackQuery, state: FSMContext) -> None:
+    """Handle the student role selection callback.
+
+    Sets the FSM state to the registration flow and
+    prompts the user for their full name.
+
+    Args:
+        callback: The incoming CallbackQuery object.
+        state: The FSM context for managing conversation state.
+    """
     await callback.answer()
     await state.set_state(StudentRegistrationFSM.entering_full_name)
     await callback.message.answer(_step_prompt(1, 3, MSG_REG_ENTER_FULL_NAME))
@@ -188,4 +261,12 @@ async def process_role_student(callback: CallbackQuery, state: FSMContext) -> No
 
 @start_router.callback_query(F.data == "role:driver")
 async def process_role_driver(callback: CallbackQuery) -> None:
+    """Handle the driver role selection callback.
+
+    Currently shows an alert that driver registration
+    is not yet available.
+
+    Args:
+        callback: The incoming CallbackQuery object.
+    """
     await callback.answer("Driver registration coming soon!", show_alert=True)

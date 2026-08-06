@@ -1,3 +1,20 @@
+"""
+StudentProfile ORM model for the Packit bot.
+
+Stores student-specific information such as hall of residence, room number,
+and verification status.  A student profile is created when a user completes
+the student registration flow (see ``bot.student.service.register_student``).
+
+Used by:
+    - ``bot/student/service.py`` — creates and updates student profiles.
+    - ``bot/student/repository.py`` — repository wrapper for profile queries.
+    - ``bot/student/handler.py`` — displays student profiles in Telegram.
+    - ``bot/request/repository.py`` — may join on student profiles for
+      request history.
+    - ``alembic/env.py`` — registered for Alembic migrations.
+    - ``tests/unit/core/test_models.py`` — model unit tests.
+"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -14,7 +31,35 @@ if TYPE_CHECKING:
 
 
 class StudentProfile(Base, TimestampMixin):
-    """Student profile with hall/room details and verification status."""
+    """Student profile with hall/room details and verification status.
+
+    Verification status defaults to ``UNVERIFIED``.  Verification is
+    typically granted by an admin (see ``AdminActionType`` enum) or via
+    integration with the university's student records.
+
+    Attributes:
+        id (int): Primary key.
+        user_id (int): FK to ``users.id`` (one-to-one). ``CASCADE`` ensures
+            the profile is removed if the user is deleted.
+        hall_of_residence (str): Student's residence hall (indexed for
+            zone-based delivery matching).
+        room_number (str | None): Room number within the hall.
+        verification_status (VerificationStatus): ``UNVERIFIED`` or
+            ``VERIFIED``.
+
+    Relationships:
+        user: The ``User`` this profile belongs to.
+
+    Calls / Depends on:
+        - ``bot.core.db.base_class.Base`` — declarative base.
+        - ``bot.core.models.base.TimestampMixin`` — audit timestamps.
+        - ``bot.core.constants.enums.VerificationStatus`` — column enum type.
+
+    Called by:
+        - ``bot/student/service.py`` — ``register_student`` creates and
+          updates profiles.
+        - ``alembic/env.py`` — table registration.
+    """
 
     __tablename__ = "student_profiles"
 
