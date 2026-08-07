@@ -88,6 +88,8 @@ class AdminActionType(str, Enum):
     APPROVE_DRIVER = "approve_driver"
     REJECT_DRIVER = "reject_driver"
     SUSPEND_DRIVER = "suspend_driver"
+    UPDATE_DRIVER_FIELD = "update_driver_field"
+    REMOVE_DRIVER = "remove_driver"
     BAN_USER = "ban_user"
     UNBAN_USER = "unban_user"
     ASSIGN_REQUEST = "assign_request"

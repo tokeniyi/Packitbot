@@ -1,5 +1,6 @@
 # bot/admin/handler.py
 
+from bot.core.constants.commands import CMD_DRIVERS
 import logging
 from aiogram import Router, F
 from aiogram.filters import Command
@@ -12,26 +13,44 @@ from bot.admin.keyboards import (
     broadcast_audience_keyboard,
     broadcast_confirm_keyboard,
     driver_approval_keyboard,
+    driver_detail_keyboard,
+    driver_edit_field_keyboard,
+    driver_remove_confirm_keyboard,
+    drivers_list_keyboard,
     pending_drivers_list_keyboard,
     pending_requests_list_keyboard,
     user_action_keyboard,
 )
-from bot.admin.schemas import BanUserDTO, BroadcastDTO, PromoteAdminDTO, ReviewDriverDTO, UnbanUserDTO
+from bot.admin.schemas import (
+    BanUserDTO,
+    BroadcastDTO,
+    DriverDetailDTO,
+    DriverListItemDTO,
+    PromoteAdminDTO,
+    RemoveDriverDTO,
+    ReviewDriverDTO,
+    UnbanUserDTO,
+    UpdateDriverFieldDTO,
+)
 from bot.admin.service import (
     approve_driver,
     ban_user,
+    get_all_drivers,
     get_available_drivers_ranked,
     get_broadcast_target_telegram_ids,
     get_driver_application_detail,
+    get_driver_by_id,
     get_pending_drivers,
     get_pending_requests,
     get_stats,
     promote_admin,
     reject_driver,
+    remove_driver,
     search_user_by_identifier,
     unban_user,
+    update_driver_field,
 )
-from bot.admin.states import BroadcastFSM
+from bot.admin.states import BroadcastFSM, DriverEditFSM
 from bot.core.constants.limits import MAX_BROADCAST_LENGTH
 from bot.core.constants.enums import UserRole
 from bot.core.constants.messages import (
@@ -40,12 +59,20 @@ from bot.core.constants.messages import (
     MSG_NOTIFY_DRIVER_ASSIGNED,
     MSG_SOMETHING_WENT_WRONG,
     MSG_STATS,
+    MSG_DRIVER_LIST_TITLE,
+    MSG_DRIVER_DETAIL_TITLE,
+    MSG_DRIVER_EDIT_PROMPT,
+    MSG_DRIVER_EDIT_SUCCESS,
+    MSG_DRIVER_EDIT_INPUT_PROMPT,
+    MSG_DRIVER_REMOVE_CONFIRM,
+    MSG_DRIVER_REMOVED,
+    MSG_DRIVER_REMOVE_CANCELLED,
 )
 from bot.core.db.session import async_session
 from bot.core.exceptions import PackitbotError
 from bot.core.models.user import User
 from bot.core.services.notification_service import notify_driver_approval_status, send_broadcast_message
-from bot.core.utils.callback_data import AdminAssign, AdminDriverApproval, AdminUserAction, PaginationNav
+from bot.core.utils.callback_data import AdminAssign, AdminDriverApproval, AdminDriverEdit, AdminDriverManage, AdminDriverRemove, AdminUserAction, PaginationNav
 from bot.driver.repository import DriverRepository
 from bot.request.repository import RequestRepository
 from bot.request.schemas import AssignDriverDTO
@@ -455,6 +482,371 @@ async def handle_back_to_pending_list(
     keyboard = pending_drivers_list_keyboard(drivers, page=1, total_pages=total_pages)
     await callback.message.edit_text(
         "📋 **Pending Driver Applications:**\nSelect a driver below to review their profile:",
+        reply_markup=keyboard,
+        parse_mode="Markdown",
+    )
+    await callback.answer()
+
+
+@admin_router.message(Command(CMD_DRIVERS))
+async def cmd_drivers(
+    message: Message,
+    state: FSMContext,
+    user: User | None = None,
+) -> None:
+    """Lists all driver records for admin management."""
+    await state.clear()
+
+    if not _is_admin(user):
+        await message.answer(MSG_NO_PERMISSION)
+        return
+
+    drivers, total_pages = await get_all_drivers(page=1)
+    if not drivers:
+        await message.answer("ℹ️ No driver records found.")
+        return
+
+    keyboard = drivers_list_keyboard(drivers, page=1, total_pages=total_pages)
+    await message.answer(
+        MSG_DRIVER_LIST_TITLE,
+        reply_markup=keyboard,
+        parse_mode="Markdown",
+    )
+
+
+@admin_router.callback_query(F.data.startswith("admin_drv_page:"))
+async def handle_drivers_pagination(
+    callback: CallbackQuery,
+    user: User | None = None,
+) -> None:
+    """Handles pagination for the drivers list."""
+    if not _is_admin(user):
+        await callback.answer("⛔ Admin access required.", show_alert=True)
+        return
+
+    page = int(callback.data.split(":")[1])
+    drivers, total_pages = await get_all_drivers(page=page)
+    if not drivers:
+        await callback.message.edit_text("ℹ️ No driver records found.")
+        return
+
+    keyboard = drivers_list_keyboard(drivers, page=page, total_pages=total_pages)
+    await callback.message.edit_text(
+        MSG_DRIVER_LIST_TITLE,
+        reply_markup=keyboard,
+        parse_mode="Markdown",
+    )
+    await callback.answer()
+
+
+@admin_router.callback_query(AdminDriverManage.filter(F.action == "view"))
+async def handle_view_driver_detail_manage(
+    callback: CallbackQuery,
+    callback_data: AdminDriverManage,
+    user: User | None = None,
+) -> None:
+    """Displays driver record details for management."""
+    if not _is_admin(user):
+        await callback.answer("⛔ Admin access required.", show_alert=True)
+        return
+
+    try:
+        detail = await get_driver_by_id(callback_data.driver_id)
+        text = MSG_DRIVER_DETAIL_TITLE.format(
+            full_name=detail.full_name,
+            phone_number=detail.phone_number,
+            license_number=detail.license_number,
+            vehicle_type=detail.vehicle_type.upper(),
+            plate_number=detail.plate_number,
+            status=detail.status.value.upper(),
+            availability=detail.availability.upper(),
+            rating_avg=f"{detail.rating_avg:.1f}",
+            total_deliveries=detail.total_deliveries,
+        )
+        if detail.username:
+            text += f"\n💬 **Telegram:** @{detail.username}"
+
+        keyboard = driver_detail_keyboard(detail.driver_id)
+        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+        await callback.answer()
+    except PackitbotError as e:
+        await callback.answer(str(e), show_alert=True)
+    except Exception as e:
+        logger.error(f"Error fetching driver detail: {e}")
+        await callback.answer(MSG_SOMETHING_WENT_WRONG, show_alert=True)
+
+
+@admin_router.callback_query(AdminDriverManage.filter(F.action == "edit"))
+async def handle_driver_edit_menu(
+    callback: CallbackQuery,
+    callback_data: AdminDriverManage,
+    user: User | None = None,
+) -> None:
+    """Shows the field selection menu for editing a driver record."""
+    if not _is_admin(user):
+        await callback.answer("⛔ Admin access required.", show_alert=True)
+        return
+
+    keyboard = driver_edit_field_keyboard(callback_data.driver_id)
+    await callback.message.edit_text(
+        MSG_DRIVER_EDIT_PROMPT,
+        reply_markup=keyboard,
+        parse_mode="Markdown",
+    )
+    await callback.answer()
+
+
+@admin_router.callback_query(AdminDriverEdit.filter())
+async def handle_driver_field_select(
+    callback: CallbackQuery,
+    callback_data: AdminDriverEdit,
+    state: FSMContext,
+    user: User | None = None,
+) -> None:
+    """Prompts admin to enter a new value for the selected driver field."""
+    if not _is_admin(user):
+        await callback.answer("⛔ Admin access required.", show_alert=True)
+        return
+
+    field_labels = {
+        "full_name": "Name",
+        "phone_number": "Phone Number",
+        "vehicle_type": "Vehicle Type",
+        "plate_number": "Plate Number",
+        "license_number": "License Number",
+        "status": "Status",
+    }
+    field_label = field_labels.get(callback_data.field, callback_data.field)
+
+    await state.update_data(
+        driver_id=callback_data.driver_id,
+        field=callback_data.field,
+    )
+    await state.set_state(DriverEditFSM.waiting_for_field_value)
+
+    await callback.message.answer(
+        MSG_DRIVER_EDIT_INPUT_PROMPT.format(
+            field_label=field_label,
+            current_value="Current value",
+        ),
+        parse_mode="Markdown",
+    )
+    await callback.answer()
+
+
+@admin_router.message(DriverEditFSM.waiting_for_field_value)
+async def handle_driver_field_input(
+    message: Message,
+    state: FSMContext,
+    user: User | None = None,
+) -> None:
+    """Processes the new field value and updates the driver record."""
+    if not _is_admin(user):
+        await message.answer(MSG_NO_PERMISSION)
+        await state.clear()
+        return
+
+    data = await state.get_data()
+    driver_id = data.get("driver_id")
+    field = data.get("field")
+    await state.clear()
+
+    if not driver_id or not field:
+        await message.answer("❌ Session expired. Please try editing the driver again.")
+        return
+
+    new_value = message.text.strip() if message.text else ""
+    if not new_value:
+        await message.answer("❌ Value cannot be empty. Please try again.")
+        return
+
+    try:
+        dto = UpdateDriverFieldDTO(
+            driver_id=driver_id,
+            field=field,
+            value=new_value,
+            admin_telegram_id=user.telegram_id,
+        )
+        updated_driver = await update_driver_field(dto)
+
+        field_labels = {
+            "full_name": "Name",
+            "phone_number": "Phone Number",
+            "vehicle_type": "Vehicle Type",
+            "plate_number": "Plate Number",
+            "license_number": "License Number",
+            "status": "Status",
+        }
+        field_label = field_labels.get(field, field)
+
+        await message.answer(
+            MSG_DRIVER_EDIT_SUCCESS.format(
+                field=field_label,
+                value=new_value,
+            ),
+            parse_mode="Markdown",
+        )
+    except PackitbotError as e:
+        await message.answer(f"❌ {e}")
+    except Exception as e:
+        logger.error(f"Error updating driver field: {e}")
+        await message.answer(MSG_SOMETHING_WENT_WRONG)
+
+
+@admin_router.callback_query(AdminDriverManage.filter(F.action == "remove"))
+async def handle_remove_driver_confirm(
+    callback: CallbackQuery,
+    callback_data: AdminDriverManage,
+    user: User | None = None,
+) -> None:
+    """Shows removal confirmation for a driver record."""
+    if not _is_admin(user):
+        await callback.answer("⛔ Admin access required.", show_alert=True)
+        return
+
+    try:
+        detail = await get_driver_by_id(callback_data.driver_id)
+        keyboard = driver_remove_confirm_keyboard(detail.driver_id)
+        await callback.message.edit_text(
+            MSG_DRIVER_REMOVE_CONFIRM.format(full_name=detail.full_name),
+            reply_markup=keyboard,
+            parse_mode="Markdown",
+        )
+        await callback.answer()
+    except PackitbotError as e:
+        await callback.answer(str(e), show_alert=True)
+    except Exception as e:
+        logger.error(f"Error preparing driver removal: {e}")
+        await callback.answer(MSG_SOMETHING_WENT_WRONG, show_alert=True)
+
+
+@admin_router.callback_query(AdminDriverRemove.filter(F.action == "confirm"))
+async def handle_remove_driver_execute(
+    callback: CallbackQuery,
+    callback_data: AdminDriverRemove,
+    user: User | None = None,
+) -> None:
+    """Executes driver record removal."""
+    if not _is_admin(user):
+        await callback.answer("⛔ Admin access required.", show_alert=True)
+        return
+
+    try:
+        detail = await get_driver_by_id(callback_data.driver_id)
+        dto = RemoveDriverDTO(
+            driver_id=callback_data.driver_id,
+            admin_telegram_id=user.telegram_id,
+        )
+        await remove_driver(dto)
+
+        await callback.message.edit_text(
+            MSG_DRIVER_REMOVED.format(full_name=detail.full_name),
+            parse_mode="Markdown",
+        )
+        await callback.answer("Driver record removed successfully!")
+    except PackitbotError as e:
+        await callback.answer(str(e), show_alert=True)
+    except Exception as e:
+        logger.error(f"Error removing driver: {e}")
+        await callback.answer(MSG_SOMETHING_WENT_WRONG, show_alert=True)
+
+
+@admin_router.callback_query(AdminDriverRemove.filter(F.action == "cancel"))
+async def handle_remove_driver_cancel(
+    callback: CallbackQuery,
+    callback_data: AdminDriverRemove,
+    user: User | None = None,
+) -> None:
+    """Cancels driver removal and returns to driver detail."""
+    if not _is_admin(user):
+        await callback.answer("⛔ Admin access required.", show_alert=True)
+        return
+
+    try:
+        detail = await get_driver_by_id(callback_data.driver_id)
+        keyboard = driver_detail_keyboard(detail.driver_id)
+        text = MSG_DRIVER_DETAIL_TITLE.format(
+            full_name=detail.full_name,
+            phone_number=detail.phone_number,
+            license_number=detail.license_number,
+            vehicle_type=detail.vehicle_type.upper(),
+            plate_number=detail.plate_number,
+            status=detail.status.value.upper(),
+            availability=detail.availability.upper(),
+            rating_avg=f"{detail.rating_avg:.1f}",
+            total_deliveries=detail.total_deliveries,
+        )
+        if detail.username:
+            text += f"\n💬 **Telegram:** @{detail.username}"
+
+        await callback.message.edit_text(
+            MSG_DRIVER_REMOVE_CANCELLED + "\n\n" + text,
+            reply_markup=keyboard,
+            parse_mode="Markdown",
+        )
+        await callback.answer("Removal cancelled.")
+    except PackitbotError as e:
+        await callback.answer(str(e), show_alert=True)
+    except Exception as e:
+        logger.error(f"Error cancelling driver removal: {e}")
+        await callback.answer(MSG_SOMETHING_WENT_WRONG, show_alert=True)
+
+
+@admin_router.callback_query(F.data.startswith("admin_driver_detail_back:"))
+async def handle_driver_edit_back(
+    callback: CallbackQuery,
+    user: User | None = None,
+) -> None:
+    """Navigates back to driver detail from edit menu."""
+    if not _is_admin(user):
+        await callback.answer("⛔ Admin access required.", show_alert=True)
+        return
+
+    try:
+        driver_id = int(callback.data.split(":")[1])
+        detail = await get_driver_by_id(driver_id)
+        keyboard = driver_detail_keyboard(detail.driver_id)
+        text = MSG_DRIVER_DETAIL_TITLE.format(
+            full_name=detail.full_name,
+            phone_number=detail.phone_number,
+            license_number=detail.license_number,
+            vehicle_type=detail.vehicle_type.upper(),
+            plate_number=detail.plate_number,
+            status=detail.status.value.upper(),
+            availability=detail.availability.upper(),
+            rating_avg=f"{detail.rating_avg:.1f}",
+            total_deliveries=detail.total_deliveries,
+        )
+        if detail.username:
+            text += f"\n💬 **Telegram:** @{detail.username}"
+
+        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+        await callback.answer()
+    except PackitbotError as e:
+        await callback.answer(str(e), show_alert=True)
+    except Exception as e:
+        logger.error(f"Error navigating back: {e}")
+        await callback.answer(MSG_SOMETHING_WENT_WRONG, show_alert=True)
+
+
+@admin_router.callback_query(F.data == "admin_drivers_back")
+async def handle_drivers_back(
+    callback: CallbackQuery,
+    user: User | None = None,
+) -> None:
+    """Navigates back to the first page of the drivers list."""
+    if not _is_admin(user):
+        await callback.answer("⛔ Admin access required.", show_alert=True)
+        return
+
+    drivers, total_pages = await get_all_drivers(page=1)
+    if not drivers:
+        await callback.message.edit_text("ℹ️ No driver records found.")
+        return
+
+    keyboard = drivers_list_keyboard(drivers, page=1, total_pages=total_pages)
+    await callback.message.edit_text(
+        MSG_DRIVER_LIST_TITLE,
         reply_markup=keyboard,
         parse_mode="Markdown",
     )

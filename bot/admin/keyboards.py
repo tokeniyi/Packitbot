@@ -19,13 +19,20 @@ Key exports:
     - ``user_action_keyboard``
     - ``broadcast_audience_keyboard``
     - ``broadcast_confirm_keyboard``
+    - ``drivers_list_keyboard``
+    - ``driver_detail_keyboard``
+    - ``driver_edit_field_keyboard``
+    - ``driver_remove_confirm_keyboard``
 
 Dependencies:
     - ``aiogram.types.InlineKeyboardButton``, ``InlineKeyboardMarkup``
     - ``bot.core.constants.quick_replies``: ``BTN_BACK``, ``BTN_HOME``
     - ``bot.core.utils.callback_data``: ``AdminAssign``, ``AdminDriverApproval``,
+      ``AdminDriverManage``, ``AdminDriverEdit``, ``AdminDriverRemove``,
       ``AdminUserAction``, ``PaginationNav``
-    - ``bot.admin.schemas``: ``AvailableDriverDTO``, ``UserDetailDTO``
+    - ``bot.admin.schemas``: ``AvailableDriverDTO``, ``DriverListItemDTO``,
+      ``UserDetailDTO``
+    - ``bot.core.constants.enums``: ``DriverStatus``
 
 Called by:
     - ``bot/admin/handler.py``: All admin handler functions that render menus.
@@ -33,8 +40,17 @@ Called by:
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from bot.core.constants.quick_replies import BTN_BACK, BTN_HOME
-from bot.core.utils.callback_data import AdminAssign, AdminDriverApproval, AdminUserAction, PaginationNav
-from bot.admin.schemas import AvailableDriverDTO, UserDetailDTO
+from bot.core.utils.callback_data import (
+    AdminAssign,
+    AdminDriverApproval,
+    AdminDriverEdit,
+    AdminDriverManage,
+    AdminDriverRemove,
+    AdminUserAction,
+    PaginationNav,
+)
+from bot.admin.schemas import AvailableDriverDTO, DriverListItemDTO, UserDetailDTO
+from bot.core.constants.enums import DriverStatus
 
 
 def driver_approval_keyboard(driver_id: int) -> InlineKeyboardMarkup:
@@ -97,7 +113,6 @@ def pending_drivers_list_keyboard(
     """
     buttons = []
     for d in drivers:
-        # Support both DTO objects and lightweight tuples/dicts.
         driver_id = getattr(d, "driver_id", None) or getattr(d, "id", None)
         name = getattr(d, "full_name", None) or "Driver"
         buttons.append(
@@ -134,6 +149,194 @@ def pending_drivers_list_keyboard(
     )
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def drivers_list_keyboard(
+    drivers: list[DriverListItemDTO],
+    page: int = 1,
+    total_pages: int = 1,
+) -> InlineKeyboardMarkup:
+    """Build a paginated list of all drivers for admin management.
+
+    Each driver is rendered as a button that opens the driver detail view.
+    Pagination controls are shown only when there are multiple pages.
+
+    Args:
+        drivers (list[DriverListItemDTO]): Iterable of driver summary DTOs.
+        page (int): Current page number (1-indexed). Defaults to 1.
+        total_pages (int): Total number of pages available. Defaults to 1.
+
+    Returns:
+        InlineKeyboardMarkup: Paginated inline keyboard with driver entries
+        and optional Prev/Next navigation.
+
+    Called by:
+        - ``bot/admin/handler.py``: ``cmd_drivers``,
+          ``handle_drivers_pagination``
+    """
+    buttons = []
+    for d in drivers:
+        status_icon = {
+            DriverStatus.PENDING_APPROVAL: "⏳",
+            DriverStatus.APPROVED: "✅",
+            DriverStatus.REJECTED: "❌",
+            DriverStatus.SUSPENDED: "🚫",
+        }.get(d.status, "❓")
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{status_icon} {d.full_name} ({d.vehicle_type} | {d.rating_avg:.1f}⭐)",
+                    callback_data=AdminDriverManage(action="view", driver_id=d.driver_id).pack(),
+                )
+            ]
+        )
+
+    nav_row = []
+    if page > 1:
+        nav_row.append(
+            InlineKeyboardButton(
+                text="⬅️ Prev",
+                callback_data=PaginationNav(page=page - 1, direction="prev").pack(),
+            )
+        )
+    if page < total_pages:
+        nav_row.append(
+            InlineKeyboardButton(
+                text="➡️ Next",
+                callback_data=PaginationNav(page=page + 1, direction="next").pack(),
+            )
+        )
+    if nav_row:
+        buttons.append(nav_row)
+
+    buttons.append(
+        [
+            InlineKeyboardButton(text=BTN_HOME, callback_data="home"),
+        ]
+    )
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def driver_detail_keyboard(driver_id: int) -> InlineKeyboardMarkup:
+    """Build management action buttons for a specific driver record.
+
+    The keyboard provides Edit and Remove options for the driver.
+
+    Args:
+        driver_id (int): The ``DriverProfile`` ID being managed.
+
+    Returns:
+        InlineKeyboardMarkup: Inline keyboard with Edit, Remove, and Home buttons.
+
+    Called by:
+        - ``bot/admin/handler.py``: ``handle_view_driver_detail``
+    """
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✏️ Edit",
+                    callback_data=AdminDriverManage(action="edit", driver_id=driver_id).pack(),
+                ),
+                InlineKeyboardButton(
+                    text="🗑️ Remove",
+                    callback_data=AdminDriverManage(action="remove", driver_id=driver_id).pack(),
+                ),
+            ],
+            [
+                InlineKeyboardButton(text=BTN_BACK, callback_data="admin_drivers_back"),
+                InlineKeyboardButton(text=BTN_HOME, callback_data="home"),
+            ],
+        ]
+    )
+
+
+def driver_edit_field_keyboard(driver_id: int) -> InlineKeyboardMarkup:
+    """Build field selection buttons for editing a driver record.
+
+    Each button corresponds to a specific editable field on the driver profile.
+
+    Args:
+        driver_id (int): The ``DriverProfile`` ID being edited.
+
+    Returns:
+        InlineKeyboardMarkup: Inline keyboard with field edit buttons
+        and Back/Home navigation.
+
+    Called by:
+        - ``bot/admin/handler.py``: ``handle_driver_edit_menu``
+    """
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="👤 Name",
+                    callback_data=AdminDriverEdit(field="full_name", driver_id=driver_id).pack(),
+                ),
+                InlineKeyboardButton(
+                    text="📱 Phone",
+                    callback_data=AdminDriverEdit(field="phone_number", driver_id=driver_id).pack(),
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🪪 License Number",
+                    callback_data=AdminDriverEdit(field="license_number", driver_id=driver_id).pack(),
+                ),
+                InlineKeyboardButton(
+                    text="🚘 Vehicle Type",
+                    callback_data=AdminDriverEdit(field="vehicle_type", driver_id=driver_id).pack(),
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔢 Plate Number",
+                    callback_data=AdminDriverEdit(field="plate_number", driver_id=driver_id).pack(),
+                ),
+                InlineKeyboardButton(
+                    text="📌 Status",
+                    callback_data=AdminDriverEdit(field="status", driver_id=driver_id).pack(),
+                ),
+            ],
+            [
+                InlineKeyboardButton(text=BTN_BACK, callback_data=f"admin_driver_detail_back:{driver_id}"),
+                InlineKeyboardButton(text=BTN_HOME, callback_data="home"),
+            ],
+        ]
+    )
+
+
+def driver_remove_confirm_keyboard(driver_id: int) -> InlineKeyboardMarkup:
+    """Build confirmation buttons for removing a driver record.
+
+    Args:
+        driver_id (int): The ``DriverProfile`` ID targeted for removal.
+
+    Returns:
+        InlineKeyboardMarkup: Inline keyboard with Yes/No confirmation
+        and Home navigation.
+
+    Called by:
+        - ``bot/admin/handler.py``: ``handle_remove_driver_confirm``
+    """
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ Yes, Remove",
+                    callback_data=AdminDriverRemove(action="confirm", driver_id=driver_id).pack(),
+                ),
+                InlineKeyboardButton(
+                    text="❌ No, Cancel",
+                    callback_data=AdminDriverRemove(action="cancel", driver_id=driver_id).pack(),
+                ),
+            ],
+            [
+                InlineKeyboardButton(text=BTN_HOME, callback_data="home"),
+            ],
+        ]
+    )
 
 
 def pending_requests_list_keyboard(

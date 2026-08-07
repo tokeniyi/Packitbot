@@ -4,6 +4,7 @@ Admin service layer for the Packit bot.
 This module contains the business logic for all admin operations, including:
 - Delivery request management (listing pending requests, assigning drivers)
 - Driver lifecycle management (listing pending applications, approving, rejecting)
+- Driver record management (listing all drivers, viewing details, updating fields, removing records)
 - User management (searching, banning, unbanning, promoting to admin)
 - System statistics aggregation
 - Broadcast target audience resolution
@@ -27,6 +28,10 @@ Key exports:
     - ``promote_admin``
     - ``search_user_by_identifier``
     - ``get_broadcast_target_telegram_ids``
+    - ``get_all_drivers``
+    - ``get_driver_by_id``
+    - ``update_driver_field``
+    - ``remove_driver``
 
 Dependencies:
     - ``sqlalchemy``: Query construction and async execution.
@@ -47,20 +52,32 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
 from bot.core.constants.enums import AccountStatus, AdminActionType, DriverAvailability, DriverStatus, RequestStatus, UserRole
 from bot.core.db.session import async_session
-from bot.core.exceptions import NotFoundError, PackitbotError, ValidationError
+from bot.core.exceptions import DuplicateResourceError, NotFoundError, PackitbotError, ValidationError
 from bot.core.models.admin_action_log import AdminActionLog
 from bot.core.models.delivery_request import DeliveryRequest
 from bot.core.models.driver_profile import DriverProfile
 from bot.core.models.feedback import Feedback
 from bot.core.models.user import User
+from bot.core.utils.validators import (
+    validate_full_name,
+    validate_license_number,
+    validate_phone,
+    validate_plate_number,
+    validate_vehicle_type,
+)
+from bot.driver.repository import DriverRepository
 from bot.admin.schemas import (
     AvailableDriverDTO,
     BanUserDTO,
     DriverApplicationDetailDTO,
+    DriverDetailDTO,
+    DriverListItemDTO,
     PromoteAdminDTO,
+    RemoveDriverDTO,
     ReviewDriverDTO,
     SystemStatsDTO,
     UnbanUserDTO,
+    UpdateDriverFieldDTO,
     UserDetailDTO,
 )
 
@@ -1073,3 +1090,358 @@ async def get_broadcast_target_telegram_ids(
     else:
         async with async_session() as sess:
             return await _execute(sess)
+
+
+async def get_all_drivers(
+    page: int = 1,
+    per_page: int = 5,
+    session: Optional[AsyncSession] = None,
+) -> Tuple[List[DriverListItemDTO], int]:
+    """Retrieve paginated list of all driver records for admin management.
+
+    Args:
+        page (int): 1-indexed page number. Defaults to 1.
+        per_page (int): Number of records per page. Defaults to 5.
+        session (Optional[AsyncSession]): Optional existing database session.
+
+    Returns:
+        Tuple[List[DriverListItemDTO], int]: A tuple of (drivers, total_pages).
+
+    Raises:
+        None directly.
+
+    Calls / Depends on:
+        - ``sqlalchemy.select``, ``func.count``
+        - ``bot.core.models.driver_profile.DriverProfile``
+        - ``bot.core.models.user.User``
+        - ``bot.core.constants.enums.DriverStatus``, ``DriverAvailability``
+        - ``bot.admin.schemas.DriverListItemDTO``
+
+    Called by:
+        - ``bot/admin/handler.py``: ``cmd_drivers``,
+          ``handle_drivers_pagination``
+    """
+    async def _execute(sess: AsyncSession):
+        offset = (page - 1) * per_page
+
+        count_stmt = select(func.count(DriverProfile.id))
+        total_res = await sess.execute(count_stmt)
+        total_count = total_res.scalar() or 0
+        total_pages = max(1, (total_count + per_page - 1) // per_page)
+
+        stmt = (
+            select(DriverProfile, User)
+            .join(User, DriverProfile.user_id == User.id)
+            .order_by(DriverProfile.created_at.desc())
+            .offset(offset)
+            .limit(per_page)
+        )
+        res = await sess.execute(stmt)
+        rows = res.all()
+
+        dtos = []
+        for dp, user in rows:
+            dtos.append(
+                DriverListItemDTO(
+                    driver_id=dp.id,
+                    user_id=user.id,
+                    telegram_id=user.telegram_id,
+                    full_name=user.full_name or "Unknown Driver",
+                    phone_number=user.phone_number or "N/A",
+                    vehicle_type=dp.vehicle_type,
+                    plate_number=dp.plate_number,
+                    license_number=dp.license_number,
+                    status=dp.status,
+                    availability=dp.availability.value,
+                    rating_avg=dp.rating_avg,
+                    total_deliveries=dp.total_deliveries,
+                    username=user.username,
+                )
+            )
+        return dtos, total_pages
+
+    if session is not None:
+        return await _execute(session)
+    else:
+        async with async_session() as sess:
+            return await _execute(sess)
+
+
+async def get_driver_by_id(
+    driver_id: int,
+    session: Optional[AsyncSession] = None,
+) -> DriverDetailDTO:
+    """Retrieve detailed information for a specific driver record.
+
+    Args:
+        driver_id (int): Primary key of the ``DriverProfile`` to inspect.
+        session (Optional[AsyncSession]): Optional existing database session.
+
+    Returns:
+        DriverDetailDTO: Populated DTO with driver and user details.
+
+    Raises:
+        NotFoundError: If no driver profile exists with the given ``driver_id``.
+
+    Calls / Depends on:
+        - ``sqlalchemy.select``
+        - ``bot.core.models.driver_profile.DriverProfile``
+        - ``bot.core.models.user.User``
+        - ``bot.core.constants.enums.DriverStatus``, ``DriverAvailability``
+        - ``bot.admin.schemas.DriverDetailDTO``
+
+    Called by:
+        - ``bot/admin/handler.py``: ``handle_view_driver_detail``
+    """
+    async def _execute(sess: AsyncSession):
+        stmt = (
+            select(DriverProfile, User)
+            .join(User, DriverProfile.user_id == User.id)
+            .where(DriverProfile.id == driver_id)
+        )
+        res = await sess.execute(stmt)
+        row = res.first()
+        if not row:
+            raise NotFoundError(f"Driver profile with ID {driver_id} not found.")
+
+        dp, user = row
+        return DriverDetailDTO(
+            driver_id=dp.id,
+            user_id=user.id,
+            telegram_id=user.telegram_id,
+            full_name=user.full_name or "Unknown Driver",
+            phone_number=user.phone_number or "N/A",
+            vehicle_type=dp.vehicle_type,
+            plate_number=dp.plate_number,
+            license_number=dp.license_number,
+            status=dp.status,
+            availability=dp.availability.value,
+            rating_avg=dp.rating_avg,
+            total_deliveries=dp.total_deliveries,
+            username=user.username,
+            account_status=user.account_status.value,
+        )
+
+    if session is not None:
+        return await _execute(session)
+    else:
+        async with async_session() as sess:
+            return await _execute(sess)
+
+
+async def update_driver_field(
+    dto: UpdateDriverFieldDTO,
+    session: Optional[AsyncSession] = None,
+) -> DriverDetailDTO:
+    """Update a specific field on a driver record and log the admin action.
+
+    Supported fields:
+        - ``full_name``: Updates ``User.full_name``.
+        - ``phone_number``: Updates ``User.phone_number``.
+        - ``vehicle_type``: Updates ``DriverProfile.vehicle_type``.
+        - ``plate_number``: Updates ``DriverProfile.plate_number``.
+        - ``license_number``: Updates ``DriverProfile.license_number``.
+        - ``status``: Updates ``DriverProfile.status``.
+
+    Args:
+        dto (UpdateDriverFieldDTO): Payload containing the driver ID, field
+            name, new value, and admin Telegram ID.
+        session (Optional[AsyncSession]): Optional existing database session.
+
+    Returns:
+        DriverDetailDTO: Updated driver detail DTO.
+
+    Raises:
+        ValidationError: If the caller is not an admin, the field is not
+            recognized, or the value fails validation.
+        NotFoundError: If the driver profile or associated user does not exist.
+        DuplicateResourceError: If the new plate or license number is already taken.
+
+    Calls / Depends on:
+        - ``sqlalchemy.select``
+        - ``bot.core.models.user.User``
+        - ``bot.core.models.driver_profile.DriverProfile``
+        - ``bot.core.models.admin_action_log.AdminActionLog``
+        - ``bot.core.constants.enums.DriverStatus``, ``AdminActionType``
+        - ``bot.core.exceptions.ValidationError``, ``NotFoundError``,
+          ``DuplicateResourceError``
+        - ``bot.admin.schemas.DriverDetailDTO``
+        - ``bot.driver.repository.DriverRepository``
+
+    Called by:
+        - ``bot/admin/handler.py``: ``handle_driver_field_input``
+    """
+    async def _execute(sess: AsyncSession):
+        admin_stmt = select(User).where(User.telegram_id == dto.admin_telegram_id)
+        admin_res = await sess.execute(admin_stmt)
+        admin_user = admin_res.scalar_one_or_none()
+        if not admin_user or admin_user.role != UserRole.ADMIN:
+            raise ValidationError("Admin permission required.")
+
+        stmt = (
+            select(DriverProfile, User)
+            .join(User, DriverProfile.user_id == User.id)
+            .where(DriverProfile.id == dto.driver_id)
+        )
+        res = await sess.execute(stmt)
+        row = res.first()
+        if not row:
+            raise NotFoundError(f"Driver profile with ID {dto.driver_id} not found.")
+
+        dp, driver_user = row
+        field = dto.field
+        value = dto.value
+
+        user_fields = {"full_name", "phone_number"}
+        profile_fields = {"vehicle_type", "plate_number", "license_number", "status"}
+
+        if field in user_fields:
+            if field == "full_name":
+                validated = validate_full_name(value)
+                driver_user.full_name = validated
+            elif field == "phone_number":
+                validated = validate_phone(value)
+                driver_user.phone_number = validated
+        elif field in profile_fields:
+            if field == "vehicle_type":
+                validated = validate_vehicle_type(value)
+                dp.vehicle_type = validated
+            elif field == "plate_number":
+                validated = validate_plate_number(value)
+                repo = DriverRepository(sess)
+                existing = await repo.get_by_plate_number(validated)
+                if existing and existing.id != dp.id:
+                    raise DuplicateResourceError("A driver profile with this plate number already exists.")
+                dp.plate_number = validated
+            elif field == "license_number":
+                validated = validate_license_number(value)
+                repo = DriverRepository(sess)
+                existing = await repo.get_by_license_number(validated)
+                if existing and existing.id != dp.id:
+                    raise DuplicateResourceError("A driver profile with this license number already exists.")
+                dp.license_number = validated
+            elif field == "status":
+                try:
+                    validated = DriverStatus(value.strip().lower())
+                except ValueError:
+                    raise ValidationError("Invalid driver status. Choose: pending_approval, approved, rejected, suspended.")
+                dp.status = validated
+        else:
+            raise ValidationError(f"Field '{field}' is not editable.")
+
+        log_entry = AdminActionLog(
+            admin_id=admin_user.id,
+            action_type=AdminActionType.UPDATE_DRIVER_FIELD,
+            target_user_id=driver_user.id,
+            details=f"Updated driver profile #{dp.id} field '{field}' to '{value}'",
+        )
+        sess.add(log_entry)
+        await sess.flush()
+
+        return DriverDetailDTO(
+            driver_id=dp.id,
+            user_id=driver_user.id,
+            telegram_id=driver_user.telegram_id,
+            full_name=driver_user.full_name or "Unknown Driver",
+            phone_number=driver_user.phone_number or "N/A",
+            vehicle_type=dp.vehicle_type,
+            plate_number=dp.plate_number,
+            license_number=dp.license_number,
+            status=dp.status,
+            availability=dp.availability.value,
+            rating_avg=dp.rating_avg,
+            total_deliveries=dp.total_deliveries,
+            username=driver_user.username,
+            account_status=driver_user.account_status.value,
+        )
+
+    if session is not None:
+        return await _execute(session)
+    else:
+        async with async_session() as sess:
+            try:
+                result_dto = await _execute(sess)
+                await sess.commit()
+                return result_dto
+            except Exception:
+                await sess.rollback()
+                raise
+
+
+async def remove_driver(
+    dto: RemoveDriverDTO,
+    session: Optional[AsyncSession] = None,
+) -> None:
+    """Remove a driver record and demote the associated user.
+
+    This function performs the following steps atomically:
+        1. Verifies the requesting user is an admin.
+        2. Loads the driver profile and associated user.
+        3. Deletes the ``DriverProfile`` record.
+        4. Resets the user's role to ``None`` (removing driver privileges).
+        5. Creates an ``AdminActionLog`` entry for audit purposes.
+
+    Args:
+        dto (RemoveDriverDTO): Payload containing the driver ID and admin
+            Telegram ID.
+        session (Optional[AsyncSession]): Optional existing database session.
+
+    Returns:
+        None
+
+    Raises:
+        ValidationError: If the caller is not an admin.
+        NotFoundError: If the driver profile does not exist.
+
+    Calls / Depends on:
+        - ``sqlalchemy.select``, ``delete``
+        - ``bot.core.models.user.User``
+        - ``bot.core.models.driver_profile.DriverProfile``
+        - ``bot.core.models.admin_action_log.AdminActionLog``
+        - ``bot.core.constants.enums.AdminActionType``
+        - ``bot.core.exceptions.ValidationError``, ``NotFoundError``
+
+    Called by:
+        - ``bot/admin/handler.py``: ``handle_remove_driver_execute``
+    """
+    async def _execute(sess: AsyncSession):
+        admin_stmt = select(User).where(User.telegram_id == dto.admin_telegram_id)
+        admin_res = await sess.execute(admin_stmt)
+        admin_user = admin_res.scalar_one_or_none()
+        if not admin_user or admin_user.role != UserRole.ADMIN:
+            raise ValidationError("Admin permission required.")
+
+        stmt = (
+            select(DriverProfile, User)
+            .join(User, DriverProfile.user_id == User.id)
+            .where(DriverProfile.id == dto.driver_id)
+        )
+        res = await sess.execute(stmt)
+        row = res.first()
+        if not row:
+            raise NotFoundError(f"Driver profile with ID {dto.driver_id} not found.")
+
+        dp, driver_user = row
+
+        await sess.delete(dp)
+        driver_user.role = None
+
+        log_entry = AdminActionLog(
+            admin_id=admin_user.id,
+            action_type=AdminActionType.REMOVE_DRIVER,
+            target_user_id=driver_user.id,
+            details=f"Removed driver profile #{dp.id} for user #{driver_user.id}",
+        )
+        sess.add(log_entry)
+        await sess.flush()
+
+    if session is not None:
+        await _execute(session)
+    else:
+        async with async_session() as sess:
+            try:
+                await _execute(sess)
+                await sess.commit()
+            except Exception:
+                await sess.rollback()
+                raise

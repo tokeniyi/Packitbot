@@ -35,7 +35,7 @@ from aiogram.types import (
     Message,
 )
 
-from bot.core.constants_commands import (
+from bot.core.constants.commands import (
     ADMIN_COMMANDS,
     DRIVER_COMMANDS,
     STUDENT_COMMANDS,

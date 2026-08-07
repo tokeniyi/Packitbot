@@ -35,11 +35,13 @@ CMD_TOGGLE_DUTY = "duty"
 
 # Admin Commands
 CMD_ADMIN = "admin"
+CMD_DRIVERS = "drivers"
 CMD_STATS = "stats"
 CMD_VERIFY = "verify"
 CMD_USERS = "users"
 CMD_ORDERS = "orders"
 CMD_BROADCAST = "broadcast"
+CMD_ASSIGN = "assign"
 
 
 # Telegram Bot Menu Command Definitions
@@ -83,5 +85,7 @@ ADMIN_COMMANDS = DEFAULT_COMMANDS + [
     BotCommand(command=CMD_VERIFY, description="Review driver verification"),
     BotCommand(command=CMD_BROADCAST, description="Send announcement"),
     BotCommand(command=CMD_USERS, description="Search or view registered students and drivers"),
-    BotCommand(command=CMD_ORDERS, description=" View active, pending, or completed deliveries")
+    BotCommand(command=CMD_ORDERS, description=" View active, pending, or completed deliveries"),
+    BotCommand(command=CMD_DRIVERS, description="  lists all driver record"),
+    BotCommand(command=CMD_ASSIGN, description="  assign request to a driver")
 ]

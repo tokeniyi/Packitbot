@@ -42,10 +42,11 @@ MSG_MANAGEMENT_PORTAL = (
     "📊 **System & Metrics**\n"
     "• `/admin` — Re-open this management portal\n"
     "• `/stats` — View live delivery metrics & system stats\n\n"
-    "👥 **User & Verification Management**\n"
-    "• `/verify` — Review & verify pending driver accounts\n"
-    "• `/users` — Search or view registered students and drivers\n\n"
-    "📦 **Logistics & Orders**\n"
+     "👥 **User & Verification Management**\n"
+     "• `/verify` — Review & verify pending driver accounts\n"
+     "• `/users` — Search or view registered students and drivers\n"
+     "• `/drivers` — View and manage all driver records\n\n"
+     "📦 **Logistics & Orders**\n"
     "• `/orders` — View active, pending, or completed deliveries\n"
     "• `/broadcast` — Send an announcement message to all users\n\n"
     "💡 *Tip: You can also use the inline buttons below to navigate quick actions!(not implemented yet 😁*"
@@ -178,6 +179,16 @@ MSG_DRIVER_INVALID_PHONE = "⚠️ Please enter a valid 11-digit Nigerian phone 
 MSG_DRIVER_INVALID_PLATE = "⚠️ Please enter a valid plate number."
 MSG_DRIVER_INVALID_LICENSE = "⚠️ Please enter a valid license number."
 MSG_DRIVER_INVALID_VEHICLE = "⚠️ Please select a vehicle type from the buttons."
+
+# Driver management messages
+MSG_DRIVER_LIST_TITLE = "🚗 **Driver Records**\n\nSelect a driver to view and manage their profile:"
+MSG_DRIVER_DETAIL_TITLE = "🚘 **Driver Record Detail**\n\n👤 **Name:** {full_name}\n📱 **Phone:** {phone_number}\n🪪 **License:** {license_number}\n🚗 **Vehicle:** {vehicle_type}\n🔢 **Plate:** {plate_number}\n📌 **Status:** {status}\n📡 **Availability:** {availability}\n⭐ **Rating:** {rating_avg}\n📦 **Deliveries:** {total_deliveries}"
+MSG_DRIVER_EDIT_PROMPT = "✏️ **Edit Driver Record**\n\nSelect the field you want to update:"
+MSG_DRIVER_EDIT_SUCCESS = "✅ **Driver record updated successfully!**\n\nField: `{field}`\nNew value: `{value}`"
+MSG_DRIVER_EDIT_INPUT_PROMPT = "📝 **Update {field_label}**\n\nCurrent value: `{current_value}`\n\nPlease enter the new value:"
+MSG_DRIVER_REMOVE_CONFIRM = "⚠️ **Remove Driver Record**\n\nAre you sure you want to remove driver **{full_name}**?\n\nThis action will:\n• Delete the driver profile\n• Remove driver role from the user\n• Log the action for audit\n\nThis cannot be undone."
+MSG_DRIVER_REMOVED = "🗑️ **Driver record removed successfully.**\n\nDriver **{full_name}** has been removed from the system."
+MSG_DRIVER_REMOVE_CANCELLED = "🛑 Driver removal cancelled."
 
 # Request creation flow
 MSG_REQ_CONFIRM_HALL = "📍 **Pickup Location:** {hall}\nDo you want to use this location?"

@@ -57,6 +57,24 @@ class AdminDriverApproval(CallbackData, prefix="admin_driver"):
     driver_id: int
 
 
+class AdminDriverManage(CallbackData, prefix="admin_drv_mgr"):
+    """Callback data for managing an individual driver record."""
+    action: str
+    driver_id: int
+
+
+class AdminDriverEdit(CallbackData, prefix="admin_drv_edit"):
+    """Callback data for editing a specific field on a driver record."""
+    field: str
+    driver_id: int
+
+
+class AdminDriverRemove(CallbackData, prefix="admin_drv_rm"):
+    """Callback data for removing a driver record."""
+    action: str
+    driver_id: int
+
+
 class AdminUserAction(CallbackData, prefix="admin_user"):
     """Callback data for admin actions on a user."""
     action: str

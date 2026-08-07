@@ -136,6 +136,127 @@ class AvailableDriverDTO:
 
 
 @dataclass
+class DriverListItemDTO:
+    """Summary of a driver record for the admin driver list view.
+
+    Attributes:
+        driver_id (int): Primary key of the ``DriverProfile``.
+        user_id (int): Primary key of the associated ``User``.
+        telegram_id (int): Telegram ID of the driver.
+        full_name (str): Driver's display name.
+        phone_number (str): Driver's contact phone number.
+        vehicle_type (str): Type of vehicle used for deliveries.
+        plate_number (str): Vehicle registration plate number.
+        license_number (str): Driver's license number.
+        status (DriverStatus): Current approval status of the driver profile.
+        availability (DriverAvailability): Current availability state.
+        rating_avg (float): Average rating from student feedback.
+        total_deliveries (int): Count of completed deliveries.
+        username (Optional[str]): Telegram username of the driver.
+
+    Used by:
+        - ``bot/admin/service.py``: ``get_all_drivers``
+        - ``bot/admin/handler.py``: ``cmd_drivers``
+        - ``bot/admin/keyboards.py``: ``drivers_list_keyboard``
+    """
+
+    driver_id: int
+    user_id: int
+    telegram_id: int
+    full_name: str
+    phone_number: str
+    vehicle_type: str
+    plate_number: str
+    license_number: str
+    status: DriverStatus
+    availability: str
+    rating_avg: float
+    total_deliveries: int
+    username: Optional[str] = None
+
+
+@dataclass
+class DriverDetailDTO:
+    """Detailed view of a driver record for admin management.
+
+    Attributes:
+        driver_id (int): Primary key of the ``DriverProfile``.
+        user_id (int): Primary key of the associated ``User``.
+        telegram_id (int): Telegram ID of the driver.
+        full_name (str): Driver's display name.
+        phone_number (str): Driver's contact phone number.
+        vehicle_type (str): Type of vehicle used for deliveries.
+        plate_number (str): Vehicle registration plate number.
+        license_number (str): Driver's license number.
+        status (DriverStatus): Current approval status of the driver profile.
+        availability (DriverAvailability): Current availability state.
+        rating_avg (float): Average rating from student feedback.
+        total_deliveries (int): Count of completed deliveries.
+        username (Optional[str]): Telegram username of the driver.
+        account_status (str): Current account status of the associated user.
+
+    Used by:
+        - ``bot/admin/service.py``: ``get_driver_by_id``
+        - ``bot/admin/handler.py``: ``handle_view_driver_detail`` (management)
+    """
+
+    driver_id: int
+    user_id: int
+    telegram_id: int
+    full_name: str
+    phone_number: str
+    vehicle_type: str
+    plate_number: str
+    license_number: str
+    status: DriverStatus
+    availability: str
+    rating_avg: float
+    total_deliveries: int
+    username: Optional[str] = None
+    account_status: str = "active"
+
+
+@dataclass
+class UpdateDriverFieldDTO:
+    """Request payload for updating a specific field on a driver record.
+
+    Attributes:
+        driver_id (int): Primary key of the ``DriverProfile`` to update.
+        field (str): The field name to update (e.g. ``full_name``,
+            ``phone_number``, ``vehicle_type``, ``plate_number``,
+            ``license_number``, ``status``).
+        value (str): The new value for the field.
+        admin_telegram_id (int): Telegram ID of the admin performing the update.
+
+    Used by:
+        - ``bot/admin/service.py``: ``update_driver_field``
+        - ``bot/admin/handler.py``: ``handle_driver_field_input``
+    """
+
+    driver_id: int
+    field: str
+    value: str
+    admin_telegram_id: int
+
+
+@dataclass
+class RemoveDriverDTO:
+    """Request payload for removing a driver record.
+
+    Attributes:
+        driver_id (int): Primary key of the ``DriverProfile`` to remove.
+        admin_telegram_id (int): Telegram ID of the admin performing the removal.
+
+    Used by:
+        - ``bot/admin/service.py``: ``remove_driver``
+        - ``bot/admin/handler.py``: ``handle_remove_driver_execute``
+    """
+
+    driver_id: int
+    admin_telegram_id: int
+
+
+@dataclass
 class BanUserDTO:
     """Request payload for banning a user.
 

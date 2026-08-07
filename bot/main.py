@@ -41,7 +41,7 @@ from bot.common.fallback import fallback_router
 from bot.common.help import help_router
 from bot.common.start import start_router
 from bot.core.config import get_settings
-from bot.core.constants_commands import (
+from bot.core.constants.commands import (
     ADMIN_COMMANDS,
     DEFAULT_COMMANDS,
     DRIVER_COMMANDS,

@@ -32,3 +32,18 @@ class BroadcastFSM(StatesGroup):
     waiting_for_audience = State()
     waiting_for_content = State()
     waiting_for_confirmation = State()
+
+
+class DriverEditFSM(StatesGroup):
+    """FSM states for the admin driver field editing workflow.
+
+    The driver edit flow guides an admin through updating a specific
+    field on a driver record:
+        1. ``waiting_for_field_value`` - Admin enters the new value for
+           the selected field.
+
+    Attributes:
+        waiting_for_field_value (State): Admin inputs the new value.
+    """
+
+    waiting_for_field_value = State()
