@@ -36,7 +36,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: python -m bot.main
+    # Runs migrations first, then starts the bot if successful
+    command: sh -c "alembic upgrade head && python -m bot.main"
 
 volumes:
   postgres_data:
