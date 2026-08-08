@@ -43,6 +43,9 @@ CMD_ORDERS = "orders"
 CMD_BROADCAST = "broadcast"
 CMD_ASSIGN = "assign"
 
+# Admin Drivers
+CMD_ADD_DRIVER = "add_driver"
+
 
 # Telegram Bot Menu Command Definitions
 # (Used when calling bot.set_my_commands())
@@ -87,5 +90,6 @@ ADMIN_COMMANDS = DEFAULT_COMMANDS + [
     BotCommand(command=CMD_USERS, description="Search or view registered students and drivers"),
     BotCommand(command=CMD_ORDERS, description=" View active, pending, or completed deliveries"),
     BotCommand(command=CMD_DRIVERS, description="  lists all driver record"),
-    BotCommand(command=CMD_ASSIGN, description="  assign request to a driver")
+    BotCommand(command=CMD_ASSIGN, description="  assign request to a driver"),
+    BotCommand(command=CMD_ADD_DRIVER, description="Add authorized driver"),
 ]

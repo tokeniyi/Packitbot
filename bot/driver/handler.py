@@ -185,6 +185,23 @@ async def start_driver_registration(message: Message, state: FSMContext, session
             )
             return
 
+    # Check pre-authorization before starting the registration FSM.
+    from bot.driver.service import is_authorized_driver
+
+    if session is None:
+        await message.answer("Session unavailable. Please try again.")
+        return
+
+    is_authorized = await is_authorized_driver(message.from_user.id, session=session)
+    if not is_authorized:
+        await message.answer(
+            "⛔ Driver registration is currently by invitation only.\n\n"
+            "An admin needs to add your Telegram ID to the authorized driver list first.\n"
+            "Please contact an admin to request driver access.",
+            reply_markup=HomeButton(),
+        )
+        return
+
     await state.clear()
     await state.set_state(DriverRegistrationFSM.entering_full_name)
     await message.answer(_step_prompt(1, 5, "Enter your full name (First and Last name):"))

@@ -32,6 +32,7 @@ from bot.core.constants.enums import AccountStatus, DriverAvailability, DriverSt
 from bot.core.db.session import async_session
 from bot.core.exceptions import DuplicateResourceError, PackitbotError, ValidationError
 from bot.core.models.driver_profile import DriverProfile
+from bot.core.models.authorized_driver import AuthorizedDriver
 from bot.core.models.user import User
 from bot.core.utils.validators import (
     validate_full_name,
@@ -251,4 +252,42 @@ async def set_driver_availability(
             except Exception:
                 await sess.rollback()
                 raise
+
+
+async def is_authorized_driver(
+    telegram_id: int,
+    session: Optional[AsyncSession] = None,
+) -> bool:
+    """Check whether a Telegram user ID is on the pre-approved driver list.
+
+    Queries the ``authorized_drivers`` table for a matching ``telegram_id``.
+    If no external session is provided, a new ``async_session`` scope is
+    opened and closed automatically.
+
+    Args:
+        telegram_id: The Telegram user identifier to look up.
+        session:     Optional injected ``AsyncSession``. If ``None``, a new
+                     session scope is created via ``async_session()``.
+
+    Returns:
+        ``True`` if the Telegram ID appears in the ``AuthorizedDriver``
+        table, ``False`` otherwise.
+
+    Called by:
+        - ``bot/core/middlewares/rbac.py`` — gates the ``/register_driver``
+          command for DRIVER-role users without a profile.
+        - ``bot/driver/handler.py`` — ``start_driver_registration`` performs
+          the same check as a secondary guard for text-button triggers.
+    """
+
+    async def _check(sess: AsyncSession) -> bool:
+        stmt = select(AuthorizedDriver).where(AuthorizedDriver.telegram_id == telegram_id)
+        result = await sess.execute(stmt)
+        return result.scalar_one_or_none() is not None
+
+    if session is not None:
+        return await _check(session)
+    else:
+        async with async_session() as sess:
+            return await _check(sess)
 

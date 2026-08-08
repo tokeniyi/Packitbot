@@ -45,13 +45,18 @@ class TestStartDriverRegistration:
     async def test_advances_to_full_name_state_when_new(self):
         message = _make_message(text="/register_driver")
         state = AsyncMock()
+        session = AsyncMock()
 
         with patch(
             "bot.driver.handler.get_driver_profile_by_telegram_id",
             new_callable=AsyncMock,
             return_value=None,
+        ), patch(
+            "bot.driver.service.is_authorized_driver",
+            new_callable=AsyncMock,
+            return_value=True,
         ):
-            await start_driver_registration(message, state)
+            await start_driver_registration(message, state, session=session)
 
         state.set_state.assert_awaited_with(DriverRegistrationFSM.entering_full_name)
 

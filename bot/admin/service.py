@@ -54,6 +54,7 @@ from bot.core.constants.enums import AccountStatus, AdminActionType, DriverAvail
 from bot.core.db.session import async_session
 from bot.core.exceptions import DuplicateResourceError, NotFoundError, PackitbotError, ValidationError
 from bot.core.models.admin_action_log import AdminActionLog
+from bot.core.models.authorized_driver import AuthorizedDriver
 from bot.core.models.delivery_request import DeliveryRequest
 from bot.core.models.driver_profile import DriverProfile
 from bot.core.models.feedback import Feedback
@@ -1442,6 +1443,82 @@ async def remove_driver(
             try:
                 await _execute(sess)
                 await sess.commit()
+            except Exception:
+                await sess.rollback()
+                raise
+
+
+async def add_authorized_driver(
+    telegram_id: int,
+    admin_telegram_id: int,
+    session: Optional[AsyncSession] = None,
+) -> bool:
+    """Add a Telegram user ID to the pre-approved authorized driver list.
+
+    Verifies that the calling user is an admin, checks whether the target
+    Telegram ID is already on the list (returning ``False`` in that case),
+    and otherwise inserts a new ``AuthorizedDriver`` row with an audit-log
+    entry.  When no external session is supplied, a new ``async_session``
+    scope is opened, committed, and rolled back on failure.
+
+    Args:
+        telegram_id:        The Telegram user ID to authorize.
+        admin_telegram_id:  The Telegram ID of the admin performing the action.
+        session:            Optional injected ``AsyncSession``.
+
+    Returns:
+        ``True`` if the Telegram ID was newly added, ``False`` if it already
+        existed.
+
+    Raises:
+        ValidationError: If the caller is not an admin.
+
+    Called by:
+        - ``bot/admin/handler.py`` — ``cmd_add_driver``.
+    """
+
+    async def _execute(sess: AsyncSession) -> bool:
+        # Verify admin user
+        admin_stmt = select(User).where(User.telegram_id == admin_telegram_id)
+        admin_res = await sess.execute(admin_stmt)
+        admin_user = admin_res.scalar_one_or_none()
+        if not admin_user or admin_user.role != UserRole.ADMIN:
+            raise ValidationError("Admin permission required.")
+
+        # Check if already authorized
+        check_stmt = select(AuthorizedDriver).where(AuthorizedDriver.telegram_id == telegram_id)
+        existing = (await sess.execute(check_stmt)).scalar_one_or_none()
+
+        if existing:
+            return False
+
+        auth_driver = AuthorizedDriver(
+            telegram_id=telegram_id,
+            added_by_admin_id=admin_user.id,
+        )
+        sess.add(auth_driver)
+        await sess.flush()
+
+        # Log the action
+        log_entry = AdminActionLog(
+            admin_id=admin_user.id,
+            action_type=AdminActionType.AUTHORIZE_DRIVER,
+            target_user_id=None,
+            details=f"Added telegram_id={telegram_id} to authorized driver list",
+        )
+        sess.add(log_entry)
+        await sess.flush()
+
+        return True
+
+    if session is not None:
+        return await _execute(session)
+    else:
+        async with async_session() as sess:
+            try:
+                result = await _execute(sess)
+                await sess.commit()
+                return result
             except Exception:
                 await sess.rollback()
                 raise

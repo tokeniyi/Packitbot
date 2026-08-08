@@ -13,6 +13,7 @@ from bot.core.models import user
 from bot.core.models import student_profile
 from bot.core.models import driver_profile
 from bot.core.models import admin_profile
+from bot.core.models import authorized_driver
 from bot.core.models import delivery_request
 from bot.core.models import status_log
 from bot.core.models import feedback

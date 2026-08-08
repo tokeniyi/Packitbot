@@ -40,15 +40,15 @@ MSG_MANAGEMENT_PORTAL = (
     "⚙️ **Admin Management Panel**\n\n"
     "Welcome, Admin! Here are the commands and controls available to you:\n\n"
     "📊 **System & Metrics**\n"
-    "• `/admin` — Re-open this management portal\n"
-    "• `/stats` — View live delivery metrics & system stats\n\n"
+    "• /admin — Re-open this management portal\n"
+    "• /stats — View live delivery metrics & system stats\n\n"
      "👥 **User & Verification Management**\n"
-     "• `/verify` — Review & verify pending driver accounts\n"
-     "• `/users` — Search or view registered students and drivers\n"
-     "• `/drivers` — View and manage all driver records\n\n"
+     "• /verify — Review & verify pending driver accounts\n"
+     "• /users — Search or view registered students and drivers\n"
+     "• /drivers — View and manage all driver records\n\n"
      "📦 **Logistics & Orders**\n"
-    "• `/orders` — View active, pending, or completed deliveries\n"
-    "• `/broadcast` — Send an announcement message to all users\n\n"
+    "• /orders — View active, pending, or completed deliveries\n"
+    "• /broadcast — Send an announcement message to all users\n\n"
     "💡 *Tip: You can also use the inline buttons below to navigate quick actions!(not implemented yet 😁*"
 )
 
@@ -244,6 +244,13 @@ MSG_EMPTY_STATE_REQUESTS = "📭 You haven't created any delivery requests yet.\
 MSG_EMPTY_STATE_DRIVER = "🛋️ You don't have an active delivery right now. We'll notify you when a request comes in!"
 MSG_SLOW_DOWN = "⏳ **Slow down!** You're tapping buttons too fast."
 MSG_BANNED = "🔒 **Account Restricted.** Your account has been restricted. Contact an admin for assistance."
+
+
+# RBAC Messages
+MSG_ACCESS_DENIED_ROLE = "⛔ Access denied. You do not have permission to use this command."
+MSG_ACCESS_DENIED_UNREGISTERED = "⛔ Your registration is not complete. Use /start to begin setup."
+MSG_ACCESS_DENIED_NOT_FULLY_REGISTERED = "⛔ Your registration is not fully completed. Please complete registration first."
+MSG_DRIVER_NOT_AUTHORIZED = "⛔ Driver registration requires pre-authorization. Please contact an admin to request driver access."
 
 
 # welcome admin

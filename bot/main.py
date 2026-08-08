@@ -58,6 +58,7 @@ from bot.core.loader import get_bot, get_dispatch
 from bot.core.middlewares.auth import AuthMiddleware
 from bot.core.middlewares.db_session import DbSessionMiddleware
 from bot.core.middlewares.logging import LoggingMiddleware, logger
+from bot.core.middlewares.rbac import RBACMiddleware
 from bot.core.middlewares.throttling import ThrottlingMiddleware
 from bot.core.models.admin_profile import AdminProfile
 from bot.core.models.user import User
@@ -65,13 +66,29 @@ from bot.student.handler import student_router
 
 
 async def _init_db() -> None:
-    """Create all database tables defined by the SQLAlchemy models.
+    """Create all database tables and ensure ENUM values are up to date.
 
-    This function should be called before any database
-    operations to ensure the schema is up to date.
+    Base.metadata.create_all creates tables from the ORM models but does
+    not modify existing PostgreSQL ENUM types.  When new values are added
+    to a Python str-Enum (e.g. AdminActionType.AUTHORIZE_DRIVER) we must
+    explicitly ALTER TYPE ADD VALUE so that inserts referencing the new
+    value do not raise InvalidTextRepresentationError.
     """
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    _enum_additions = [
+        "ALTER TYPE adminactiontype ADD VALUE 'AUTHORIZE_DRIVER'",
+    ]
+    try:
+        async with engine.begin() as conn:
+            for stmt in _enum_additions:
+                try:
+                    await conn.exec_driver_sql(stmt)
+                except Exception:
+                    pass
+    except Exception:
+        pass
 
 
 def get_admin_chats_from_settings() -> list[int]:
@@ -426,11 +443,12 @@ def main() -> None:
     setup_routers(dp)
     setup_error_handlers(dp)
 
-    # Middleware Order (Inflow order: Logging -> DbSession -> Throttling -> Auth)
+    # Middleware Order (Inflow order: Logging -> DbSession -> Throttling -> Auth -> RBAC)
     dp.update.outer_middleware(LoggingMiddleware())
     dp.update.outer_middleware(DbSessionMiddleware())
     dp.update.outer_middleware(ThrottlingMiddleware(settings))
     dp.update.outer_middleware(AuthMiddleware(settings))
+    dp.update.outer_middleware(RBACMiddleware())
 
     try:
         if settings.webhook_url:

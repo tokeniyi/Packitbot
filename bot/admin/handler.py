@@ -33,6 +33,7 @@ from bot.admin.schemas import (
     UpdateDriverFieldDTO,
 )
 from bot.admin.service import (
+    add_authorized_driver,
     approve_driver,
     ban_user,
     get_all_drivers,
@@ -69,7 +70,7 @@ from bot.core.constants.messages import (
     MSG_DRIVER_REMOVE_CANCELLED,
 )
 from bot.core.db.session import async_session
-from bot.core.exceptions import PackitbotError
+from bot.core.exceptions import PackitbotError, ValidationError
 from bot.core.models.user import User
 from bot.core.services.notification_service import notify_driver_approval_status, send_broadcast_message
 from bot.core.utils.callback_data import AdminAssign, AdminDriverApproval, AdminDriverEdit, AdminDriverManage, AdminDriverRemove, AdminUserAction, PaginationNav
@@ -1202,3 +1203,57 @@ async def cancel_broadcast(
     await state.clear()
     await callback.message.edit_text("❌ Broadcast operation cancelled.")
     await callback.answer("Broadcast cancelled")
+
+
+@admin_router.message(Command("add_driver"))
+async def cmd_add_driver(
+    message: Message,
+    state: FSMContext,
+    user: User | None = None,
+    session=None,
+) -> None:
+    """Add a Telegram user to the pre-approved authorized driver list.
+
+    Triggered by ``/add_driver <telegram_id>``.  Only admins may use this
+    command.  The target Telegram ID is added to the ``AuthorizedDriver``
+    table so that the user (once they have the DRIVER role) can run
+    ``/register_driver`` to begin the driver registration flow.
+
+    Args:
+        message: The incoming :class:`Message` containing the command.
+        state:   The FSM context (cleared at the start).
+        user:    The authenticated :class:`User` (injected by AuthMiddleware).
+        session: Optional injected SQLAlchemy ``AsyncSession``.
+    """
+    await state.clear()
+
+    if not _is_admin(user):
+        await message.answer(MSG_NO_PERMISSION)
+        return
+
+    parts = message.text.strip().split()
+    if len(parts) != 2 or not parts[1].lstrip("-").isdigit():
+        await message.answer(
+            "📋 **Usage:**\n"
+            "• `/add_driver <telegram_id>` — Add user to authorized driver list",
+            parse_mode="Markdown",
+        )
+        return
+
+    target_tg_id = int(parts[1])
+
+    try:
+        added = await add_authorized_driver(target_tg_id, user.telegram_id, session)
+        if added:
+            await message.answer(
+                f"✅ Telegram user {target_tg_id} has been added to the authorized driver list."
+            )
+        else:
+            await message.answer(
+                f"ℹ️ Telegram user {target_tg_id} is already in the authorized driver list."
+            )
+    except ValidationError as e:
+        await message.answer(f"❌ {e}")
+    except Exception as e:
+        logger.error(f"Error adding authorized driver: {e}")
+        await message.answer(MSG_SOMETHING_WENT_WRONG)
