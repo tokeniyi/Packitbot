@@ -10,7 +10,7 @@ Function Calls:
     - cmd_start(message, state, bot, user) -> None
     - home_callback(callback, state, bot, user) -> None
     - process_role_student(callback, state) -> None
-    - process_role_driver(callback) -> None
+    - process_role_driver(callback, state, session) -> None
 
 Cross-References:
     - Depends on: aiogram Router, FSMContext, Bot, sqlalchemy,
@@ -20,7 +20,6 @@ Cross-References:
 """
 
 from aiogram.exceptions import TelegramBadRequest
-from bot.student.keyboards import student_persistent_menu
 import logging
 
 from aiogram import Bot, F, Router
@@ -54,6 +53,7 @@ from bot.core.constants.messages import (
 )
 from bot.core.constants.quick_replies import BTN_HOME
 from bot.core.models.user import User
+from bot.student.keyboards import student_persistent_menu
 from bot.student.states import StudentRegistrationFSM
 
 logger = logging.getLogger(__name__)
@@ -260,13 +260,61 @@ async def process_role_student(callback: CallbackQuery, state: FSMContext) -> No
 
 
 @start_router.callback_query(F.data == "role:driver")
-async def process_role_driver(callback: CallbackQuery) -> None:
+async def process_role_driver(callback: CallbackQuery, state: FSMContext, session=None) -> None:
     """Handle the driver role selection callback.
 
-    Currently shows an alert that driver registration
-    is not yet available.
+    Validates that the user is on the pre-authorized driver list and, if so,
+    starts the driver registration FSM directly (using ``callback.from_user.id``
+    rather than ``callback.message.from_user.id`` which would be the bot).
 
     Args:
         callback: The incoming CallbackQuery object.
+        state:    The FSM context for managing conversation state.
+        session:  Optional injected SQLAlchemy AsyncSession.
     """
-    await callback.answer("Driver registration coming soon!", show_alert=True)
+    await callback.answer()
+    if session is None:
+        await callback.message.answer("Session unavailable. Please try again.")
+        return
+
+    from bot.core.constants.enums import DriverStatus
+    from bot.driver.service import get_driver_profile_by_telegram_id, is_authorized_driver
+    from bot.driver.states import DriverRegistrationFSM
+    from bot.core.keyboards.common_kb import HomeButton
+
+    telegram_id = callback.from_user.id
+
+    # Check if driver is already registered
+    profile = await get_driver_profile_by_telegram_id(telegram_id, session=session)
+    if profile:
+        if profile.status == DriverStatus.APPROVED:
+            from bot.driver.keyboards import driver_persistent_menu
+            await callback.message.answer(
+                "✅ You are already registered and approved as a driver!",
+                reply_markup=driver_persistent_menu(profile.availability),
+            )
+            return
+        elif profile.status == DriverStatus.PENDING_APPROVAL:
+            from bot.driver.keyboards import driver_pending_menu
+            await callback.message.answer(
+                "⏳ Your driver registration is currently <b>PENDING APPROVAL</b>.\n"
+                "Please wait for an administrator to review your application.",
+                parse_mode="HTML",
+                reply_markup=driver_pending_menu(),
+            )
+            return
+
+    # Check pre-authorization before starting the registration FSM.
+    is_authorized = await is_authorized_driver(telegram_id, session=session)
+    if not is_authorized:
+        await callback.message.answer(
+            "⛔ Driver registration is currently by invitation only.\n\n"
+            "An admin needs to add your Telegram ID to the authorized driver list first.\n"
+            "Please contact an admin to request driver access.",
+            reply_markup=HomeButton(),
+        )
+        return
+
+    await state.clear()
+    await state.set_state(DriverRegistrationFSM.entering_full_name)
+    await callback.message.answer("Step 1/5 [████░░░░░]\n\nEnter your full name (First and Last name):")

@@ -251,6 +251,7 @@ MSG_ACCESS_DENIED_ROLE = "⛔ Access denied. You do not have permission to use t
 MSG_ACCESS_DENIED_UNREGISTERED = "⛔ Your registration is not complete. Use /start to begin setup."
 MSG_ACCESS_DENIED_NOT_FULLY_REGISTERED = "⛔ Your registration is not fully completed. Please complete registration first."
 MSG_DRIVER_NOT_AUTHORIZED = "⛔ Driver registration requires pre-authorization. Please contact an admin to request driver access."
+MSG_UNKNOWN_COMMAND = "❓ Unknown command. Use /help to see available commands."
 
 
 # welcome admin

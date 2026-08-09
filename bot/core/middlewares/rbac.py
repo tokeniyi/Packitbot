@@ -15,9 +15,12 @@ A small set of *public* commands (``start``, ``help``, ``about``, ``cancel``,
 unregistered ones — can navigate the bot.
 
 Special case: the ``/register_driver`` command is gated by a pre-authorization
-list (``AuthorizedDriver``).  A user with the ``DRIVER`` role who has not yet
-submitted a driver profile may only start the registration flow if their
+list (``AuthorizedDriver``).  A pre-authorized user — regardless of whether
+they have the ``DRIVER`` role yet — may start the registration flow if their
 Telegram ID appears on the pre-approved list.
+
+Commands that are not recognized as public or role-specific are rejected with
+an "unknown command" message so users get clear feedback.
 """
 
 import logging
@@ -33,6 +36,7 @@ from bot.core.constants.messages import (
     MSG_ACCESS_DENIED_ROLE,
     MSG_ACCESS_DENIED_UNREGISTERED,
     MSG_DRIVER_NOT_AUTHORIZED,
+    MSG_UNKNOWN_COMMAND,
 )
 from bot.core.keyboards.common_kb import HomeButton
 from bot.core.models.admin_profile import AdminProfile
@@ -160,23 +164,35 @@ class RBACMiddleware(BaseMiddleware):
 
         session = data.get("session")
 
-        # Unregistered users (role is None) blocked from everything except
-        # public commands (already handled above).
-        if user.role is None:
-            await self._reply_denied(event, MSG_ACCESS_DENIED_UNREGISTERED)
-            return
-
         if command:
-            is_registered = await self._is_fully_registered(user, session)
-
-            # Special: driver registration bypass for pre-authorized users
-            if command == "register_driver" and user.role == UserRole.DRIVER:
+            # Special: driver registration bypass for pre-authorized users.
+            # A user does not need the DRIVER role yet â being on the
+            # pre-authorized list is sufficient to start the registration flow.
+            if command == "register_driver":
                 from bot.driver.service import is_authorized_driver
 
                 if await is_authorized_driver(user.telegram_id, session):
                     return await handler(event, data)
-                await self._reply_denied(event, MSG_DRIVER_NOT_AUTHORIZED)
+                if user.role == UserRole.DRIVER:
+                    await self._reply_denied(event, MSG_DRIVER_NOT_AUTHORIZED)
+                    return
+
+            # Reject unknown commands â commands that are not in any role's
+            # allowed set and not in PUBLIC_COMMANDS.
+            all_known = self.PUBLIC_COMMANDS | set().union(*self.ROLE_COMMANDS.values())
+            if command not in all_known:
+                await self._reply_denied(event, MSG_UNKNOWN_COMMAND)
                 return
+
+            # Unregistered users (role is None) blocked from role-specific
+            # slash-commands.  Callbacks and non-command text are allowed
+            # through so that role-selection flows (e.g. the start-menu
+            # "student"/"driver" buttons) and other UI interactions work.
+            if user.role is None:
+                await self._reply_denied(event, MSG_ACCESS_DENIED_UNREGISTERED)
+                return
+
+            is_registered = await self._is_fully_registered(user, session)
 
             # Block fully-unregistered users from role commands
             if not is_registered:

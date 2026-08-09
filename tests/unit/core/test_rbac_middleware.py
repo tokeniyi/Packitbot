@@ -281,12 +281,13 @@ async def test_no_user_passes_through():
 
 
 # ---------------------------------------------------------------------------
-# 11. Non-command text blocked for unregistered user
+# 11. Non-command text allowed for unregistered user
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_non_command_text_blocked_for_unregistered_user():
-    """Non-command text from a user with role=None is blocked because the
-    user is not registered — only public slash-commands bypass the gate."""
+async def test_non_command_text_allowed_for_unregistered_user():
+    """Non-command text from a user with role=None passes through so that
+    callback handlers (like role-selection buttons) and text-button flows
+    can process it."""
     middleware = RBACMiddleware()
     update = _make_mock_update("some free text")
     user = _make_user_mock(role=None)
@@ -296,12 +297,37 @@ async def test_non_command_text_blocked_for_unregistered_user():
 
     result = await middleware(handler, update, {"user": user, "session": session})
 
-    assert result is None
-    handler.assert_not_awaited()
+    assert result == "ok"
+    handler.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
-# 12. Non-command text allowed for registered user
+# 12. Pre-authorized user with no role allowed for /register_driver
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_preauthorized_user_without_role_allowed_for_register_driver():
+    """A user with role=None who is on the authorized list may invoke
+    /register_driver — the pre-auth check bypasses the role requirement."""
+    middleware = RBACMiddleware()
+    update = _make_mock_update("/register_driver")
+    user = _make_user_mock(role=None, tid=42)
+    session = _make_session_mock(profile_exists=False)
+
+    handler = AsyncMock(return_value="ok")
+
+    with patch(
+        "bot.driver.service.is_authorized_driver",
+        new_callable=AsyncMock,
+        return_value=True,
+    ):
+        result = await middleware(handler, update, {"user": user, "session": session})
+
+    assert result == "ok"
+    handler.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# 13. Non-command text allowed for registered user
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_non_command_text_allowed_for_registered_user():
@@ -318,3 +344,65 @@ async def test_non_command_text_allowed_for_registered_user():
 
     assert result == "ok"
     handler.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# 14. Unknown command rejected with "unknown command" message
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_unknown_command_blocked_for_registered_user():
+    """A registered user running an unknown command receives the
+    'unknown command' message instead of a permission error."""
+    middleware = RBACMiddleware()
+    update = _make_mock_update("/nonexistent")
+    user = _make_user_mock(role=UserRole.STUDENT)
+    session = _make_session_mock(profile_exists=True)
+
+    handler = AsyncMock(return_value="ok")
+
+    result = await middleware(handler, update, {"user": user, "session": session})
+
+    assert result is None
+    handler.assert_not_awaited()
+    update.message.answer.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# 15. Unknown command rejected even for unregistered user
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_unknown_command_blocked_for_unregistered_user():
+    """An unregistered user running an unknown command receives the
+    'unknown command' message, not the 'registration incomplete' one."""
+    middleware = RBACMiddleware()
+    update = _make_mock_update("/nonexistent")
+    user = _make_user_mock(role=None)
+    session = _make_session_mock()
+
+    handler = AsyncMock(return_value="ok")
+
+    result = await middleware(handler, update, {"user": user, "session": session})
+
+    assert result is None
+    handler.assert_not_awaited()
+    update.message.answer.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# 16. Unknown command rejected even for admin
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_unknown_command_blocked_for_admin():
+    """Even an admin running an unknown command receives 'unknown command'."""
+    middleware = RBACMiddleware()
+    update = _make_mock_update("/nonexistent")
+    user = _make_user_mock(role=UserRole.ADMIN)
+    session = _make_session_mock(profile_exists=True)
+
+    handler = AsyncMock(return_value="ok")
+
+    result = await middleware(handler, update, {"user": user, "session": session})
+
+    assert result is None
+    handler.assert_not_awaited()
+    update.message.answer.assert_awaited_once()
