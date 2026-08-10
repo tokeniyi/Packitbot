@@ -37,7 +37,6 @@ from bot.core.models.user import User
 from bot.core.utils.validators import (
     validate_full_name,
     validate_license_number,
-    validate_phone,
     validate_plate_number,
     validate_vehicle_type,
 )
@@ -77,7 +76,7 @@ async def register_driver(
         ``bot/driver/handler.py`` -> ``process_submit_registration``.
     """
     validated_name = validate_full_name(dto.full_name)
-    validated_phone = validate_phone(dto.phone_number)
+    validated_phone = dto.phone_number
     validated_vehicle = validate_vehicle_type(dto.vehicle_type)
     validated_plate = validate_plate_number(dto.plate_number)
     validated_license = validate_license_number(dto.license_number)

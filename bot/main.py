@@ -62,6 +62,7 @@ from bot.core.middlewares.rbac import RBACMiddleware
 from bot.core.middlewares.throttling import ThrottlingMiddleware
 from bot.core.models.admin_profile import AdminProfile
 from bot.core.models.user import User
+from bot.driver.handler import driver_router
 from bot.student.handler import student_router
 
 
@@ -193,6 +194,7 @@ def setup_routers(dp) -> None:
     dp.include_router(admin_router)
     dp.include_router(help_router)
     dp.include_router(student_router)
+    dp.include_router(driver_router)
 
     # ALWAYS KEEP FALLBACK ROUTER LAST!
     dp.include_router(fallback_router)
