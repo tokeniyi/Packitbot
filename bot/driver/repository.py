@@ -20,13 +20,12 @@ Called by
 ``bot/driver/service.py`` -> ``register_driver`` (via ``get_by_plate_number`` / ``get_by_license_number`` uniqueness checks).
 """
 
-from typing import Optional, Sequence
+from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.core.models.driver_profile import DriverProfile
-from bot.core.models.user import User
 from bot.core.repositories.base_repository import BaseRepository
 
 
