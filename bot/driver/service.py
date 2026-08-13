@@ -28,12 +28,15 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy.orm import joinedload
+
 from bot.core.constants.enums import AccountStatus, DriverAvailability, DriverStatus, UserRole
-from bot.core.db.session import async_session
 from bot.core.exceptions import DuplicateResourceError, PackitbotError, ValidationError
 from bot.core.models.driver_profile import DriverProfile
 from bot.core.models.authorized_driver import AuthorizedDriver
 from bot.core.models.user import User
+from bot.core.repositories.user_repository import UserRepository
+from bot.driver.repository import DriverRepository
 from bot.core.utils.validators import (
     validate_full_name,
     validate_license_number,
@@ -44,8 +47,8 @@ from bot.driver.schemas import RegisterDriverDTO
 
 
 async def register_driver(
+    session: AsyncSession,
     dto: RegisterDriverDTO,
-    session: Optional[AsyncSession] = None,
 ) -> DriverProfile:
     """Register a new driver or resubmit an existing pending application.
 
@@ -81,75 +84,64 @@ async def register_driver(
     validated_plate = validate_plate_number(dto.plate_number)
     validated_license = validate_license_number(dto.license_number)
 
-    async def _execute_register(sess: AsyncSession) -> DriverProfile:
-        # Check existing user by telegram_id
-        stmt = select(User).where(User.telegram_id == dto.telegram_id)
-        result = await sess.execute(stmt)
-        user = result.scalar_one_or_none()
+    user_repo = UserRepository(session)
+    driver_repo = DriverRepository(session)
 
-        if user is None:
-            user = User(
-                telegram_id=dto.telegram_id,
-                username=dto.username,
-                full_name=validated_name,
-                phone_number=validated_phone,
-                role=UserRole.DRIVER,
-                account_status=AccountStatus.ACTIVE,
-            )
-            sess.add(user)
-            await sess.flush()
-        else:
-            user.full_name = validated_name
-            user.phone_number = validated_phone
-            user.role = UserRole.DRIVER
+    # Pre-emptively check for unique constraints
+    if await driver_repo.get_by_plate_number(validated_plate):
+        raise DuplicateResourceError("A driver profile with this plate number already exists.")
+    if await driver_repo.get_by_license_number(validated_license):
+        raise DuplicateResourceError("A driver profile with this license number already exists.")
 
-        # Check existing driver profile
-        stmt_dp = select(DriverProfile).where(DriverProfile.user_id == user.id)
-        res_dp = await sess.execute(stmt_dp)
-        dp = res_dp.scalar_one_or_none()
+    user = await user_repo.get_by_telegram_id(dto.telegram_id)
 
-        if dp is not None:
-            if dp.status == DriverStatus.APPROVED:
-                raise PackitbotError("Driver profile is already approved.")
-            # Update pending profile details
-            dp.vehicle_type = validated_vehicle
-            dp.plate_number = validated_plate
-            dp.license_number = validated_license
-            dp.status = DriverStatus.PENDING_APPROVAL
-        else:
-            dp = DriverProfile(
-                user_id=user.id,
-                vehicle_type=validated_vehicle,
-                plate_number=validated_plate,
-                license_number=validated_license,
-                status=DriverStatus.PENDING_APPROVAL,
-                availability=DriverAvailability.OFFLINE,
-            )
-            sess.add(dp)
-
-        try:
-            await sess.flush()
-        except IntegrityError as e:
-            raise DuplicateResourceError("A driver profile with this plate number or license number already exists.") from e
-
-        return dp
-
-    if session is not None:
-        return await _execute_register(session)
+    if user is None:
+        user = await user_repo.create(
+            telegram_id=dto.telegram_id,
+            username=dto.username,
+            full_name=validated_name,
+            phone_number=validated_phone,
+            role=UserRole.DRIVER,
+            account_status=AccountStatus.ACTIVE,
+        )
     else:
-        async with async_session() as sess:
-            try:
-                dp = await _execute_register(sess)
-                await sess.commit()
-                return dp
-            except Exception:
-                await sess.rollback()
-                raise
+        await user_repo.update(
+            user.id,
+            full_name=validated_name,
+            phone_number=validated_phone,
+            role=UserRole.DRIVER,
+        )
+
+    # Check existing driver profile
+    dp = await driver_repo.get_by_user_id(user.id)
+
+    if dp is not None:
+        if dp.status == DriverStatus.APPROVED:
+            raise PackitbotError("Driver profile is already approved.")
+        # Update pending profile details
+        await driver_repo.update(
+            dp.id,
+            vehicle_type=validated_vehicle,
+            plate_number=validated_plate,
+            license_number=validated_license,
+            status=DriverStatus.PENDING_APPROVAL,
+        )
+    else:
+        dp = await driver_repo.create(
+            user_id=user.id,
+            vehicle_type=validated_vehicle,
+            plate_number=validated_plate,
+            license_number=validated_license,
+            status=DriverStatus.PENDING_APPROVAL,
+            availability=DriverAvailability.OFFLINE,
+        )
+
+    return dp
 
 
 async def get_driver_profile_by_telegram_id(
+    session: AsyncSession,
     telegram_id: int,
-    session: Optional[AsyncSession] = None,
 ) -> Optional[DriverProfile]:
     """Retrieve the driver profile associated with a Telegram user ID.
 
@@ -159,8 +151,7 @@ async def get_driver_profile_by_telegram_id(
 
     Args:
         telegram_id: The Telegram user identifier of the driver.
-        session:     Optional injected ``AsyncSession``. If ``None``, a new
-                     session scope is created via ``async_session()``.
+        session:     Injected ``AsyncSession``.
 
     Returns:
         The matching :class:`DriverProfile`, or ``None`` if the user has no
@@ -171,26 +162,20 @@ async def get_driver_profile_by_telegram_id(
         ``check_approval_status``, ``toggle_availability_handler``.
     """
 
-    async def _execute_get(sess: AsyncSession) -> Optional[DriverProfile]:
-        stmt = (
-            select(DriverProfile)
-            .join(User, DriverProfile.user_id == User.id)
-            .where(User.telegram_id == telegram_id)
-        )
-        res = await sess.execute(stmt)
-        return res.scalar_one_or_none()
-
-    if session is not None:
-        return await _execute_get(session)
-    else:
-        async with async_session() as sess:
-            return await _execute_get(sess)
+    stmt = (
+        select(DriverProfile)
+        .options(joinedload(DriverProfile.user))
+        .join(User, DriverProfile.user_id == User.id)
+        .where(User.telegram_id == telegram_id)
+    )
+    res = await session.execute(stmt)
+    return res.scalar_one_or_none()
 
 
 async def set_driver_availability(
+    session: AsyncSession,
     telegram_id: int,
     target_availability: DriverAvailability,
-    session: Optional[AsyncSession] = None,
 ) -> DriverProfile:
     """Transition a driver's availability to the specified target state.
 
@@ -204,8 +189,7 @@ async def set_driver_availability(
     Args:
         telegram_id:         The Telegram user identifier of the driver.
         target_availability: The desired availability state to set.
-        session:             Optional injected ``AsyncSession``. If ``None``,
-                             a new session scope is created via ``async_session()``.
+        session:             Injected ``AsyncSession``.
 
     Returns:
         The updated :class:`DriverProfile` with the new availability.
@@ -222,51 +206,35 @@ async def set_driver_availability(
         ``bot/driver/handler.py`` -> ``toggle_availability_handler``.
     """
 
-    async def _execute_set(sess: AsyncSession) -> DriverProfile:
-        profile = await get_driver_profile_by_telegram_id(telegram_id, session=sess)
-        if not profile:
-            raise PackitbotError("Driver profile not found.")
+    profile = await get_driver_profile_by_telegram_id(telegram_id, session=session)
+    if not profile:
+        raise PackitbotError("Driver profile not found.")
 
-        if profile.status != DriverStatus.APPROVED:
-            raise ValidationError("Only approved drivers can change availability.")
+    if profile.status != DriverStatus.APPROVED:
+        raise ValidationError("Only approved drivers can change availability.")
 
-        if profile.availability == DriverAvailability.BUSY:
-            raise ValidationError("Cannot manually change availability while on an active delivery.")
+    if profile.availability == DriverAvailability.BUSY:
+        raise ValidationError("Cannot manually change availability while on an active delivery.")
 
-        if target_availability == DriverAvailability.BUSY:
-            raise ValidationError("BUSY state is system-managed and cannot be set manually.")
+    if target_availability == DriverAvailability.BUSY:
+        raise ValidationError("BUSY state is system-managed and cannot be set manually.")
 
-        profile.availability = target_availability
-        await sess.flush()
-        return profile
-
-    if session is not None:
-        return await _execute_set(session)
-    else:
-        async with async_session() as sess:
-            try:
-                dp = await _execute_set(sess)
-                await sess.commit()
-                return dp
-            except Exception:
-                await sess.rollback()
-                raise
+    profile.availability = target_availability
+    await session.flush()
+    return profile
 
 
 async def is_authorized_driver(
+    session: AsyncSession,
     telegram_id: int,
-    session: Optional[AsyncSession] = None,
 ) -> bool:
     """Check whether a Telegram user ID is on the pre-approved driver list.
 
     Queries the ``authorized_drivers`` table for a matching ``telegram_id``.
-    If no external session is provided, a new ``async_session`` scope is
-    opened and closed automatically.
 
     Args:
         telegram_id: The Telegram user identifier to look up.
-        session:     Optional injected ``AsyncSession``. If ``None``, a new
-                     session scope is created via ``async_session()``.
+        session:     Injected ``AsyncSession``.
 
     Returns:
         ``True`` if the Telegram ID appears in the ``AuthorizedDriver``
@@ -278,15 +246,7 @@ async def is_authorized_driver(
         - ``bot/driver/handler.py`` — ``start_driver_registration`` performs
           the same check as a secondary guard for text-button triggers.
     """
-
-    async def _check(sess: AsyncSession) -> bool:
-        stmt = select(AuthorizedDriver).where(AuthorizedDriver.telegram_id == telegram_id)
-        result = await sess.execute(stmt)
-        return result.scalar_one_or_none() is not None
-
-    if session is not None:
-        return await _check(session)
-    else:
-        async with async_session() as sess:
-            return await _check(sess)
+    stmt = select(AuthorizedDriver).where(AuthorizedDriver.telegram_id == telegram_id)
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none() is not None
 

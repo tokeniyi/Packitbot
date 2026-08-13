@@ -49,9 +49,8 @@ from typing import List, Optional, Tuple
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from datetime import datetime
+from datetime import datetime, timezone
 from bot.core.constants.enums import AccountStatus, AdminActionType, DriverAvailability, DriverStatus, RequestStatus, UserRole
-from bot.core.db.session import async_session
 from bot.core.exceptions import DuplicateResourceError, NotFoundError, PackitbotError, ValidationError
 from bot.core.models.admin_action_log import AdminActionLog
 from bot.core.models.authorized_driver import AuthorizedDriver
@@ -86,9 +85,9 @@ logger = logging.getLogger(__name__)
 
 
 async def get_pending_requests(
+    session: AsyncSession,
     page: int = 1,
     per_page: int = 5,
-    session: Optional[AsyncSession] = None,
 ) -> Tuple[List[DeliveryRequest], int]:
     """Retrieve paginated delivery requests with PENDING status.
 
@@ -119,38 +118,32 @@ async def get_pending_requests(
           ``handle_pending_requests_pagination``,
           ``handle_back_to_pending_requests``
     """
-    async def _execute(sess: AsyncSession):
-        offset = (page - 1) * per_page
+    offset = (page - 1) * per_page
 
-        count_stmt = (
-            select(func.count(DeliveryRequest.id))
-            .where(DeliveryRequest.status == RequestStatus.PENDING)
-        )
-        total_res = await sess.execute(count_stmt)
-        total_count = total_res.scalar() or 0
-        # Ceiling division to ensure at least 1 page when records exist.
-        total_pages = max(1, (total_count + per_page - 1) // per_page)
+    count_stmt = (
+        select(func.count(DeliveryRequest.id))
+        .where(DeliveryRequest.status == RequestStatus.PENDING)
+    )
+    total_res = await session.execute(count_stmt)
+    total_count = total_res.scalar() or 0
+    # Ceiling division to ensure at least 1 page when records exist.
+    total_pages = max(1, (total_count + per_page - 1) // per_page)
 
-        stmt = (
-            select(DeliveryRequest)
-            .where(DeliveryRequest.status == RequestStatus.PENDING)
-            .order_by(DeliveryRequest.created_at.desc())
-            .offset(offset)
-            .limit(per_page)
-        )
-        res = await sess.execute(stmt)
-        requests = list(res.scalars().all())
-        return requests, total_pages
+    stmt = (
+        select(DeliveryRequest)
+        .where(DeliveryRequest.status == RequestStatus.PENDING)
+        .order_by(DeliveryRequest.created_at.desc())
+        .offset(offset)
+        .limit(per_page)
+    )
+    res = await session.execute(stmt)
+    requests = list(res.scalars().all())
+    return requests, total_pages
 
-    if session is not None:
-        return await _execute(session)
-    else:
-        async with async_session() as sess:
-            return await _execute(sess)
 
 
 async def get_available_drivers_ranked(
-    session: Optional[AsyncSession] = None,
+    session: AsyncSession,
 ) -> List[AvailableDriverDTO]:
     """Retrieve approved, non-offline drivers ranked by rating and delivery volume.
 
@@ -177,51 +170,45 @@ async def get_available_drivers_ranked(
     Called by:
         - ``bot/admin/handler.py``: ``handle_select_request_for_assignment``
     """
-    async def _execute(sess: AsyncSession):
-        stmt = (
-            select(DriverProfile, User)
-            .join(User, DriverProfile.user_id == User.id)
-            .where(
-                DriverProfile.status == DriverStatus.APPROVED,
-                DriverProfile.availability != DriverAvailability.OFFLINE,
-            )
-            .order_by(
-                DriverProfile.rating_avg.desc(),
-                DriverProfile.total_deliveries.desc(),
-                DriverProfile.id.asc(),
+    stmt = (
+        select(DriverProfile, User)
+        .join(User, DriverProfile.user_id == User.id)
+        .where(
+            DriverProfile.status == DriverStatus.APPROVED,
+            DriverProfile.availability != DriverAvailability.OFFLINE,
+        )
+        .order_by(
+            DriverProfile.rating_avg.desc(),
+            DriverProfile.total_deliveries.desc(),
+            DriverProfile.id.asc(),
+        )
+    )
+    res = await session.execute(stmt)
+    rows = res.all()
+
+    dtos = []
+    for dp, user in rows:
+        dtos.append(
+            AvailableDriverDTO(
+                driver_id=dp.id,
+                user_id=user.id,
+                telegram_id=user.telegram_id,
+                full_name=user.full_name or "Unknown Driver",
+                phone_number=user.phone_number or "N/A",
+                vehicle_type=dp.vehicle_type,
+                rating_avg=dp.rating_avg,
+                total_deliveries=dp.total_deliveries,
+                username=user.username,
             )
         )
-        res = await sess.execute(stmt)
-        rows = res.all()
+    return dtos
 
-        dtos = []
-        for dp, user in rows:
-            dtos.append(
-                AvailableDriverDTO(
-                    driver_id=dp.id,
-                    user_id=user.id,
-                    telegram_id=user.telegram_id,
-                    full_name=user.full_name or "Unknown Driver",
-                    phone_number=user.phone_number or "N/A",
-                    vehicle_type=dp.vehicle_type,
-                    rating_avg=dp.rating_avg,
-                    total_deliveries=dp.total_deliveries,
-                    username=user.username,
-                )
-            )
-        return dtos
-
-    if session is not None:
-        return await _execute(session)
-    else:
-        async with async_session() as sess:
-            return await _execute(sess)
 
 
 async def get_pending_drivers(
+    session: AsyncSession,
     page: int = 1,
     per_page: int = 5,
-    session: Optional[AsyncSession] = None,
 ) -> Tuple[List[DriverApplicationDetailDTO], int]:
     """Retrieve paginated driver applications pending approval.
 
@@ -248,56 +235,50 @@ async def get_pending_drivers(
         - ``bot/admin/handler.py``: ``cmd_verify_drivers``,
           ``handle_back_to_pending_list``
     """
-    async def _execute(sess: AsyncSession):
-        offset = (page - 1) * per_page
+    offset = (page - 1) * per_page
 
-        count_stmt = (
-            select(func.count(DriverProfile.id))
-            .where(DriverProfile.status == DriverStatus.PENDING_APPROVAL)
-        )
-        total_res = await sess.execute(count_stmt)
-        total_count = total_res.scalar() or 0
-        total_pages = max(1, (total_count + per_page - 1) // per_page)
+    count_stmt = (
+        select(func.count(DriverProfile.id))
+        .where(DriverProfile.status == DriverStatus.PENDING_APPROVAL)
+    )
+    total_res = await session.execute(count_stmt)
+    total_count = total_res.scalar() or 0
+    total_pages = max(1, (total_count + per_page - 1) // per_page)
 
-        stmt = (
-            select(DriverProfile, User)
-            .join(User, DriverProfile.user_id == User.id)
-            .where(DriverProfile.status == DriverStatus.PENDING_APPROVAL)
-            .order_by(DriverProfile.created_at.desc())
-            .offset(offset)
-            .limit(per_page)
-        )
-        res = await sess.execute(stmt)
-        rows = res.all()
+    stmt = (
+        select(DriverProfile, User)
+        .join(User, DriverProfile.user_id == User.id)
+        .where(DriverProfile.status == DriverStatus.PENDING_APPROVAL)
+        .order_by(DriverProfile.created_at.desc())
+        .offset(offset)
+        .limit(per_page)
+    )
+    res = await session.execute(stmt)
+    rows = res.all()
 
-        dtos = []
-        for dp, user in rows:
-            dtos.append(
-                DriverApplicationDetailDTO(
-                    driver_id=dp.id,
-                    user_id=user.id,
-                    telegram_id=user.telegram_id,
-                    full_name=user.full_name,
-                    phone_number=user.phone_number,
-                    vehicle_type=dp.vehicle_type,
-                    plate_number=dp.plate_number,
-                    license_number=dp.license_number,
-                    status=dp.status,
-                    username=user.username,
-                )
+    dtos = []
+    for dp, user in rows:
+        dtos.append(
+            DriverApplicationDetailDTO(
+                driver_id=dp.id,
+                user_id=user.id,
+                telegram_id=user.telegram_id,
+                full_name=user.full_name,
+                phone_number=user.phone_number,
+                vehicle_type=dp.vehicle_type,
+                plate_number=dp.plate_number,
+                license_number=dp.license_number,
+                status=dp.status,
+                username=user.username,
             )
-        return dtos, total_pages
+        )
+    return dtos, total_pages
 
-    if session is not None:
-        return await _execute(session)
-    else:
-        async with async_session() as sess:
-            return await _execute(sess)
 
 
 async def get_driver_application_detail(
+    session: AsyncSession,
     driver_id: int,
-    session: Optional[AsyncSession] = None,
 ) -> DriverApplicationDetailDTO:
     """Fetch detailed information for a specific driver application.
 
@@ -320,41 +301,35 @@ async def get_driver_application_detail(
     Called by:
         - ``bot/admin/handler.py``: ``handle_view_driver_detail``
     """
-    async def _execute(sess: AsyncSession):
-        stmt = (
-            select(DriverProfile, User)
-            .join(User, DriverProfile.user_id == User.id)
-            .where(DriverProfile.id == driver_id)
-        )
-        res = await sess.execute(stmt)
-        row = res.first()
-        if not row:
-            raise NotFoundError(f"Driver profile with ID {driver_id} not found.")
+    stmt = (
+        select(DriverProfile, User)
+        .join(User, DriverProfile.user_id == User.id)
+        .where(DriverProfile.id == driver_id)
+    )
+    res = await session.execute(stmt)
+    row = res.first()
+    if not row:
+        raise NotFoundError(f"Driver profile with ID {driver_id} not found.")
 
-        dp, user = row
-        return DriverApplicationDetailDTO(
-            driver_id=dp.id,
-            user_id=user.id,
-            telegram_id=user.telegram_id,
-            full_name=user.full_name,
-            phone_number=user.phone_number,
-            vehicle_type=dp.vehicle_type,
-            plate_number=dp.plate_number,
-            license_number=dp.license_number,
-            status=dp.status,
-            username=user.username,
-        )
+    dp, user = row
+    return DriverApplicationDetailDTO(
+        driver_id=dp.id,
+        user_id=user.id,
+        telegram_id=user.telegram_id,
+        full_name=user.full_name,
+        phone_number=user.phone_number,
+        vehicle_type=dp.vehicle_type,
+        plate_number=dp.plate_number,
+        license_number=dp.license_number,
+        status=dp.status,
+        username=user.username,
+    )
 
-    if session is not None:
-        return await _execute(session)
-    else:
-        async with async_session() as sess:
-            return await _execute(sess)
 
 
 async def approve_driver(
+    session: AsyncSession,
     dto: ReviewDriverDTO,
-    session: Optional[AsyncSession] = None,
 ) -> DriverApplicationDetailDTO:
     """Approve a pending driver application and log the admin action.
 
@@ -391,73 +366,61 @@ async def approve_driver(
     Called by:
         - ``bot/admin/handler.py``: ``handle_approve_driver``
     """
-    async def _execute(sess: AsyncSession):
-        # 1. Verify admin user
-        admin_stmt = select(User).where(User.telegram_id == dto.admin_telegram_id)
-        admin_res = await sess.execute(admin_stmt)
-        admin_user = admin_res.scalar_one_or_none()
-        if not admin_user or admin_user.role != UserRole.ADMIN:
-            raise ValidationError("Admin permission required.")
+    # 1. Verify admin user
+    admin_stmt = select(User).where(User.telegram_id == dto.admin_telegram_id)
+    admin_res = await session.execute(admin_stmt)
+    admin_user = admin_res.scalar_one_or_none()
+    if not admin_user or admin_user.role != UserRole.ADMIN:
+        raise ValidationError("Admin permission required.")
 
-        # 2. Fetch driver profile and associated user
-        stmt = (
-            select(DriverProfile, User)
-            .join(User, DriverProfile.user_id == User.id)
-            .where(DriverProfile.id == dto.driver_id)
-        )
-        res = await sess.execute(stmt)
-        row = res.first()
-        if not row:
-            raise NotFoundError(f"Driver profile with ID {dto.driver_id} not found.")
+    # 2. Fetch driver profile and associated user
+    stmt = (
+        select(DriverProfile, User)
+        .join(User, DriverProfile.user_id == User.id)
+        .where(DriverProfile.id == dto.driver_id)
+    )
+    res = await session.execute(stmt)
+    row = res.first()
+    if not row:
+        raise NotFoundError(f"Driver profile with ID {dto.driver_id} not found.")
 
-        dp, driver_user = row
+    dp, driver_user = row
 
-        if dp.status == DriverStatus.APPROVED:
-            raise ValidationError("Driver application is already approved.")
+    if dp.status == DriverStatus.APPROVED:
+        raise ValidationError("Driver application is already approved.")
 
-        # 3. Update driver profile and user role
-        dp.status = DriverStatus.APPROVED
-        driver_user.role = UserRole.DRIVER
+    # 3. Update driver profile and user role
+    dp.status = DriverStatus.APPROVED
+    driver_user.role = UserRole.DRIVER
 
-        # 4. Create audit log entry
-        log_entry = AdminActionLog(
-            admin_id=admin_user.id,
-            action_type=AdminActionType.APPROVE_DRIVER,
-            target_user_id=driver_user.id,
-            details=f"Approved driver profile #{dp.id}",
-        )
-        sess.add(log_entry)
-        await sess.flush()
+    # 4. Create audit log entry
+    log_entry = AdminActionLog(
+        admin_id=admin_user.id,
+        action_type=AdminActionType.APPROVE_DRIVER,
+        target_user_id=driver_user.id,
+        details=f"Approved driver profile #{dp.id}",
+    )
+    session.add(log_entry)
+    await session.flush()
 
-        return DriverApplicationDetailDTO(
-            driver_id=dp.id,
-            user_id=driver_user.id,
-            telegram_id=driver_user.telegram_id,
-            full_name=driver_user.full_name,
-            phone_number=driver_user.phone_number,
-            vehicle_type=dp.vehicle_type,
-            plate_number=dp.plate_number,
-            license_number=dp.license_number,
-            status=dp.status,
-            username=driver_user.username,
-        )
+    return DriverApplicationDetailDTO(
+        driver_id=dp.id,
+        user_id=driver_user.id,
+        telegram_id=driver_user.telegram_id,
+        full_name=driver_user.full_name,
+        phone_number=driver_user.phone_number,
+        vehicle_type=dp.vehicle_type,
+        plate_number=dp.plate_number,
+        license_number=dp.license_number,
+        status=dp.status,
+        username=driver_user.username,
+    )
 
-    if session is not None:
-        return await _execute(session)
-    else:
-        async with async_session() as sess:
-            try:
-                result_dto = await _execute(sess)
-                await sess.commit()
-                return result_dto
-            except Exception:
-                await sess.rollback()
-                raise
 
 
 async def reject_driver(
+    session: AsyncSession,
     dto: ReviewDriverDTO,
-    session: Optional[AsyncSession] = None,
 ) -> DriverApplicationDetailDTO:
     """Reject a pending driver application and log the admin action.
 
@@ -492,72 +455,60 @@ async def reject_driver(
     Called by:
         - ``bot/admin/handler.py``: ``handle_reject_driver``
     """
-    async def _execute(sess: AsyncSession):
-        # 1. Verify admin user
-        admin_stmt = select(User).where(User.telegram_id == dto.admin_telegram_id)
-        admin_res = await sess.execute(admin_stmt)
-        admin_user = admin_res.scalar_one_or_none()
-        if not admin_user or admin_user.role != UserRole.ADMIN:
-            raise ValidationError("Admin permission required.")
+    # 1. Verify admin user
+    admin_stmt = select(User).where(User.telegram_id == dto.admin_telegram_id)
+    admin_res = await session.execute(admin_stmt)
+    admin_user = admin_res.scalar_one_or_none()
+    if not admin_user or admin_user.role != UserRole.ADMIN:
+        raise ValidationError("Admin permission required.")
 
-        # 2. Fetch driver profile and associated user
-        stmt = (
-            select(DriverProfile, User)
-            .join(User, DriverProfile.user_id == User.id)
-            .where(DriverProfile.id == dto.driver_id)
-        )
-        res = await sess.execute(stmt)
-        row = res.first()
-        if not row:
-            raise NotFoundError(f"Driver profile with ID {dto.driver_id} not found.")
+    # 2. Fetch driver profile and associated user
+    stmt = (
+        select(DriverProfile, User)
+        .join(User, DriverProfile.user_id == User.id)
+        .where(DriverProfile.id == dto.driver_id)
+    )
+    res = await session.execute(stmt)
+    row = res.first()
+    if not row:
+        raise NotFoundError(f"Driver profile with ID {dto.driver_id} not found.")
 
-        dp, driver_user = row
+    dp, driver_user = row
 
-        # 3. Update driver profile status
-        dp.status = DriverStatus.REJECTED
+    # 3. Update driver profile status
+    dp.status = DriverStatus.REJECTED
 
-        # 4. Create audit log entry
-        details_msg = f"Rejected driver profile #{dp.id}"
-        if dto.rejection_reason:
-            details_msg += f". Reason: {dto.rejection_reason}"
+    # 4. Create audit log entry
+    details_msg = f"Rejected driver profile #{dp.id}"
+    if dto.rejection_reason:
+        details_msg += f". Reason: {dto.rejection_reason}"
 
-        log_entry = AdminActionLog(
-            admin_id=admin_user.id,
-            action_type=AdminActionType.REJECT_DRIVER,
-            target_user_id=driver_user.id,
-            details=details_msg,
-        )
-        sess.add(log_entry)
-        await sess.flush()
+    log_entry = AdminActionLog(
+        admin_id=admin_user.id,
+        action_type=AdminActionType.REJECT_DRIVER,
+        target_user_id=driver_user.id,
+        details=details_msg,
+    )
+    session.add(log_entry)
+    await session.flush()
 
-        return DriverApplicationDetailDTO(
-            driver_id=dp.id,
-            user_id=driver_user.id,
-            telegram_id=driver_user.telegram_id,
-            full_name=driver_user.full_name,
-            phone_number=driver_user.phone_number,
-            vehicle_type=dp.vehicle_type,
-            plate_number=dp.plate_number,
-            license_number=dp.license_number,
-            status=dp.status,
-            username=driver_user.username,
-        )
+    return DriverApplicationDetailDTO(
+        driver_id=dp.id,
+        user_id=driver_user.id,
+        telegram_id=driver_user.telegram_id,
+        full_name=driver_user.full_name,
+        phone_number=driver_user.phone_number,
+        vehicle_type=dp.vehicle_type,
+        plate_number=dp.plate_number,
+        license_number=dp.license_number,
+        status=dp.status,
+        username=driver_user.username,
+    )
 
-    if session is not None:
-        return await _execute(session)
-    else:
-        async with async_session() as sess:
-            try:
-                result_dto = await _execute(sess)
-                await sess.commit()
-                return result_dto
-            except Exception:
-                await sess.rollback()
-                raise
 
 
 async def get_stats(
-    session: Optional[AsyncSession] = None,
+    session: AsyncSession,
 ) -> SystemStatsDTO:
     """Aggregate system-wide delivery metrics and user statistics.
 
@@ -588,141 +539,109 @@ async def get_stats(
     Called by:
         - ``bot/admin/handler.py``: ``cmd_stats``
     """
-    async def _execute(sess: AsyncSession):
-        # Request status counts
-        total_requests = (await sess.execute(select(func.count(DeliveryRequest.id)))).scalar() or 0
-        pending_requests = (await sess.execute(
-            select(func.count(DeliveryRequest.id)).where(DeliveryRequest.status == RequestStatus.PENDING)
-        )).scalar() or 0
-        assigned_requests = (await sess.execute(
-            select(func.count(DeliveryRequest.id)).where(DeliveryRequest.status == RequestStatus.ASSIGNED)
-        )).scalar() or 0
-        accepted_requests = (await sess.execute(
-            select(func.count(DeliveryRequest.id)).where(DeliveryRequest.status == RequestStatus.ACCEPTED)
-        )).scalar() or 0
-        en_route_requests = (await sess.execute(
-            select(func.count(DeliveryRequest.id)).where(DeliveryRequest.status == RequestStatus.EN_ROUTE_TO_PICKUP)
-        )).scalar() or 0
-        picked_up_requests = (await sess.execute(
-            select(func.count(DeliveryRequest.id)).where(DeliveryRequest.status == RequestStatus.PICKED_UP)
-        )).scalar() or 0
-        in_transit_requests = (await sess.execute(
-            select(func.count(DeliveryRequest.id)).where(DeliveryRequest.status == RequestStatus.IN_TRANSIT)
-        )).scalar() or 0
-        delivered_requests = (await sess.execute(
-            select(func.count(DeliveryRequest.id)).where(DeliveryRequest.status == RequestStatus.DELIVERED)
-        )).scalar() or 0
-        cancelled_requests = (await sess.execute(
-            select(func.count(DeliveryRequest.id)).where(DeliveryRequest.status == RequestStatus.CANCELLED)
-        )).scalar() or 0
-        failed_requests = (await sess.execute(
-            select(func.count(DeliveryRequest.id)).where(DeliveryRequest.status == RequestStatus.FAILED)
-        )).scalar() or 0
-        rejected_by_driver_requests = (await sess.execute(
-            select(func.count(DeliveryRequest.id)).where(DeliveryRequest.status == RequestStatus.REJECTED_BY_DRIVER)
-        )).scalar() or 0
+    # Request status counts
+    req_stmt = select(
+        func.count(DeliveryRequest.id).label("total"),
+        func.count(DeliveryRequest.id).filter(DeliveryRequest.status == RequestStatus.PENDING).label("pending"),
+        func.count(DeliveryRequest.id).filter(DeliveryRequest.status == RequestStatus.ASSIGNED).label("assigned"),
+        func.count(DeliveryRequest.id).filter(DeliveryRequest.status == RequestStatus.ACCEPTED).label("accepted"),
+        func.count(DeliveryRequest.id).filter(DeliveryRequest.status == RequestStatus.EN_ROUTE_TO_PICKUP).label("en_route"),
+        func.count(DeliveryRequest.id).filter(DeliveryRequest.status == RequestStatus.PICKED_UP).label("picked_up"),
+        func.count(DeliveryRequest.id).filter(DeliveryRequest.status == RequestStatus.IN_TRANSIT).label("in_transit"),
+        func.count(DeliveryRequest.id).filter(DeliveryRequest.status == RequestStatus.DELIVERED).label("delivered"),
+        func.count(DeliveryRequest.id).filter(DeliveryRequest.status == RequestStatus.CANCELLED).label("cancelled"),
+        func.count(DeliveryRequest.id).filter(DeliveryRequest.status == RequestStatus.FAILED).label("failed"),
+        func.count(DeliveryRequest.id).filter(DeliveryRequest.status == RequestStatus.REJECTED_BY_DRIVER).label("rejected")
+    )
+    req_row = (await session.execute(req_stmt)).one()
+    total_requests, pending_requests, assigned_requests, accepted_requests, en_route_requests, picked_up_requests, in_transit_requests, delivered_requests, cancelled_requests, failed_requests, rejected_by_driver_requests = req_row
 
-        # User role counts
-        total_users = (await sess.execute(select(func.count(User.id)))).scalar() or 0
-        total_students = (await sess.execute(
-            select(func.count(User.id)).where(User.role == UserRole.STUDENT)
-        )).scalar() or 0
-        total_drivers = (await sess.execute(
-            select(func.count(User.id)).where(User.role == UserRole.DRIVER)
-        )).scalar() or 0
-        total_admins = (await sess.execute(
-            select(func.count(User.id)).where(User.role == UserRole.ADMIN)
-        )).scalar() or 0
+    # User role counts
+    usr_stmt = select(
+        func.count(User.id).label("total"),
+        func.count(User.id).filter(User.role == UserRole.STUDENT).label("students"),
+        func.count(User.id).filter(User.role == UserRole.DRIVER).label("drivers"),
+        func.count(User.id).filter(User.role == UserRole.ADMIN).label("admins")
+    )
+    usr_row = (await session.execute(usr_stmt)).one()
+    total_users, total_students, total_drivers, total_admins = usr_row
 
-        # Driver profile status counts
-        approved_drivers = (await sess.execute(
-            select(func.count(DriverProfile.id)).where(DriverProfile.status == DriverStatus.APPROVED)
-        )).scalar() or 0
-        active_drivers = (await sess.execute(
-            select(func.count(DriverProfile.id)).where(
-                DriverProfile.status == DriverStatus.APPROVED,
-                DriverProfile.availability != DriverAvailability.OFFLINE,
-            )
-        )).scalar() or 0
-        pending_drivers = (await sess.execute(
-            select(func.count(DriverProfile.id)).where(DriverProfile.status == DriverStatus.PENDING_APPROVAL)
-        )).scalar() or 0
-        rejected_drivers = (await sess.execute(
-            select(func.count(DriverProfile.id)).where(DriverProfile.status == DriverStatus.REJECTED)
-        )).scalar() or 0
-        suspended_drivers = (await sess.execute(
-            select(func.count(DriverProfile.id)).where(DriverProfile.status == DriverStatus.SUSPENDED)
-        )).scalar() or 0
+    # Driver profile status counts
+    drv_stmt = select(
+        func.count(DriverProfile.id).filter(DriverProfile.status == DriverStatus.APPROVED).label("approved"),
+        func.count(DriverProfile.id).filter(DriverProfile.status == DriverStatus.APPROVED, DriverProfile.availability != DriverAvailability.OFFLINE).label("active"),
+        func.count(DriverProfile.id).filter(DriverProfile.status == DriverStatus.PENDING_APPROVAL).label("pending"),
+        func.count(DriverProfile.id).filter(DriverProfile.status == DriverStatus.REJECTED).label("rejected"),
+        func.count(DriverProfile.id).filter(DriverProfile.status == DriverStatus.SUSPENDED).label("suspended")
+    )
+    drv_row = (await session.execute(drv_stmt)).one()
+    approved_drivers, active_drivers, pending_drivers, rejected_drivers, suspended_drivers = drv_row
 
-        # Feedback metrics
-        total_feedbacks = (await sess.execute(select(func.count(Feedback.id)))).scalar() or 0
-        avg_rating = (await sess.execute(select(func.avg(Feedback.rating)))).scalar()
+    # Feedback metrics
+    fb_stmt = select(func.count(Feedback.id).label("total"), func.avg(Feedback.rating).label("avg"))
+    fb_row = (await session.execute(fb_stmt)).one()
+    total_feedbacks, avg_rating = fb_row
 
-        # Average delivery duration: correlate ACCEPTED and DELIVERED log timestamps
-        from bot.core.models.status_log import RequestStatusLog
-        start_logs = select(
-            RequestStatusLog.request_id,
-            func.min(RequestStatusLog.created_at).label("start_time"),
-        ).where(
-            RequestStatusLog.new_status == RequestStatus.ACCEPTED
-        ).group_by(RequestStatusLog.request_id).subquery()
+    # Average delivery duration: correlate ACCEPTED and DELIVERED log timestamps
+    from bot.core.models.status_log import RequestStatusLog
+    start_logs = select(
+        RequestStatusLog.request_id,
+        func.min(RequestStatusLog.created_at).label("start_time"),
+    ).where(
+        RequestStatusLog.new_status == RequestStatus.ACCEPTED
+    ).group_by(RequestStatusLog.request_id).subquery()
 
-        end_logs = select(
-            RequestStatusLog.request_id,
-            func.max(RequestStatusLog.created_at).label("end_time"),
-        ).where(
-            RequestStatusLog.new_status == RequestStatus.DELIVERED
-        ).group_by(RequestStatusLog.request_id).subquery()
+    end_logs = select(
+        RequestStatusLog.request_id,
+        func.max(RequestStatusLog.created_at).label("end_time"),
+    ).where(
+        RequestStatusLog.new_status == RequestStatus.DELIVERED
+    ).group_by(RequestStatusLog.request_id).subquery()
 
-        duration_stmt = select(start_logs.c.start_time, end_logs.c.end_time).join(
-            end_logs, start_logs.c.request_id == end_logs.c.request_id
-        )
-        duration_res = await sess.execute(duration_stmt)
-        durations = [
-            (end_t - start_t).total_seconds() / 60.0
-            for start_t, end_t in duration_res.all()
-            if start_t and end_t and end_t > start_t
-        ]
-        avg_delivery_duration_minutes = (
-            round(sum(durations) / len(durations), 1) if durations else None
-        )
+    duration_stmt = select(start_logs.c.start_time, end_logs.c.end_time).join(
+        end_logs, start_logs.c.request_id == end_logs.c.request_id
+    )
+    duration_res = await session.execute(duration_stmt)
+    durations = [
+        (end_t - start_t).total_seconds() / 60.0
+        for start_t, end_t in duration_res.all()
+        if start_t and end_t and end_t > start_t
+    ]
+    avg_delivery_duration_minutes = (
+        round(sum(durations) / len(durations), 1) if durations else None
+    )
 
-        return SystemStatsDTO(
-            total_requests=total_requests,
-            pending_requests=pending_requests,
-            assigned_requests=assigned_requests,
-            accepted_requests=accepted_requests,
-            en_route_requests=en_route_requests,
-            picked_up_requests=picked_up_requests,
-            in_transit_requests=in_transit_requests,
-            delivered_requests=delivered_requests,
-            cancelled_requests=cancelled_requests,
-            failed_requests=failed_requests,
-            rejected_by_driver_requests=rejected_by_driver_requests,
-            total_users=total_users,
-            total_students=total_students,
-            total_drivers=total_drivers,
-            total_admins=total_admins,
-            approved_drivers=approved_drivers,
-            active_drivers=active_drivers,
-            pending_drivers=pending_drivers,
-            rejected_drivers=rejected_drivers,
-            suspended_drivers=suspended_drivers,
-            total_feedbacks=total_feedbacks,
-            avg_rating=round(avg_rating, 1) if avg_rating is not None else None,
-            avg_delivery_duration_minutes=avg_delivery_duration_minutes,
-        )
+    return SystemStatsDTO(
+        total_requests=total_requests,
+        pending_requests=pending_requests,
+        assigned_requests=assigned_requests,
+        accepted_requests=accepted_requests,
+        en_route_requests=en_route_requests,
+        picked_up_requests=picked_up_requests,
+        in_transit_requests=in_transit_requests,
+        delivered_requests=delivered_requests,
+        cancelled_requests=cancelled_requests,
+        failed_requests=failed_requests,
+        rejected_by_driver_requests=rejected_by_driver_requests,
+        total_users=total_users,
+        total_students=total_students,
+        total_drivers=total_drivers,
+        total_admins=total_admins,
+        approved_drivers=approved_drivers,
+        active_drivers=active_drivers,
+        pending_drivers=pending_drivers,
+        rejected_drivers=rejected_drivers,
+        suspended_drivers=suspended_drivers,
+        total_feedbacks=total_feedbacks,
+        avg_rating=round(avg_rating, 1) if avg_rating is not None else None,
+        avg_delivery_duration_minutes=avg_delivery_duration_minutes,
+    )
 
-    if session is not None:
-        return await _execute(session)
-    else:
-        async with async_session() as sess:
-            return await _execute(sess)
 
 
 async def ban_user(
+    session: AsyncSession,
     dto: BanUserDTO,
-    session: Optional[AsyncSession] = None,
 ) -> UserDetailDTO:
     """Ban a user and record the action in the audit log.
 
@@ -750,69 +669,57 @@ async def ban_user(
     Called by:
         - ``bot/admin/handler.py``: ``process_ban_reason``
     """
-    async def _execute(sess: AsyncSession):
-        # Verify admin
-        admin_stmt = select(User).where(User.telegram_id == dto.admin_telegram_id)
-        admin_res = await sess.execute(admin_stmt)
-        admin_user = admin_res.scalar_one_or_none()
-        if not admin_user or admin_user.role != UserRole.ADMIN:
-            raise ValidationError("Admin permission required.")
+    # Verify admin
+    admin_stmt = select(User).where(User.telegram_id == dto.admin_telegram_id)
+    admin_res = await session.execute(admin_stmt)
+    admin_user = admin_res.scalar_one_or_none()
+    if not admin_user or admin_user.role != UserRole.ADMIN:
+        raise ValidationError("Admin permission required.")
 
-        # Target user
-        target_stmt = select(User).where(User.id == dto.target_user_id)
-        target_res = await sess.execute(target_stmt)
-        target_user = target_res.scalar_one_or_none()
-        if not target_user:
-            raise NotFoundError(f"User with ID {dto.target_user_id} not found.")
+    # Target user
+    target_stmt = select(User).where(User.id == dto.target_user_id)
+    target_res = await session.execute(target_stmt)
+    target_user = target_res.scalar_one_or_none()
+    if not target_user:
+        raise NotFoundError(f"User with ID {dto.target_user_id} not found.")
 
-        if target_user.account_status == AccountStatus.BANNED:
-            raise ValidationError("User is already banned.")
+    if target_user.account_status == AccountStatus.BANNED:
+        raise ValidationError("User is already banned.")
 
-        target_user.account_status = AccountStatus.BANNED
-        target_user.banned_reason = dto.reason
-        target_user.banned_at = datetime.utcnow()
+    target_user.account_status = AccountStatus.BANNED
+    target_user.banned_reason = dto.reason
+    target_user.banned_at = datetime.now(timezone.utc)
 
-        details_msg = f"Banned user #{target_user.id}"
-        if dto.reason:
-            details_msg += f". Reason: {dto.reason}"
+    details_msg = f"Banned user #{target_user.id}"
+    if dto.reason:
+        details_msg += f". Reason: {dto.reason}"
 
-        log_entry = AdminActionLog(
-            admin_id=admin_user.id,
-            action_type=AdminActionType.BAN_USER,
-            target_user_id=target_user.id,
-            details=details_msg,
-        )
-        sess.add(log_entry)
-        await sess.flush()
+    log_entry = AdminActionLog(
+        admin_id=admin_user.id,
+        action_type=AdminActionType.BAN_USER,
+        target_user_id=target_user.id,
+        details=details_msg,
+    )
+    session.add(log_entry)
+    await session.flush()
 
-        return UserDetailDTO(
-            user_id=target_user.id,
-            telegram_id=target_user.telegram_id,
-            full_name=target_user.full_name,
-            username=target_user.username,
-            phone_number=target_user.phone_number,
-            role=target_user.role.value if target_user.role else None,
-            account_status=target_user.account_status.value,
-            banned_reason=target_user.banned_reason,
-            banned_at=target_user.banned_at.strftime("%Y-%m-%d %H:%M:%S UTC") if target_user.banned_at else None,
-        )
+    return UserDetailDTO(
+        user_id=target_user.id,
+        telegram_id=target_user.telegram_id,
+        full_name=target_user.full_name,
+        username=target_user.username,
+        phone_number=target_user.phone_number,
+        role=target_user.role.value if target_user.role else None,
+        account_status=target_user.account_status.value,
+        banned_reason=target_user.banned_reason,
+        banned_at=target_user.banned_at.strftime("%Y-%m-%d %H:%M:%S UTC") if target_user.banned_at else None,
+    )
 
-    if session is not None:
-        return await _execute(session)
-    else:
-        async with async_session() as sess:
-            try:
-                result_dto = await _execute(sess)
-                await sess.commit()
-                return result_dto
-            except Exception:
-                await sess.rollback()
-                raise
 
 
 async def unban_user(
+    session: AsyncSession,
     dto: UnbanUserDTO,
-    session: Optional[AsyncSession] = None,
 ) -> UserDetailDTO:
     """Unban a user and record the action in the audit log.
 
@@ -840,69 +747,57 @@ async def unban_user(
     Called by:
         - ``bot/admin/handler.py``: ``handle_unban_user``
     """
-    async def _execute(sess: AsyncSession):
-        # Verify admin
-        admin_stmt = select(User).where(User.telegram_id == dto.admin_telegram_id)
-        admin_res = await sess.execute(admin_stmt)
-        admin_user = admin_res.scalar_one_or_none()
-        if not admin_user or admin_user.role != UserRole.ADMIN:
-            raise ValidationError("Admin permission required.")
+    # Verify admin
+    admin_stmt = select(User).where(User.telegram_id == dto.admin_telegram_id)
+    admin_res = await session.execute(admin_stmt)
+    admin_user = admin_res.scalar_one_or_none()
+    if not admin_user or admin_user.role != UserRole.ADMIN:
+        raise ValidationError("Admin permission required.")
 
-        # Target user
-        target_stmt = select(User).where(User.id == dto.target_user_id)
-        target_res = await sess.execute(target_stmt)
-        target_user = target_res.scalar_one_or_none()
-        if not target_user:
-            raise NotFoundError(f"User with ID {dto.target_user_id} not found.")
+    # Target user
+    target_stmt = select(User).where(User.id == dto.target_user_id)
+    target_res = await session.execute(target_stmt)
+    target_user = target_res.scalar_one_or_none()
+    if not target_user:
+        raise NotFoundError(f"User with ID {dto.target_user_id} not found.")
 
-        if target_user.account_status != AccountStatus.BANNED:
-            raise ValidationError("User is not currently banned.")
+    if target_user.account_status != AccountStatus.BANNED:
+        raise ValidationError("User is not currently banned.")
 
-        target_user.account_status = AccountStatus.ACTIVE
-        target_user.banned_reason = None
-        target_user.banned_at = None
+    target_user.account_status = AccountStatus.ACTIVE
+    target_user.banned_reason = None
+    target_user.banned_at = None
 
-        details_msg = f"Unbanned user #{target_user.id}"
-        if dto.reason:
-            details_msg += f". Reason: {dto.reason}"
+    details_msg = f"Unbanned user #{target_user.id}"
+    if dto.reason:
+        details_msg += f". Reason: {dto.reason}"
 
-        log_entry = AdminActionLog(
-            admin_id=admin_user.id,
-            action_type=AdminActionType.UNBAN_USER,
-            target_user_id=target_user.id,
-            details=details_msg,
-        )
-        sess.add(log_entry)
-        await sess.flush()
+    log_entry = AdminActionLog(
+        admin_id=admin_user.id,
+        action_type=AdminActionType.UNBAN_USER,
+        target_user_id=target_user.id,
+        details=details_msg,
+    )
+    session.add(log_entry)
+    await session.flush()
 
-        return UserDetailDTO(
-            user_id=target_user.id,
-            telegram_id=target_user.telegram_id,
-            full_name=target_user.full_name,
-            username=target_user.username,
-            phone_number=target_user.phone_number,
-            role=target_user.role.value if target_user.role else None,
-            account_status=target_user.account_status.value,
-            banned_reason=target_user.banned_reason,
-            banned_at=None,
-        )
+    return UserDetailDTO(
+        user_id=target_user.id,
+        telegram_id=target_user.telegram_id,
+        full_name=target_user.full_name,
+        username=target_user.username,
+        phone_number=target_user.phone_number,
+        role=target_user.role.value if target_user.role else None,
+        account_status=target_user.account_status.value,
+        banned_reason=target_user.banned_reason,
+        banned_at=None,
+    )
 
-    if session is not None:
-        return await _execute(session)
-    else:
-        async with async_session() as sess:
-            try:
-                result_dto = await _execute(sess)
-                await sess.commit()
-                return result_dto
-            except Exception:
-                await sess.rollback()
-                raise
 
 
 async def promote_admin(
+    session: AsyncSession,
     dto: PromoteAdminDTO,
-    session: Optional[AsyncSession] = None,
 ) -> UserDetailDTO:
     """Promote a user to the admin role and log the action.
 
@@ -930,63 +825,51 @@ async def promote_admin(
     Called by:
         - ``bot/admin/handler.py``: ``handle_promote_admin``
     """
-    async def _execute(sess: AsyncSession):
-        # Verify admin
-        admin_stmt = select(User).where(User.telegram_id == dto.admin_telegram_id)
-        admin_res = await sess.execute(admin_stmt)
-        admin_user = admin_res.scalar_one_or_none()
-        if not admin_user or admin_user.role != UserRole.ADMIN:
-            raise ValidationError("Admin permission required.")
+    # Verify admin
+    admin_stmt = select(User).where(User.telegram_id == dto.admin_telegram_id)
+    admin_res = await session.execute(admin_stmt)
+    admin_user = admin_res.scalar_one_or_none()
+    if not admin_user or admin_user.role != UserRole.ADMIN:
+        raise ValidationError("Admin permission required.")
 
-        # Target user
-        target_stmt = select(User).where(User.id == dto.target_user_id)
-        target_res = await sess.execute(target_stmt)
-        target_user = target_res.scalar_one_or_none()
-        if not target_user:
-            raise NotFoundError(f"User with ID {dto.target_user_id} not found.")
+    # Target user
+    target_stmt = select(User).where(User.id == dto.target_user_id)
+    target_res = await session.execute(target_stmt)
+    target_user = target_res.scalar_one_or_none()
+    if not target_user:
+        raise NotFoundError(f"User with ID {dto.target_user_id} not found.")
 
-        if target_user.role == UserRole.ADMIN:
-            raise ValidationError("User is already an admin.")
+    if target_user.role == UserRole.ADMIN:
+        raise ValidationError("User is already an admin.")
 
-        target_user.role = UserRole.ADMIN
+    target_user.role = UserRole.ADMIN
 
-        log_entry = AdminActionLog(
-            admin_id=admin_user.id,
-            action_type=AdminActionType.PROMOTE_ADMIN,
-            target_user_id=target_user.id,
-            details=f"Promoted user #{target_user.id} to ADMIN",
-        )
-        sess.add(log_entry)
-        await sess.flush()
+    log_entry = AdminActionLog(
+        admin_id=admin_user.id,
+        action_type=AdminActionType.PROMOTE_ADMIN,
+        target_user_id=target_user.id,
+        details=f"Promoted user #{target_user.id} to ADMIN",
+    )
+    session.add(log_entry)
+    await session.flush()
 
-        return UserDetailDTO(
-            user_id=target_user.id,
-            telegram_id=target_user.telegram_id,
-            full_name=target_user.full_name,
-            username=target_user.username,
-            phone_number=target_user.phone_number,
-            role=target_user.role.value if target_user.role else None,
-            account_status=target_user.account_status.value,
-            banned_reason=target_user.banned_reason,
-            banned_at=target_user.banned_at.strftime("%Y-%m-%d %H:%M:%S UTC") if target_user.banned_at else None,
-        )
+    return UserDetailDTO(
+        user_id=target_user.id,
+        telegram_id=target_user.telegram_id,
+        full_name=target_user.full_name,
+        username=target_user.username,
+        phone_number=target_user.phone_number,
+        role=target_user.role.value if target_user.role else None,
+        account_status=target_user.account_status.value,
+        banned_reason=target_user.banned_reason,
+        banned_at=target_user.banned_at.strftime("%Y-%m-%d %H:%M:%S UTC") if target_user.banned_at else None,
+    )
 
-    if session is not None:
-        return await _execute(session)
-    else:
-        async with async_session() as sess:
-            try:
-                result_dto = await _execute(sess)
-                await sess.commit()
-                return result_dto
-            except Exception:
-                await sess.rollback()
-                raise
 
 
 async def search_user_by_identifier(
+    session: AsyncSession,
     identifier: str,
-    session: Optional[AsyncSession] = None,
 ) -> Optional[UserDetailDTO]:
     """Find a user by internal DB ID, Telegram ID, or username.
 
@@ -1014,43 +897,37 @@ async def search_user_by_identifier(
     Called by:
         - ``bot/admin/handler.py``: ``process_user_search``
     """
-    async def _execute(sess: AsyncSession):
-        clean_id = identifier.strip().lstrip("@")
-        stmt = None
+    clean_id = identifier.strip().lstrip("@")
+    stmt = None
 
-        if clean_id.isdigit():
-            val = int(clean_id)
-            stmt = select(User).where((User.id == val) | (User.telegram_id == val))
-        else:
-            stmt = select(User).where(func.lower(User.username) == clean_id.lower())
-
-        res = await sess.execute(stmt)
-        user = res.scalar_one_or_none()
-        if not user:
-            return None
-
-        return UserDetailDTO(
-            user_id=user.id,
-            telegram_id=user.telegram_id,
-            full_name=user.full_name,
-            username=user.username,
-            phone_number=user.phone_number,
-            role=user.role.value if user.role else None,
-            account_status=user.account_status.value,
-            banned_reason=user.banned_reason,
-            banned_at=user.banned_at.strftime("%Y-%m-%d %H:%M:%S UTC") if user.banned_at else None,
-        )
-
-    if session is not None:
-        return await _execute(session)
+    if clean_id.isdigit():
+        val = int(clean_id)
+        stmt = select(User).where((User.id == val) | (User.telegram_id == val))
     else:
-        async with async_session() as sess:
-            return await _execute(sess)
+        stmt = select(User).where(func.lower(User.username) == clean_id.lower())
+
+    res = await session.execute(stmt)
+    user = res.scalar_one_or_none()
+    if not user:
+        return None
+
+    return UserDetailDTO(
+        user_id=user.id,
+        telegram_id=user.telegram_id,
+        full_name=user.full_name,
+        username=user.username,
+        phone_number=user.phone_number,
+        role=user.role.value if user.role else None,
+        account_status=user.account_status.value,
+        banned_reason=user.banned_reason,
+        banned_at=user.banned_at.strftime("%Y-%m-%d %H:%M:%S UTC") if user.banned_at else None,
+    )
+
 
 
 async def get_broadcast_target_telegram_ids(
+    session: AsyncSession,
     audience: str,
-    session: Optional[AsyncSession] = None,
 ) -> List[int]:
     """Resolve the list of target Telegram IDs for a broadcast audience.
 
@@ -1076,27 +953,21 @@ async def get_broadcast_target_telegram_ids(
     Called by:
         - ``bot/admin/handler.py``: ``execute_broadcast``
     """
-    async def _execute(sess: AsyncSession):
-        stmt = select(User.telegram_id).where(User.account_status == AccountStatus.ACTIVE)
-        if audience == "students":
-            stmt = stmt.where(User.role == UserRole.STUDENT)
-        elif audience == "drivers":
-            stmt = stmt.where(User.role == UserRole.DRIVER)
+    stmt = select(User.telegram_id).where(User.account_status == AccountStatus.ACTIVE)
+    if audience == "students":
+        stmt = stmt.where(User.role == UserRole.STUDENT)
+    elif audience == "drivers":
+        stmt = stmt.where(User.role == UserRole.DRIVER)
 
-        res = await sess.execute(stmt)
-        return list(res.scalars().all())
+    res = await session.execute(stmt)
+    return list(res.scalars().all())
 
-    if session is not None:
-        return await _execute(session)
-    else:
-        async with async_session() as sess:
-            return await _execute(sess)
 
 
 async def get_all_drivers(
+    session: AsyncSession,
     page: int = 1,
     per_page: int = 5,
-    session: Optional[AsyncSession] = None,
 ) -> Tuple[List[DriverListItemDTO], int]:
     """Retrieve paginated list of all driver records for admin management.
 
@@ -1122,55 +993,49 @@ async def get_all_drivers(
         - ``bot/admin/handler.py``: ``cmd_drivers``,
           ``handle_drivers_pagination``
     """
-    async def _execute(sess: AsyncSession):
-        offset = (page - 1) * per_page
+    offset = (page - 1) * per_page
 
-        count_stmt = select(func.count(DriverProfile.id))
-        total_res = await sess.execute(count_stmt)
-        total_count = total_res.scalar() or 0
-        total_pages = max(1, (total_count + per_page - 1) // per_page)
+    count_stmt = select(func.count(DriverProfile.id))
+    total_res = await session.execute(count_stmt)
+    total_count = total_res.scalar() or 0
+    total_pages = max(1, (total_count + per_page - 1) // per_page)
 
-        stmt = (
-            select(DriverProfile, User)
-            .join(User, DriverProfile.user_id == User.id)
-            .order_by(DriverProfile.created_at.desc())
-            .offset(offset)
-            .limit(per_page)
-        )
-        res = await sess.execute(stmt)
-        rows = res.all()
+    stmt = (
+        select(DriverProfile, User)
+        .join(User, DriverProfile.user_id == User.id)
+        .order_by(DriverProfile.created_at.desc())
+        .offset(offset)
+        .limit(per_page)
+    )
+    res = await session.execute(stmt)
+    rows = res.all()
 
-        dtos = []
-        for dp, user in rows:
-            dtos.append(
-                DriverListItemDTO(
-                    driver_id=dp.id,
-                    user_id=user.id,
-                    telegram_id=user.telegram_id,
-                    full_name=user.full_name or "Unknown Driver",
-                    phone_number=user.phone_number or "N/A",
-                    vehicle_type=dp.vehicle_type,
-                    plate_number=dp.plate_number,
-                    license_number=dp.license_number,
-                    status=dp.status,
-                    availability=dp.availability.value,
-                    rating_avg=dp.rating_avg,
-                    total_deliveries=dp.total_deliveries,
-                    username=user.username,
-                )
+    dtos = []
+    for dp, user in rows:
+        dtos.append(
+            DriverListItemDTO(
+                driver_id=dp.id,
+                user_id=user.id,
+                telegram_id=user.telegram_id,
+                full_name=user.full_name or "Unknown Driver",
+                phone_number=user.phone_number or "N/A",
+                vehicle_type=dp.vehicle_type,
+                plate_number=dp.plate_number,
+                license_number=dp.license_number,
+                status=dp.status,
+                availability=dp.availability.value,
+                rating_avg=dp.rating_avg,
+                total_deliveries=dp.total_deliveries,
+                username=user.username,
             )
-        return dtos, total_pages
+        )
+    return dtos, total_pages
 
-    if session is not None:
-        return await _execute(session)
-    else:
-        async with async_session() as sess:
-            return await _execute(sess)
 
 
 async def get_driver_by_id(
+    session: AsyncSession,
     driver_id: int,
-    session: Optional[AsyncSession] = None,
 ) -> DriverDetailDTO:
     """Retrieve detailed information for a specific driver record.
 
@@ -1194,45 +1059,39 @@ async def get_driver_by_id(
     Called by:
         - ``bot/admin/handler.py``: ``handle_view_driver_detail``
     """
-    async def _execute(sess: AsyncSession):
-        stmt = (
-            select(DriverProfile, User)
-            .join(User, DriverProfile.user_id == User.id)
-            .where(DriverProfile.id == driver_id)
-        )
-        res = await sess.execute(stmt)
-        row = res.first()
-        if not row:
-            raise NotFoundError(f"Driver profile with ID {driver_id} not found.")
+    stmt = (
+        select(DriverProfile, User)
+        .join(User, DriverProfile.user_id == User.id)
+        .where(DriverProfile.id == driver_id)
+    )
+    res = await session.execute(stmt)
+    row = res.first()
+    if not row:
+        raise NotFoundError(f"Driver profile with ID {driver_id} not found.")
 
-        dp, user = row
-        return DriverDetailDTO(
-            driver_id=dp.id,
-            user_id=user.id,
-            telegram_id=user.telegram_id,
-            full_name=user.full_name or "Unknown Driver",
-            phone_number=user.phone_number or "N/A",
-            vehicle_type=dp.vehicle_type,
-            plate_number=dp.plate_number,
-            license_number=dp.license_number,
-            status=dp.status,
-            availability=dp.availability.value,
-            rating_avg=dp.rating_avg,
-            total_deliveries=dp.total_deliveries,
-            username=user.username,
-            account_status=user.account_status.value,
-        )
+    dp, user = row
+    return DriverDetailDTO(
+        driver_id=dp.id,
+        user_id=user.id,
+        telegram_id=user.telegram_id,
+        full_name=user.full_name or "Unknown Driver",
+        phone_number=user.phone_number or "N/A",
+        vehicle_type=dp.vehicle_type,
+        plate_number=dp.plate_number,
+        license_number=dp.license_number,
+        status=dp.status,
+        availability=dp.availability.value,
+        rating_avg=dp.rating_avg,
+        total_deliveries=dp.total_deliveries,
+        username=user.username,
+        account_status=user.account_status.value,
+    )
 
-    if session is not None:
-        return await _execute(session)
-    else:
-        async with async_session() as sess:
-            return await _execute(sess)
 
 
 async def update_driver_field(
+    session: AsyncSession,
     dto: UpdateDriverFieldDTO,
-    session: Optional[AsyncSession] = None,
 ) -> DriverDetailDTO:
     """Update a specific field on a driver record and log the admin action.
 
@@ -1272,106 +1131,94 @@ async def update_driver_field(
     Called by:
         - ``bot/admin/handler.py``: ``handle_driver_field_input``
     """
-    async def _execute(sess: AsyncSession):
-        admin_stmt = select(User).where(User.telegram_id == dto.admin_telegram_id)
-        admin_res = await sess.execute(admin_stmt)
-        admin_user = admin_res.scalar_one_or_none()
-        if not admin_user or admin_user.role != UserRole.ADMIN:
-            raise ValidationError("Admin permission required.")
+    admin_stmt = select(User).where(User.telegram_id == dto.admin_telegram_id)
+    admin_res = await session.execute(admin_stmt)
+    admin_user = admin_res.scalar_one_or_none()
+    if not admin_user or admin_user.role != UserRole.ADMIN:
+        raise ValidationError("Admin permission required.")
 
-        stmt = (
-            select(DriverProfile, User)
-            .join(User, DriverProfile.user_id == User.id)
-            .where(DriverProfile.id == dto.driver_id)
-        )
-        res = await sess.execute(stmt)
-        row = res.first()
-        if not row:
-            raise NotFoundError(f"Driver profile with ID {dto.driver_id} not found.")
+    stmt = (
+        select(DriverProfile, User)
+        .join(User, DriverProfile.user_id == User.id)
+        .where(DriverProfile.id == dto.driver_id)
+    )
+    res = await session.execute(stmt)
+    row = res.first()
+    if not row:
+        raise NotFoundError(f"Driver profile with ID {dto.driver_id} not found.")
 
-        dp, driver_user = row
-        field = dto.field
-        value = dto.value
+    dp, driver_user = row
+    field = dto.field
+    value = dto.value
 
-        user_fields = {"full_name", "phone_number"}
-        profile_fields = {"vehicle_type", "plate_number", "license_number", "status"}
+    user_fields = {"full_name", "phone_number"}
+    profile_fields = {"vehicle_type", "plate_number", "license_number", "status"}
 
-        if field in user_fields:
-            if field == "full_name":
-                validated = validate_full_name(value)
-                driver_user.full_name = validated
-            elif field == "phone_number":
-                validated = validate_phone(value)
-                driver_user.phone_number = validated
-        elif field in profile_fields:
-            if field == "vehicle_type":
-                validated = validate_vehicle_type(value)
-                dp.vehicle_type = validated
-            elif field == "plate_number":
-                validated = validate_plate_number(value)
-                repo = DriverRepository(sess)
-                existing = await repo.get_by_plate_number(validated)
-                if existing and existing.id != dp.id:
-                    raise DuplicateResourceError("A driver profile with this plate number already exists.")
-                dp.plate_number = validated
-            elif field == "license_number":
-                validated = validate_license_number(value)
-                repo = DriverRepository(sess)
-                existing = await repo.get_by_license_number(validated)
-                if existing and existing.id != dp.id:
-                    raise DuplicateResourceError("A driver profile with this license number already exists.")
-                dp.license_number = validated
-            elif field == "status":
-                try:
-                    validated = DriverStatus(value.strip().lower())
-                except ValueError:
-                    raise ValidationError("Invalid driver status. Choose: pending_approval, approved, rejected, suspended.")
-                dp.status = validated
-        else:
-            raise ValidationError(f"Field '{field}' is not editable.")
-
-        log_entry = AdminActionLog(
-            admin_id=admin_user.id,
-            action_type=AdminActionType.UPDATE_DRIVER_FIELD,
-            target_user_id=driver_user.id,
-            details=f"Updated driver profile #{dp.id} field '{field}' to '{value}'",
-        )
-        sess.add(log_entry)
-        await sess.flush()
-
-        return DriverDetailDTO(
-            driver_id=dp.id,
-            user_id=driver_user.id,
-            telegram_id=driver_user.telegram_id,
-            full_name=driver_user.full_name or "Unknown Driver",
-            phone_number=driver_user.phone_number or "N/A",
-            vehicle_type=dp.vehicle_type,
-            plate_number=dp.plate_number,
-            license_number=dp.license_number,
-            status=dp.status,
-            availability=dp.availability.value,
-            rating_avg=dp.rating_avg,
-            total_deliveries=dp.total_deliveries,
-            username=driver_user.username,
-            account_status=driver_user.account_status.value,
-        )
-
-    if session is not None:
-        return await _execute(session)
-    else:
-        async with async_session() as sess:
+    if field in user_fields:
+        if field == "full_name":
+            validated = validate_full_name(value)
+            driver_user.full_name = validated
+        elif field == "phone_number":
+            validated = validate_phone(value)
+            driver_user.phone_number = validated
+    elif field in profile_fields:
+        if field == "vehicle_type":
+            validated = validate_vehicle_type(value)
+            dp.vehicle_type = validated
+        elif field == "plate_number":
+            validated = validate_plate_number(value)
+            repo = DriverRepository(session)
+            existing = await repo.get_by_plate_number(validated)
+            if existing and existing.id != dp.id:
+                raise DuplicateResourceError("A driver profile with this plate number already exists.")
+            dp.plate_number = validated
+        elif field == "license_number":
+            validated = validate_license_number(value)
+            repo = DriverRepository(session)
+            existing = await repo.get_by_license_number(validated)
+            if existing and existing.id != dp.id:
+                raise DuplicateResourceError("A driver profile with this license number already exists.")
+            dp.license_number = validated
+        elif field == "status":
             try:
-                result_dto = await _execute(sess)
-                await sess.commit()
-                return result_dto
-            except Exception:
-                await sess.rollback()
-                raise
+                validated = DriverStatus(value.strip().lower())
+            except ValueError:
+                raise ValidationError("Invalid driver status. Choose: pending_approval, approved, rejected, suspended.")
+            dp.status = validated
+    else:
+        raise ValidationError(f"Field '{field}' is not editable.")
+
+    log_entry = AdminActionLog(
+        admin_id=admin_user.id,
+        action_type=AdminActionType.UPDATE_DRIVER_FIELD,
+        target_user_id=driver_user.id,
+        details=f"Updated driver profile #{dp.id} field '{field}' to '{value}'",
+    )
+    session.add(log_entry)
+    await session.flush()
+
+    return DriverDetailDTO(
+        driver_id=dp.id,
+        user_id=driver_user.id,
+        telegram_id=driver_user.telegram_id,
+        full_name=driver_user.full_name or "Unknown Driver",
+        phone_number=driver_user.phone_number or "N/A",
+        vehicle_type=dp.vehicle_type,
+        plate_number=dp.plate_number,
+        license_number=dp.license_number,
+        status=dp.status,
+        availability=dp.availability.value,
+        rating_avg=dp.rating_avg,
+        total_deliveries=dp.total_deliveries,
+        username=driver_user.username,
+        account_status=driver_user.account_status.value,
+    )
+
 
 
 async def remove_driver(
+    session: AsyncSession,
     dto: RemoveDriverDTO,
-    session: Optional[AsyncSession] = None,
 ) -> None:
     """Remove a driver record and demote the associated user.
 
@@ -1405,53 +1252,42 @@ async def remove_driver(
     Called by:
         - ``bot/admin/handler.py``: ``handle_remove_driver_execute``
     """
-    async def _execute(sess: AsyncSession):
-        admin_stmt = select(User).where(User.telegram_id == dto.admin_telegram_id)
-        admin_res = await sess.execute(admin_stmt)
-        admin_user = admin_res.scalar_one_or_none()
-        if not admin_user or admin_user.role != UserRole.ADMIN:
-            raise ValidationError("Admin permission required.")
+    admin_stmt = select(User).where(User.telegram_id == dto.admin_telegram_id)
+    admin_res = await session.execute(admin_stmt)
+    admin_user = admin_res.scalar_one_or_none()
+    if not admin_user or admin_user.role != UserRole.ADMIN:
+        raise ValidationError("Admin permission required.")
 
-        stmt = (
-            select(DriverProfile, User)
-            .join(User, DriverProfile.user_id == User.id)
-            .where(DriverProfile.id == dto.driver_id)
-        )
-        res = await sess.execute(stmt)
-        row = res.first()
-        if not row:
-            raise NotFoundError(f"Driver profile with ID {dto.driver_id} not found.")
+    stmt = (
+        select(DriverProfile, User)
+        .join(User, DriverProfile.user_id == User.id)
+        .where(DriverProfile.id == dto.driver_id)
+    )
+    res = await session.execute(stmt)
+    row = res.first()
+    if not row:
+        raise NotFoundError(f"Driver profile with ID {dto.driver_id} not found.")
 
-        dp, driver_user = row
+    dp, driver_user = row
 
-        await sess.delete(dp)
-        driver_user.role = None
+    await session.delete(dp)
+    driver_user.role = None
 
-        log_entry = AdminActionLog(
-            admin_id=admin_user.id,
-            action_type=AdminActionType.REMOVE_DRIVER,
-            target_user_id=driver_user.id,
-            details=f"Removed driver profile #{dp.id} for user #{driver_user.id}",
-        )
-        sess.add(log_entry)
-        await sess.flush()
+    log_entry = AdminActionLog(
+        admin_id=admin_user.id,
+        action_type=AdminActionType.REMOVE_DRIVER,
+        target_user_id=driver_user.id,
+        details=f"Removed driver profile #{dp.id} for user #{driver_user.id}",
+    )
+    session.add(log_entry)
+    await session.flush()
 
-    if session is not None:
-        await _execute(session)
-    else:
-        async with async_session() as sess:
-            try:
-                await _execute(sess)
-                await sess.commit()
-            except Exception:
-                await sess.rollback()
-                raise
 
 
 async def add_authorized_driver(
+    session: AsyncSession,
     telegram_id: int,
     admin_telegram_id: int,
-    session: Optional[AsyncSession] = None,
 ) -> bool:
     """Add a Telegram user ID to the pre-approved authorized driver list.
 
@@ -1477,48 +1313,35 @@ async def add_authorized_driver(
         - ``bot/admin/handler.py`` — ``cmd_add_driver``.
     """
 
-    async def _execute(sess: AsyncSession) -> bool:
-        # Verify admin user
-        admin_stmt = select(User).where(User.telegram_id == admin_telegram_id)
-        admin_res = await sess.execute(admin_stmt)
-        admin_user = admin_res.scalar_one_or_none()
-        if not admin_user or admin_user.role != UserRole.ADMIN:
-            raise ValidationError("Admin permission required.")
+    # Verify admin user
+    admin_stmt = select(User).where(User.telegram_id == admin_telegram_id)
+    admin_res = await session.execute(admin_stmt)
+    admin_user = admin_res.scalar_one_or_none()
+    if not admin_user or admin_user.role != UserRole.ADMIN:
+        raise ValidationError("Admin permission required.")
 
-        # Check if already authorized
-        check_stmt = select(AuthorizedDriver).where(AuthorizedDriver.telegram_id == telegram_id)
-        existing = (await sess.execute(check_stmt)).scalar_one_or_none()
+    # Check if already authorized
+    check_stmt = select(AuthorizedDriver).where(AuthorizedDriver.telegram_id == telegram_id)
+    existing = (await session.execute(check_stmt)).scalar_one_or_none()
 
-        if existing:
-            return False
+    if existing:
+        return False
 
-        auth_driver = AuthorizedDriver(
-            telegram_id=telegram_id,
-            added_by_admin_id=admin_user.id,
-        )
-        sess.add(auth_driver)
-        await sess.flush()
+    auth_driver = AuthorizedDriver(
+        telegram_id=telegram_id,
+        added_by_admin_id=admin_user.id,
+    )
+    session.add(auth_driver)
+    await session.flush()
 
-        # Log the action
-        log_entry = AdminActionLog(
-            admin_id=admin_user.id,
-            action_type=AdminActionType.AUTHORIZE_DRIVER,
-            target_user_id=None,
-            details=f"Added telegram_id={telegram_id} to authorized driver list",
-        )
-        sess.add(log_entry)
-        await sess.flush()
+    # Log the action
+    log_entry = AdminActionLog(
+        admin_id=admin_user.id,
+        action_type=AdminActionType.AUTHORIZE_DRIVER,
+        target_user_id=None,
+        details=f"Added telegram_id={telegram_id} to authorized driver list",
+    )
+    session.add(log_entry)
+    await session.flush()
 
-        return True
-
-    if session is not None:
-        return await _execute(session)
-    else:
-        async with async_session() as sess:
-            try:
-                result = await _execute(sess)
-                await sess.commit()
-                return result
-            except Exception:
-                await sess.rollback()
-                raise
+    return True
