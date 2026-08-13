@@ -206,7 +206,7 @@ async def set_driver_availability(
         ``bot/driver/handler.py`` -> ``toggle_availability_handler``.
     """
 
-    profile = await get_driver_profile_by_telegram_id(telegram_id, session=session)
+    profile = await get_driver_profile_by_telegram_id(session, telegram_id)
     if not profile:
         raise PackitbotError("Driver profile not found.")
 

@@ -168,7 +168,7 @@ async def start_driver_registration(message: Message, state: FSMContext, session
     and ``F.text == "Register as Driver"``.
     """
     # Check if driver is already registered
-    profile = await get_driver_profile_by_telegram_id(message.from_user.id, session=session)
+    profile = await get_driver_profile_by_telegram_id(session, message.from_user.id)
     if profile:
         if profile.status == DriverStatus.APPROVED:
             await message.answer(
@@ -192,7 +192,7 @@ async def start_driver_registration(message: Message, state: FSMContext, session
         await message.answer("Session unavailable. Please try again.")
         return
 
-    is_authorized = await is_authorized_driver(message.from_user.id, session=session)
+    is_authorized = await is_authorized_driver(session, message.from_user.id)
     if not is_authorized:
         await message.answer(
             "⛔ Driver registration is currently by invitation only.\n\n"
@@ -469,7 +469,7 @@ async def process_submit_registration(callback: CallbackQuery, state: FSMContext
     )
 
     try:
-        await register_driver(dto, session=session)
+        await register_driver(session, dto)
     except Exception as exc:
         logger.error(f"Failed driver registration for user {callback.from_user.id}: {exc}")
         await callback.message.answer(f"❌ Registration failed: {exc}")
@@ -506,7 +506,7 @@ async def check_approval_status(message: Message, session=None) -> None:
 
     Registered on ``driver_router`` for ``F.text == "Check Approval Status"``.
     """
-    profile = await get_driver_profile_by_telegram_id(message.from_user.id, session=session)
+    profile = await get_driver_profile_by_telegram_id(session, message.from_user.id)
     if not profile:
         await message.answer("You have not registered as a driver yet. Use /register_driver to begin.")
         return
@@ -556,7 +556,7 @@ async def toggle_availability_handler(message: Message, session=None) -> None:
     Registered on ``driver_router`` for ``F.text.in_({"Go Available", "Go Offline"})``
     and ``Command("toggle_availability")``.
     """
-    profile = await get_driver_profile_by_telegram_id(message.from_user.id, session=session)
+    profile = await get_driver_profile_by_telegram_id(session, message.from_user.id)
     if not profile:
         await message.answer("You are not registered as a driver. Use /register_driver to get started.")
         return
@@ -583,9 +583,9 @@ async def toggle_availability_handler(message: Message, session=None) -> None:
 
     try:
         updated_profile = await set_driver_availability(
-            telegram_id=message.from_user.id,
-            target_availability=target_status,
-            session=session,
+            session,
+            message.from_user.id,
+            target_status,
         )
     except Exception as exc:
         logger.error(f"Error toggling availability for user {message.from_user.id}: {exc}")
