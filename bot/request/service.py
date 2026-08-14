@@ -11,7 +11,7 @@ assignment, status transitions, cancellation, and feedback submission.
 
 **Key Dependencies:**
 - *Uses:* ``bot.request.repository``, ``bot.request.schemas``, ``bot.request.state_machine``, ``bot.request.business_rules``, ``bot.request.events``
-- *Used by:* ``bot/student/handler.py``, ``bot/student/handler_requests.py``, ``bot/admin/handler.py``, ``bot/driver/handler.py``, ``tests/integration/handlers/test_request_lifecycle.py``
+- *Uses by:* ``bot/student/handler.py``, ``bot/student/handler_requests.py``, ``bot/admin/handler.py``, ``bot/driver/handler.py``, ``tests/integration/handlers/test_request_lifecycle.py``
 """
 from typing import Optional
 
