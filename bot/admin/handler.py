@@ -161,7 +161,7 @@ async def cmd_stats(
         )
         await message.answer(text, parse_mode="Markdown")
     except Exception as e:
-        logger.error(f"Error fetching stats: {e}")
+        logger.error("Error fetching stats: %s", e)
         await message.answer(MSG_SOMETHING_WENT_WRONG)
 
 
@@ -250,7 +250,7 @@ async def handle_select_request_for_assignment(
 ) -> None:
     """Displays available drivers ranked by average rating for selection."""
     if not _is_admin(user):
-        await callback.answer("⛔ Admin access required.", show_alert=True)
+        await callback.answer(ErrorMessages.ADMIN_ACCESS_REQUIRED, show_alert=True)
         return
 
     request_id = int(callback.data.split(":")[1])
@@ -277,7 +277,7 @@ async def handle_confirm_driver_assignment(
 ) -> None:
     """Executes driver assignment via RequestService and notifies the assigned driver."""
     if not _is_admin(user):
-        await callback.answer("⛔ Admin access required.", show_alert=True)
+        await callback.answer(ErrorMessages.ADMIN_ACCESS_REQUIRED, show_alert=True)
         return
 
     async with async_session() as session:
@@ -309,7 +309,7 @@ async def handle_confirm_driver_assignment(
                         parse_mode="Markdown",
                     )
                 except Exception as notif_err:
-                    logger.error(f"Failed to notify driver {driver_profile.user.telegram_id}: {notif_err}")
+                    logger.error("Failed to notify driver %s: %s", driver_profile.user.telegram_id, notif_err)
 
             await callback.message.edit_text(
                 f"✅ **Request #{updated_req.id} assigned successfully!**\n\n"
@@ -324,7 +324,7 @@ async def handle_confirm_driver_assignment(
             await callback.answer(str(e), show_alert=True)
         except Exception as e:
             await session.rollback()
-            logger.error(f"Error assigning driver: {e}")
+            logger.error("Error assigning driver: %s", e)
             await callback.answer(MSG_SOMETHING_WENT_WRONG, show_alert=True)
 
 
@@ -335,7 +335,7 @@ async def handle_back_to_pending_requests(
 ) -> None:
     """Navigates back to the pending requests list."""
     if not _is_admin(user):
-        await callback.answer("⛔ Admin access required.", show_alert=True)
+        await callback.answer(ErrorMessages.ADMIN_ACCESS_REQUIRED, show_alert=True)
         return
 
     requests, total_pages = await get_pending_requests(page=1)
@@ -360,7 +360,7 @@ async def handle_view_driver_detail(
 ) -> None:
     """Displays driver application details and approval buttons."""
     if not _is_admin(user):
-        await callback.answer("⛔ Admin access required.", show_alert=True)
+        await callback.answer(ErrorMessages.ADMIN_ACCESS_REQUIRED, show_alert=True)
         return
 
     try:
@@ -383,7 +383,7 @@ async def handle_view_driver_detail(
     except PackitbotError as e:
         await callback.answer(str(e), show_alert=True)
     except Exception as e:
-        logger.error(f"Error fetching driver detail: {e}")
+        logger.error("Error fetching driver detail: %s", e)
         await callback.answer(MSG_SOMETHING_WENT_WRONG, show_alert=True)
 
 
@@ -395,7 +395,7 @@ async def handle_approve_driver(
 ) -> None:
     """Handles driver approval action."""
     if not _is_admin(user):
-        await callback.answer("⛔ Admin access required.", show_alert=True)
+        await callback.answer(ErrorMessages.ADMIN_ACCESS_REQUIRED, show_alert=True)
         return
 
     try:
@@ -423,7 +423,7 @@ async def handle_approve_driver(
     except PackitbotError as e:
         await callback.answer(str(e), show_alert=True)
     except Exception as e:
-        logger.error(f"Error approving driver: {e}")
+        logger.error("Error approving driver: %s", e)
         await callback.answer(MSG_SOMETHING_WENT_WRONG, show_alert=True)
 
 
@@ -435,7 +435,7 @@ async def handle_reject_driver(
 ) -> None:
     """Handles driver rejection action."""
     if not _is_admin(user):
-        await callback.answer("⛔ Admin access required.", show_alert=True)
+        await callback.answer(ErrorMessages.ADMIN_ACCESS_REQUIRED, show_alert=True)
         return
 
     try:
@@ -462,7 +462,7 @@ async def handle_reject_driver(
     except PackitbotError as e:
         await callback.answer(str(e), show_alert=True)
     except Exception as e:
-        logger.error(f"Error rejecting driver: {e}")
+        logger.error("Error rejecting driver: %s", e)
         await callback.answer(MSG_SOMETHING_WENT_WRONG, show_alert=True)
 
 
@@ -473,7 +473,7 @@ async def handle_back_to_pending_list(
 ) -> None:
     """Navigates back to the pending drivers list."""
     if not _is_admin(user):
-        await callback.answer("⛔ Admin access required.", show_alert=True)
+        await callback.answer(ErrorMessages.ADMIN_ACCESS_REQUIRED, show_alert=True)
         return
 
     drivers, total_pages = await get_pending_drivers(page=1)
@@ -523,7 +523,7 @@ async def handle_drivers_pagination(
 ) -> None:
     """Handles pagination for the drivers list."""
     if not _is_admin(user):
-        await callback.answer("⛔ Admin access required.", show_alert=True)
+        await callback.answer(ErrorMessages.ADMIN_ACCESS_REQUIRED, show_alert=True)
         return
 
     page = int(callback.data.split(":")[1])
@@ -549,7 +549,7 @@ async def handle_view_driver_detail_manage(
 ) -> None:
     """Displays driver record details for management."""
     if not _is_admin(user):
-        await callback.answer("⛔ Admin access required.", show_alert=True)
+        await callback.answer(ErrorMessages.ADMIN_ACCESS_REQUIRED, show_alert=True)
         return
 
     try:
@@ -574,7 +574,7 @@ async def handle_view_driver_detail_manage(
     except PackitbotError as e:
         await callback.answer(str(e), show_alert=True)
     except Exception as e:
-        logger.error(f"Error fetching driver detail: {e}")
+        logger.error("Error fetching driver detail: %s", e)
         await callback.answer(MSG_SOMETHING_WENT_WRONG, show_alert=True)
 
 
@@ -586,7 +586,7 @@ async def handle_driver_edit_menu(
 ) -> None:
     """Shows the field selection menu for editing a driver record."""
     if not _is_admin(user):
-        await callback.answer("⛔ Admin access required.", show_alert=True)
+        await callback.answer(ErrorMessages.ADMIN_ACCESS_REQUIRED, show_alert=True)
         return
 
     keyboard = driver_edit_field_keyboard(callback_data.driver_id)
@@ -607,7 +607,7 @@ async def handle_driver_field_select(
 ) -> None:
     """Prompts admin to enter a new value for the selected driver field."""
     if not _is_admin(user):
-        await callback.answer("⛔ Admin access required.", show_alert=True)
+        await callback.answer(ErrorMessages.ADMIN_ACCESS_REQUIRED, show_alert=True)
         return
 
     field_labels = {
@@ -691,7 +691,7 @@ async def handle_driver_field_input(
     except PackitbotError as e:
         await message.answer(f"❌ {e}")
     except Exception as e:
-        logger.error(f"Error updating driver field: {e}")
+        logger.error("Error updating driver field: %s", e)
         await message.answer(MSG_SOMETHING_WENT_WRONG)
 
 
@@ -703,7 +703,7 @@ async def handle_remove_driver_confirm(
 ) -> None:
     """Shows removal confirmation for a driver record."""
     if not _is_admin(user):
-        await callback.answer("⛔ Admin access required.", show_alert=True)
+        await callback.answer(ErrorMessages.ADMIN_ACCESS_REQUIRED, show_alert=True)
         return
 
     try:
@@ -718,7 +718,7 @@ async def handle_remove_driver_confirm(
     except PackitbotError as e:
         await callback.answer(str(e), show_alert=True)
     except Exception as e:
-        logger.error(f"Error preparing driver removal: {e}")
+        logger.error("Error preparing driver removal: %s", e)
         await callback.answer(MSG_SOMETHING_WENT_WRONG, show_alert=True)
 
 
@@ -730,7 +730,7 @@ async def handle_remove_driver_execute(
 ) -> None:
     """Executes driver record removal."""
     if not _is_admin(user):
-        await callback.answer("⛔ Admin access required.", show_alert=True)
+        await callback.answer(ErrorMessages.ADMIN_ACCESS_REQUIRED, show_alert=True)
         return
 
     try:
@@ -749,7 +749,7 @@ async def handle_remove_driver_execute(
     except PackitbotError as e:
         await callback.answer(str(e), show_alert=True)
     except Exception as e:
-        logger.error(f"Error removing driver: {e}")
+        logger.error("Error removing driver: %s", e)
         await callback.answer(MSG_SOMETHING_WENT_WRONG, show_alert=True)
 
 
@@ -761,7 +761,7 @@ async def handle_remove_driver_cancel(
 ) -> None:
     """Cancels driver removal and returns to driver detail."""
     if not _is_admin(user):
-        await callback.answer("⛔ Admin access required.", show_alert=True)
+        await callback.answer(ErrorMessages.ADMIN_ACCESS_REQUIRED, show_alert=True)
         return
 
     try:
@@ -790,7 +790,7 @@ async def handle_remove_driver_cancel(
     except PackitbotError as e:
         await callback.answer(str(e), show_alert=True)
     except Exception as e:
-        logger.error(f"Error cancelling driver removal: {e}")
+        logger.error("Error cancelling driver removal: %s", e)
         await callback.answer(MSG_SOMETHING_WENT_WRONG, show_alert=True)
 
 
@@ -801,7 +801,7 @@ async def handle_driver_edit_back(
 ) -> None:
     """Navigates back to driver detail from edit menu."""
     if not _is_admin(user):
-        await callback.answer("⛔ Admin access required.", show_alert=True)
+        await callback.answer(ErrorMessages.ADMIN_ACCESS_REQUIRED, show_alert=True)
         return
 
     try:
@@ -827,7 +827,7 @@ async def handle_driver_edit_back(
     except PackitbotError as e:
         await callback.answer(str(e), show_alert=True)
     except Exception as e:
-        logger.error(f"Error navigating back: {e}")
+        logger.error("Error navigating back: %s", e)
         await callback.answer(MSG_SOMETHING_WENT_WRONG, show_alert=True)
 
 
@@ -838,7 +838,7 @@ async def handle_drivers_back(
 ) -> None:
     """Navigates back to the first page of the drivers list."""
     if not _is_admin(user):
-        await callback.answer("⛔ Admin access required.", show_alert=True)
+        await callback.answer(ErrorMessages.ADMIN_ACCESS_REQUIRED, show_alert=True)
         return
 
     drivers, total_pages = await get_all_drivers(page=1)
@@ -929,7 +929,7 @@ async def handle_ban_user_init(
 ) -> None:
     """Prompts admin to enter a reason for banning the user."""
     if not _is_admin(user):
-        await callback.answer("⛔ Admin access required.", show_alert=True)
+        await callback.answer(ErrorMessages.ADMIN_ACCESS_REQUIRED, show_alert=True)
         return
 
     await state.update_data(target_user_id=callback_data.user_id)
@@ -983,7 +983,7 @@ async def process_ban_reason(
     except PackitbotError as e:
         await message.answer(f"❌ {e}")
     except Exception as e:
-        logger.error(f"Error banning user: {e}")
+        logger.error("Error banning user: %s", e)
         await message.answer(MSG_SOMETHING_WENT_WRONG)
 
 
@@ -995,7 +995,7 @@ async def handle_unban_user(
 ) -> None:
     """Executes user unban action."""
     if not _is_admin(user):
-        await callback.answer("⛔ Admin access required.", show_alert=True)
+        await callback.answer(ErrorMessages.ADMIN_ACCESS_REQUIRED, show_alert=True)
         return
 
     try:
@@ -1014,7 +1014,7 @@ async def handle_unban_user(
     except PackitbotError as e:
         await callback.answer(str(e), show_alert=True)
     except Exception as e:
-        logger.error(f"Error unbanning user: {e}")
+        logger.error("Error unbanning user: %s", e)
         await callback.answer(MSG_SOMETHING_WENT_WRONG, show_alert=True)
 
 
@@ -1026,7 +1026,7 @@ async def handle_promote_admin(
 ) -> None:
     """Executes admin promotion action."""
     if not _is_admin(user):
-        await callback.answer("⛔ Admin access required.", show_alert=True)
+        await callback.answer(ErrorMessages.ADMIN_ACCESS_REQUIRED, show_alert=True)
         return
 
     try:
@@ -1045,7 +1045,7 @@ async def handle_promote_admin(
     except PackitbotError as e:
         await callback.answer(str(e), show_alert=True)
     except Exception as e:
-        logger.error(f"Error promoting user: {e}")
+        logger.error("Error promoting user: %s", e)
         await callback.answer(MSG_SOMETHING_WENT_WRONG, show_alert=True)
 
 
@@ -1082,7 +1082,7 @@ async def process_broadcast_audience(
 ) -> None:
     """Handles audience selection and prompts for message content."""
     if not _is_admin(user):
-        await callback.answer("⛔ Admin access required.", show_alert=True)
+        await callback.answer(ErrorMessages.ADMIN_ACCESS_REQUIRED, show_alert=True)
         return
 
     audience = callback.data.split(":")[1]
@@ -1151,7 +1151,7 @@ async def execute_broadcast(
 ) -> None:
     """Executes bulk dispatching of broadcast message via notification_service."""
     if not _is_admin(user):
-        await callback.answer("⛔ Admin access required.", show_alert=True)
+        await callback.answer(ErrorMessages.ADMIN_ACCESS_REQUIRED, show_alert=True)
         await state.clear()
         return
 
@@ -1256,5 +1256,5 @@ async def cmd_add_driver(
     except ValidationError as e:
         await message.answer(f"❌ {e}")
     except Exception as e:
-        logger.error(f"Error adding authorized driver: {e}")
+        logger.error("Error adding authorized driver: %s", e)
         await message.answer(MSG_SOMETHING_WENT_WRONG)

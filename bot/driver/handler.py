@@ -547,7 +547,7 @@ async def toggle_availability_handler(message: Message, session=None) -> None:
             target_status,
         )
     except Exception as exc:
-        logger.error(f"Error toggling availability for user {message.from_user.id}: {exc}")
+        logger.error("Error toggling availability for user %s: %s", message.from_user.id, exc)
         await message.answer(f"❌ Failed to update status: {exc}")
         return
 
@@ -670,14 +670,14 @@ async def process_driver_accept(callback: CallbackQuery, session=None) -> None:
                     parse_mode="HTML",
                 )
             except Exception as notif_err:
-                logger.error(f"Failed to notify student {student.telegram_id}: {notif_err}")
+                logger.error("Failed to notify student %s: %s", student.telegram_id, notif_err)
 
     except PackitbotError as exc:
         await session.rollback()
         await callback.answer(str(exc), show_alert=True)
     except Exception as exc:
         await session.rollback()
-        logger.error(f"Error in driver_accept: {exc}")
+        logger.error("Error in driver_accept: %s", exc)
         await callback.answer("Something went wrong. Please try again.", show_alert=True)
 
 
@@ -768,7 +768,7 @@ async def active_delivery_dashboard_handler(message: Message, session=None) -> N
         await message.answer(dashboard_text, parse_mode="HTML", reply_markup=kb)
 
     except Exception as exc:
-        logger.error(f"Error loading active delivery dashboard: {exc}")
+        logger.error("Error loading active delivery dashboard: %s", exc)
         await message.answer("❌ Failed to retrieve active delivery details.")
 
 
@@ -911,14 +911,14 @@ async def process_delivery_status_step(callback: CallbackQuery, session=None) ->
                     text=notif_text,
                 )
             except Exception as notif_err:
-                logger.error(f"Failed to notify student {student.telegram_id} of status update: {notif_err}")
+                logger.error("Failed to notify student %s of status update: %s", student.telegram_id, notif_err)
 
     except PackitbotError as exc:
         await session.rollback()
         await callback.answer(str(exc), show_alert=True)
     except Exception as exc:
         await session.rollback()
-        logger.error(f"Error processing delivery status step: {exc}")
+        logger.error("Error processing delivery status step: %s", exc)
         await callback.answer("Failed to update status. Please try again.", show_alert=True)
 
 
@@ -1003,12 +1003,12 @@ async def process_driver_reject(callback: CallbackQuery, session=None) -> None:
                         parse_mode="HTML",
                     )
                 except Exception as notif_err:
-                    logger.error(f"Failed to alert admin {admin.telegram_id}: {notif_err}")
+                    logger.error("Failed to alert admin %s: %s", admin.telegram_id, notif_err)
 
     except PackitbotError as exc:
         await session.rollback()
         await callback.answer(str(exc), show_alert=True)
     except Exception as exc:
         await session.rollback()
-        logger.error(f"Error in driver_reject: {exc}")
+        logger.error("Error in driver_reject: %s", exc)
         await callback.answer("Something went wrong. Please try again.", show_alert=True)

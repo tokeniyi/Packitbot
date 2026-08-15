@@ -16,8 +16,9 @@ Used by:
     - ``bot/main.py`` — reads settings for admin seeding and bootstrap logic.
     - ``bot/core/middlewares/auth.py`` — reads ``Settings`` (via
       ``get_settings``) for ``seed_admin_telegram_ids`` to promote seed admins.
-    - ``bot/core/constants/messages.py`` — calls ``get_support_url()`` to
-      build ``SUPPORT_LINK`` embedded in reply messages.
+    - ``bot/core/constants/messages.py`` — uses a hardcoded ``SUPPORT_LINK``
+      constant (instead of calling ``get_support_url()``) to prevent circular
+      imports; ``SUPPORT_LINK`` is embedded in reply messages.
 """
 
 import os
@@ -88,7 +89,8 @@ def get_settings() -> Settings:
         - ``alembic/env.py`` — ``run_async_migrations`` calls
           ``get_settings()`` to obtain ``database_url``.
         - ``bot/main.py`` — ``get_admin_chats_from_settings()`` calls
-          ``get_settings()`` to read ``seed_admin_telegram_ids``.
+          ``get_settings()`` to read ``seed_admin_telegram_ids`` for
+          seeding initial admin Telegram chat IDs.
     """
     return Settings()
 
@@ -122,9 +124,9 @@ def get_support_url(
           and special characters are safe inside a URL query string.
 
     Called by:
-        - ``bot/core/constants/messages.py`` — ``SUPPORT_LINK =
-          get_support_url()`` (line 68), used to inject a support deep-link
-          into bot reply messages.
+        - (Currently not called at runtime — ``bot/core/constants/messages.py``
+          uses a hardcoded ``SUPPORT_LINK`` constant instead to avoid circular
+          imports.)
     """
     encoded_text = quote(text)
     return f"https://t.me/{username}?text={encoded_text}"

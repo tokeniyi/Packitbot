@@ -184,7 +184,7 @@ async def start_request_creation(message: Message, state: FSMContext) -> None:
     await state.clear()
     await state.set_state(RequestCreateFSM.entering_pickup_detail)
     await message.answer(
-        _req_step_prompt(1, 11, "Enter pickup detail (e.g. Room 102, Esther Hall):")
+        _req_step_prompt(1, 11, RequestMessages.ENTER_PICKUP_DETAIL_PROMPT)
     )
 
 
@@ -193,7 +193,7 @@ async def start_request_creation(message: Message, state: FSMContext) -> None:
 async def cancel_request_creation(event: Message | CallbackQuery, state: FSMContext) -> None:
     """Cancel the delivery request creation flow."""
     await state.clear()
-    msg = "Request creation cancelled."
+    msg = SuccessMessages.ACTION_CANCELLED
 
     if isinstance(event, CallbackQuery):
         await event.answer()
@@ -221,7 +221,7 @@ async def process_pickup_detail(message: Message, state: FSMContext) -> None:
         return
 
     await state.set_state(RequestCreateFSM.entering_dropoff_address)
-    await message.answer(_req_step_prompt(2, 11, "Enter dropoff address:"))
+    await message.answer(_req_step_prompt(2, 11, RequestMessages.ENTER_DROPOFF_ADDRESS))
 
 
 @requests_router.message(RequestCreateFSM.entering_dropoff_address)
@@ -242,7 +242,7 @@ async def process_dropoff_address(message: Message, state: FSMContext) -> None:
 
     await state.set_state(RequestCreateFSM.entering_dropoff_landmark)
     await message.answer(
-        _req_step_prompt(3, 11, "Enter dropoff landmark (optional):"),
+        _req_step_prompt(3, 11, RequestMessages.ENTER_DROPOFF_LANDMARK),
         reply_markup=skip_or_cancel_keyboard(skip_callback="req_skip_landmark"),
     )
 
@@ -261,7 +261,7 @@ async def skip_dropoff_landmark(callback: CallbackQuery, state: FSMContext) -> N
     await state.set_state(RequestCreateFSM.entering_hall)
     if callback.message:
         await callback.message.answer(
-            _req_step_prompt(4, 11, "Select Hall of Residence:"),
+            _req_step_prompt(4, 11, RequestMessages.SELECT_HALL),
             reply_markup=req_hall_selection_keyboard(),
         )
 
@@ -278,7 +278,7 @@ async def process_dropoff_landmark(message: Message, state: FSMContext) -> None:
 
     await state.set_state(RequestCreateFSM.entering_hall)
     await message.answer(
-        _req_step_prompt(4, 11, "Select Hall of Residence:"),
+        _req_step_prompt(4, 11, RequestMessages.SELECT_HALL),
         reply_markup=req_hall_selection_keyboard(),
     )
 
@@ -298,7 +298,7 @@ async def process_hall_select(callback: CallbackQuery, state: FSMContext) -> Non
 
     await state.set_state(RequestCreateFSM.entering_recipient_name)
     if callback.message:
-        await callback.message.answer(_req_step_prompt(5, 11, "Enter recipient full name:"))
+        await callback.message.answer(_req_step_prompt(5, 11, RequestMessages.ENTER_RECIPIENT_NAME))
 
 
 @requests_router.message(RequestCreateFSM.entering_recipient_name)
@@ -318,7 +318,7 @@ async def process_recipient_name(message: Message, state: FSMContext) -> None:
         return
 
     await state.set_state(RequestCreateFSM.entering_recipient_phone)
-    await message.answer(_req_step_prompt(6, 11, "Enter recipient phone number (e.g. 08012345678):"))
+    await message.answer(_req_step_prompt(6, 11, RequestMessages.ENTER_RECIPIENT_PHONE))
 
 
 @requests_router.message(RequestCreateFSM.entering_recipient_phone)
@@ -339,7 +339,7 @@ async def process_recipient_phone(message: Message, state: FSMContext) -> None:
 
     await state.set_state(RequestCreateFSM.selecting_luggage_size)
     await message.answer(
-        _req_step_prompt(7, 11, "Select luggage size:"),
+        _req_step_prompt(7, 11, RequestMessages.CHOOSE_LUGGAGE_SIZE),
         reply_markup=luggage_size_keyboard(),
     )
 
@@ -359,7 +359,7 @@ async def process_luggage_size(callback: CallbackQuery, state: FSMContext) -> No
 
     await state.set_state(RequestCreateFSM.entering_luggage_count)
     if callback.message:
-        await callback.message.answer(_req_step_prompt(8, 11, "Enter luggage count (1-10):"))
+        await callback.message.answer(_req_step_prompt(8, 11, RequestMessages.ENTER_LUGGAGE_COUNT.format(min=1, max=10)))
 
 
 @requests_router.message(RequestCreateFSM.entering_luggage_count)
@@ -380,7 +380,7 @@ async def process_luggage_count(message: Message, state: FSMContext) -> None:
 
     await state.set_state(RequestCreateFSM.selecting_preferred_date)
     await message.answer(
-        _req_step_prompt(9, 11, "Select preferred pickup date or type YYYY-MM-DD:"),
+        _req_step_prompt(9, 11, RequestMessages.ENTER_PREFERRED_DATE),
         reply_markup=date_quick_pick_keyboard(),
     )
 
@@ -401,7 +401,7 @@ async def process_preferred_date_callback(callback: CallbackQuery, state: FSMCon
     await state.set_state(RequestCreateFSM.selecting_time_window)
     if callback.message:
         await callback.message.answer(
-            _req_step_prompt(10, 11, "Select preferred time window:"),
+            _req_step_prompt(10, 11, RequestMessages.CHOOSE_TIME_WINDOW),
             reply_markup=time_window_keyboard(),
         )
 
@@ -424,7 +424,7 @@ async def process_preferred_date_message(message: Message, state: FSMContext) ->
 
     await state.set_state(RequestCreateFSM.selecting_time_window)
     await message.answer(
-        _req_step_prompt(10, 11, "Select preferred time window:"),
+        _req_step_prompt(10, 11, RequestMessages.CHOOSE_TIME_WINDOW),
         reply_markup=time_window_keyboard(),
     )
 
@@ -445,7 +445,7 @@ async def process_time_window_callback(callback: CallbackQuery, state: FSMContex
     await state.set_state(RequestCreateFSM.entering_special_instructions)
     if callback.message:
         await callback.message.answer(
-            _req_step_prompt(11, 11, "Enter any special instructions (optional):"),
+            _req_step_prompt(11, 11, RequestMessages.ENTER_SPECIAL_INSTRUCTIONS),
             reply_markup=skip_or_cancel_keyboard(skip_callback="req_skip_instructions"),
         )
 
@@ -468,7 +468,7 @@ async def process_time_window_message(message: Message, state: FSMContext) -> No
 
     await state.set_state(RequestCreateFSM.entering_special_instructions)
     await message.answer(
-        _req_step_prompt(11, 11, "Enter any special instructions (optional):"),
+        _req_step_prompt(11, 11, RequestMessages.ENTER_SPECIAL_INSTRUCTIONS),
         reply_markup=skip_or_cancel_keyboard(skip_callback="req_skip_instructions"),
     )
 
@@ -505,13 +505,13 @@ async def edit_request_field(callback: CallbackQuery, state: FSMContext) -> None
         "pickup_detail": (RequestCreateFSM.entering_pickup_detail, "Enter pickup detail:"),
         "dropoff_address": (RequestCreateFSM.entering_dropoff_address, "Enter dropoff address:"),
         "dropoff_landmark": (RequestCreateFSM.entering_dropoff_landmark, "Enter dropoff landmark:"),
-        "hall": (RequestCreateFSM.entering_hall, "Select Hall of Residence:"),
+        "hall": (RequestCreateFSM.entering_hall, RequestMessages.SELECT_HALL),
         "recipient_name": (RequestCreateFSM.entering_recipient_name, "Enter recipient name:"),
         "recipient_phone": (RequestCreateFSM.entering_recipient_phone, "Enter recipient phone number:"),
         "luggage_size": (RequestCreateFSM.selecting_luggage_size, "Select luggage size:"),
         "luggage_count": (RequestCreateFSM.entering_luggage_count, "Enter luggage count:"),
         "preferred_date": (RequestCreateFSM.selecting_preferred_date, "Select preferred pickup date:"),
-        "preferred_time_window": (RequestCreateFSM.selecting_time_window, "Select preferred time window:"),
+        "preferred_time_window": (RequestCreateFSM.selecting_time_window, RequestMessages.CHOOSE_TIME_WINDOW),
         "special_instructions": (RequestCreateFSM.entering_special_instructions, "Enter special instructions:"),
     }
 

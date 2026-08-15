@@ -193,6 +193,7 @@ class RegistrationMessages:
 class RequestMessages:
     CONFIRM_HALL: Final[str] = "📍 **Pickup Location:** {hall}\nDo you want to use this location?"
     ENTER_PICKUP_DETAIL: Final[str] = "📍 **Where should the driver meet you?**\n*(e.g., Hostel Block B, Room 12)*"
+    ENTER_PICKUP_DETAIL_PROMPT: Final[str] = ENTER_PICKUP_DETAIL
     ENTER_DROPOFF_ADDRESS: Final[str] = "🎯 **Where should the driver deliver this package?**"
     ENTER_DROPOFF_LANDMARK: Final[str] = "🗺️ **Any nearby landmark?** *(optional, send 'Skip' if none)*"
     ENTER_RECIPIENT_NAME: Final[str] = "👤 **Who is receiving this package?**"
@@ -203,6 +204,7 @@ class RequestMessages:
     CHOOSE_TIME_WINDOW: Final[str] = "⏰ **Pick a preferred time window:**"
     ENTER_SPECIAL_INSTRUCTIONS: Final[str] = "📝 **Any special instructions for the driver?** *(optional)*"
     REVIEW_TITLE: Final[str] = "🧾 **Review your delivery request:**"
+    SELECT_HALL: Final[str] = "🏛️ **Which hall of residence do you live in?**"
     EMPTY_STATE_STUDENT: Final[str] = "📭 You haven't created any delivery requests yet.\nTap **📦 New Request** to get started!"
     EMPTY_STATE_DRIVER: Final[str] = "🛋️ You don't have an active delivery right now. We'll notify you when a request comes in!"
     REQUESTS_LIST_TITLE: Final[str] = "📋 <b>Your Delivery Requests:</b>"
