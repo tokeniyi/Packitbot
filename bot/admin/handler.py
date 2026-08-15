@@ -1,5 +1,7 @@
 # bot/admin/handler.py
 
+from bot.driver.repository import DriverRepository
+from bot.core.db.session import async_session
 from bot.core.constants.commands import CMD_DRIVERS
 import logging
 from aiogram import Router, F
@@ -55,6 +57,8 @@ from bot.admin.states import BroadcastFSM, DriverEditFSM
 from bot.core.constants.limits import MAX_BROADCAST_LENGTH
 from bot.core.constants.enums import UserRole
 from bot.core.constants.messages import (
+    ErrorMessages,
+    SuccessMessages,
     MSG_MANAGEMENT_PORTAL,
     MSG_NO_PERMISSION,
     MSG_NOTIFY_DRIVER_ASSIGNED,
@@ -69,13 +73,10 @@ from bot.core.constants.messages import (
     MSG_DRIVER_REMOVED,
     MSG_DRIVER_REMOVE_CANCELLED,
 )
-from bot.core.db.session import async_session
 from bot.core.exceptions import PackitbotError, ValidationError
 from bot.core.models.user import User
 from bot.core.services.notification_service import notify_driver_approval_status, send_broadcast_message
 from bot.core.utils.callback_data import AdminAssign, AdminDriverApproval, AdminDriverEdit, AdminDriverManage, AdminDriverRemove, AdminUserAction, PaginationNav
-from bot.driver.repository import DriverRepository
-from bot.request.repository import RequestRepository
 from bot.request.schemas import AssignDriverDTO
 from bot.request.service import RequestService
 
@@ -224,7 +225,7 @@ async def handle_pending_requests_pagination(
 ) -> None:
     """Handles pagination for pending requests list."""
     if not _is_admin(user):
-        await callback.answer("⛔ Admin access required.", show_alert=True)
+        await callback.answer(ErrorMessages.ADMIN_ACCESS_REQUIRED, show_alert=True)
         return
 
     page = int(callback.data.split(":")[1])

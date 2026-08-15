@@ -298,3 +298,37 @@ def format_rating(rating_avg: float) -> str:
         A string representation rounded to one decimal.
     """
     return f"{rating_avg:.1f}"
+
+
+def render_progress_bar(current: int, total: int = 5) -> str:
+    """Build a unified text-based progress bar for multi-step wizards.
+
+    Args:
+        current: Number of completed steps (1-indexed).
+        total: Total number of steps.
+
+    Returns:
+        Progress bar string (e.g. '████░░░░░').
+    """
+    filled = "█" * current
+    empty = "░" * max(0, total - current)
+    return f"{filled}{empty}"
+
+
+def format_step_prompt(step: int, total: int, prompt: str) -> str:
+    """Format a wizard step prompt with an embedded progress bar.
+
+    Args:
+        step: Current step number.
+        total: Total step count.
+        prompt: Display prompt.
+
+    Returns:
+        Formatted prompt with progress bar.
+    """
+    from bot.core.constants.messages import RegistrationMessages
+
+    bar = render_progress_bar(step, total)
+    return RegistrationMessages.STEP_PROMPT.format(
+        current=step, total=total, progress_bar=bar, prompt=prompt
+    )

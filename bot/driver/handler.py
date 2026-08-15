@@ -50,6 +50,13 @@ from bot.core.utils.validators import (
     validate_plate_number,
     validate_vehicle_type,
 )
+from bot.core.constants.messages import (
+    ErrorMessages,
+    LogMessages,
+    RegistrationMessages,
+    SuccessMessages,
+)
+from bot.core.utils.formatters import format_step_prompt, render_progress_bar
 from bot.driver.keyboards import (
     delivery_status_update_keyboard,
     driver_pending_menu,
@@ -63,51 +70,6 @@ from bot.driver.states import DriverRegistrationFSM
 
 logger = logging.getLogger(__name__)
 driver_router = Router()
-
-
-def _progress_bar(current: int, total: int = 5) -> str:
-    """Build a text-based progress bar for the multi-step registration wizard.
-
-    Uses Unicode block characters to visually represent progress: filled
-    blocks for completed steps and empty blocks for remaining steps.
-
-    Args:
-        current: The number of completed steps (inclusive).
-        total:   The total number of steps in the flow (default 5).
-
-    Returns:
-        A string like ``████░░░░░`` representing the progress.
-
-    Called by:
-        :func:`_step_prompt`.
-    """
-    # Use block characters to indicate filled vs remaining steps.
-    filled = "█" * current
-    empty = "░" * (total - current)
-    return f"{filled}{empty}"
-
-
-def _step_prompt(step: int, total: int, prompt: str) -> str:
-    """Format a registration step prompt with an embedded progress bar.
-
-    Args:
-        step:   The current step number (1-indexed).
-        total:  The total number of steps.
-        prompt: The text prompt to display for this step.
-
-    Returns:
-        A formatted string combining the progress bar and the prompt text.
-
-    Calls / Depends on:
-        :func:`_progress_bar`.
-
-    Called by:
-        ``start_driver_registration``, ``process_full_name``,
-        ``process_phone_number``, ``process_vehicle_type``,
-        ``process_plate_number``, ``process_license_number``.
-    """
-    bar = _progress_bar(step, total)
-    return f"Step {step}/{total} [{bar}]\n\n{prompt}"
 
 
 async def _show_review_screen(target: Message | CallbackQuery, state: FSMContext) -> None:
@@ -178,8 +140,7 @@ async def start_driver_registration(message: Message, state: FSMContext, session
             return
         elif profile.status == DriverStatus.PENDING_APPROVAL:
             await message.answer(
-                "⏳ Your driver registration is currently <b>PENDING APPROVAL</b>.\n"
-                "Please wait for an administrator to review your application.",
+                ErrorMessages.DRIVER_PENDING_APPROVAL,
                 parse_mode="HTML",
                 reply_markup=driver_pending_menu(),
             )
@@ -189,22 +150,20 @@ async def start_driver_registration(message: Message, state: FSMContext, session
     from bot.driver.service import is_authorized_driver
 
     if session is None:
-        await message.answer("Session unavailable. Please try again.")
+        await message.answer(ErrorMessages.SESSION_UNAVAILABLE)
         return
 
     is_authorized = await is_authorized_driver(session, message.from_user.id)
     if not is_authorized:
         await message.answer(
-            "⛔ Driver registration is currently by invitation only.\n\n"
-            "An admin needs to add your Telegram ID to the authorized driver list first.\n"
-            "Please contact an admin to request driver access.",
+            ErrorMessages.DRIVER_INVITATION_ONLY,
             reply_markup=HomeButton(),
         )
         return
 
     await state.clear()
     await state.set_state(DriverRegistrationFSM.entering_full_name)
-    await message.answer(_step_prompt(1, 5, "Enter your full name (First and Last name):"))
+    await message.answer(format_step_prompt(1, 5, RegistrationMessages.DRIVER_ENTER_FULL_NAME))
 
 
 @driver_router.message(Command("cancel_driver_reg"))
@@ -224,7 +183,7 @@ async def cancel_driver_registration(event: Message | CallbackQuery, state: FSMC
         :func:`HomeButton` (from ``bot.core.keyboards.common_kb``).
     """
     await state.clear()
-    msg = "Driver registration cancelled."
+    msg = SuccessMessages.ACTION_CANCELLED
     if isinstance(event, CallbackQuery):
         await event.answer()
         await event.message.answer(msg, reply_markup=HomeButton())
@@ -245,7 +204,7 @@ async def process_full_name(message: Message, state: FSMContext) -> None:
 
     Calls / Depends on:
         :func:`validate_full_name`, :func:`_show_review_screen`,
-        :func:`_step_prompt`, :class:`DriverRegistrationFSM`.
+        :func:`format_step_prompt`, :class:`DriverRegistrationFSM`.
     """
     try:
         val = validate_full_name(message.text)
@@ -261,7 +220,7 @@ async def process_full_name(message: Message, state: FSMContext) -> None:
         return
 
     await state.set_state(DriverRegistrationFSM.entering_phone_number)
-    await message.answer(_step_prompt(2, 5, "Enter your phone number (e.g., 08012345678):"))
+    await message.answer(format_step_prompt(2, 5, RegistrationMessages.DRIVER_ENTER_PHONE))
 
 
 @driver_router.message(DriverRegistrationFSM.entering_phone_number)
@@ -277,7 +236,7 @@ async def process_phone_number(message: Message, state: FSMContext) -> None:
 
     Calls / Depends on:
         :func:`validate_phone`, :func:`_show_review_screen`,
-        :func:`_step_prompt`, :func:`vehicle_type_keyboard`,
+        :func:`format_step_prompt`, :func:`vehicle_type_keyboard`,
         :class:`DriverRegistrationFSM`.
     """
     try:
@@ -295,7 +254,7 @@ async def process_phone_number(message: Message, state: FSMContext) -> None:
 
     await state.set_state(DriverRegistrationFSM.selecting_vehicle_type)
     await message.answer(
-        _step_prompt(3, 5, "Select your vehicle type:"),
+        format_step_prompt(3, 5, RegistrationMessages.DRIVER_CHOOSE_VEHICLE),
         reply_markup=vehicle_type_keyboard(),
     )
 
@@ -314,7 +273,7 @@ async def process_vehicle_type(callback: CallbackQuery, state: FSMContext) -> No
 
     Calls / Depends on:
         :func:`validate_vehicle_type`, :func:`_show_review_screen`,
-        :func:`_step_prompt`, :class:`DriverRegistrationFSM`.
+        :func:`format_step_prompt`, :class:`DriverRegistrationFSM`.
     """
     vtype = callback.data.split(":", 1)[1]
     try:
@@ -332,7 +291,7 @@ async def process_vehicle_type(callback: CallbackQuery, state: FSMContext) -> No
         return
 
     await state.set_state(DriverRegistrationFSM.entering_plate_number)
-    await callback.message.answer(_step_prompt(4, 5, "Enter vehicle plate number (e.g. ABC-123DE):"))
+    await callback.message.answer(format_step_prompt(4, 5, RegistrationMessages.DRIVER_ENTER_PLATE))
 
 
 @driver_router.message(DriverRegistrationFSM.entering_plate_number)
@@ -348,7 +307,7 @@ async def process_plate_number(message: Message, state: FSMContext) -> None:
 
     Calls / Depends on:
         :func:`validate_plate_number`, :func:`_show_review_screen`,
-        :func:`_step_prompt`, :class:`DriverRegistrationFSM`.
+        :func:`format_step_prompt`, :class:`DriverRegistrationFSM`.
     """
     try:
         val = validate_plate_number(message.text)
@@ -364,7 +323,7 @@ async def process_plate_number(message: Message, state: FSMContext) -> None:
         return
 
     await state.set_state(DriverRegistrationFSM.entering_license_number)
-    await message.answer(_step_prompt(5, 5, "Enter driver's license number:"))
+    await message.answer(format_step_prompt(5, 5, RegistrationMessages.DRIVER_ENTER_LICENSE))
 
 
 @driver_router.message(DriverRegistrationFSM.entering_license_number)
@@ -471,7 +430,7 @@ async def process_submit_registration(callback: CallbackQuery, state: FSMContext
     try:
         await register_driver(session, dto)
     except Exception as exc:
-        logger.error(f"Failed driver registration for user {callback.from_user.id}: {exc}")
+        logger.error("Failed driver registration for user %s: %s", callback.from_user.id, exc)
         await callback.message.answer(f"❌ Registration failed: {exc}")
         return
 
