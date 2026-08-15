@@ -1,6 +1,6 @@
 # Packitbot 📦🚀
 
-[![GitHub Tag](https://img.shields.io/github/v/tag/tokeniyi/Packitbot?color=blue&label=version)](https://github.com/tokeniyi/Packitbot/releases)
+[![GitHub Release](https://img.shields.io/github/v/release/tokeniyi/Packitbot?include_prereleases&color=blue&label=version)](https://github.com/tokeniyi/Packitbot/releases)
 [![Python Version](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![Framework](https://img.shields.io/badge/aiogram-3.x-blueviolet.svg)](https://docs.aiogram.dev/)
 [![Database](https://img.shields.io/badge/PostgreSQL-16-sky.svg)](https://www.postgresql.org/)
