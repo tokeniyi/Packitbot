@@ -171,8 +171,10 @@ async def test_driver_not_authorized_blocked_from_register_driver():
         "bot.driver.service.is_authorized_driver",
         new_callable=AsyncMock,
         return_value=False,
-    ):
+    ) as mock_authorized:
         result = await middleware(handler, update, {"user": user, "session": session})
+
+    mock_authorized.assert_awaited_once_with(session=session, telegram_id=user.telegram_id)
 
     assert result is None
     handler.assert_not_awaited()
@@ -196,9 +198,10 @@ async def test_driver_authorized_allowed_for_register_driver():
         "bot.driver.service.is_authorized_driver",
         new_callable=AsyncMock,
         return_value=True,
-    ):
+    ) as mock_authorized:
         result = await middleware(handler, update, {"user": user, "session": session})
 
+    mock_authorized.assert_awaited_once_with(session=session, telegram_id=user.telegram_id)
     assert result == "ok"
     handler.assert_awaited_once()
 

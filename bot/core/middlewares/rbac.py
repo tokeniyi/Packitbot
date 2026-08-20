@@ -171,7 +171,7 @@ class RBACMiddleware(BaseMiddleware):
             if command == "register_driver":
                 from bot.driver.service import is_authorized_driver
 
-                if await is_authorized_driver(user.telegram_id, session):
+                if await is_authorized_driver(session=session, telegram_id=user.telegram_id):
                     return await handler(event, data)
                 if user.role == UserRole.DRIVER:
                     await self._reply_denied(event, MSG_DRIVER_NOT_AUTHORIZED)

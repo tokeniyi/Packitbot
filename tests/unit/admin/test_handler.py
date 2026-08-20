@@ -206,13 +206,16 @@ class TestHandleApproveDriver:
 
         with patch(
             "bot.admin.handler.approve_driver", new_callable=AsyncMock, return_value=approved
-        ):
+        ) as mock_approve:
             with patch(
                 "bot.admin.handler.notify_driver_approval_status",
                 new_callable=AsyncMock,
             ) as mock_notify:
                 await handle_approve_driver(callback, MagicMock(), user=user)
 
+                mock_approve.assert_awaited_once()
+                assert mock_approve.call_args.kwargs["session"] is None
+                assert mock_approve.call_args.kwargs["dto"].admin_telegram_id == user.telegram_id
                 mock_notify.assert_awaited_once()
                 callback.message.edit_text.assert_awaited_once()
 
@@ -237,13 +240,16 @@ class TestHandleRejectDriver:
 
         with patch(
             "bot.admin.handler.reject_driver", new_callable=AsyncMock, return_value=rejected
-        ):
+        ) as mock_reject:
             with patch(
                 "bot.admin.handler.notify_driver_approval_status",
                 new_callable=AsyncMock,
             ) as mock_notify:
                 await handle_reject_driver(callback, MagicMock(), user=user)
 
+                mock_reject.assert_awaited_once()
+                assert mock_reject.call_args.kwargs["session"] is None
+                assert mock_reject.call_args.kwargs["dto"].admin_telegram_id == user.telegram_id
                 mock_notify.assert_awaited_once()
                 callback.message.edit_text.assert_awaited_once()
 

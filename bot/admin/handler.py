@@ -130,7 +130,7 @@ async def cmd_stats(
         return
 
     try:
-        stats = await get_stats(session)
+        stats = await get_stats(session=session)
         avg_dur_str = (
             f"{stats.avg_delivery_duration_minutes} mins"
             if stats.avg_delivery_duration_minutes is not None
@@ -181,7 +181,7 @@ async def cmd_verify_drivers(
         await message.answer(MSG_NO_PERMISSION)
         return
 
-    drivers, total_pages = await get_pending_drivers(session, page=1)
+    drivers, total_pages = await get_pending_drivers(session=session, page=1)
     if not drivers:
         await message.answer("ℹ️ No pending driver applications found.")
         return
@@ -209,7 +209,7 @@ async def cmd_pending_requests(
         await message.answer(MSG_NO_PERMISSION)
         return
 
-    requests, total_pages = await get_pending_requests(session, page=1)
+    requests, total_pages = await get_pending_requests(session=session, page=1)
     if not requests:
         await message.answer("ℹ️ No pending delivery requests waiting for assignment.")
         return
@@ -234,7 +234,7 @@ async def handle_pending_requests_pagination(
         return
 
     page = int(callback.data.split(":")[1])
-    requests, total_pages = await get_pending_requests(session, page=page)
+    requests, total_pages = await get_pending_requests(session=session, page=page)
     if not requests:
         await callback.message.edit_text("ℹ️ No pending delivery requests waiting for assignment.")
         return
@@ -260,7 +260,7 @@ async def handle_select_request_for_assignment(
         return
 
     request_id = int(callback.data.split(":")[1])
-    drivers = await get_available_drivers_ranked(session)
+    drivers = await get_available_drivers_ranked(session=session)
     if not drivers:
         await callback.answer("⚠️ No active/available approved drivers found.", show_alert=True)
         return
@@ -345,7 +345,7 @@ async def handle_back_to_pending_requests(
         await callback.answer(ErrorMessages.ADMIN_ACCESS_REQUIRED, show_alert=True)
         return
 
-    requests, total_pages = await get_pending_requests(session, page=1)
+    requests, total_pages = await get_pending_requests(session=session, page=1)
     if not requests:
         await callback.message.edit_text("ℹ️ No pending delivery requests waiting for assignment.")
         return
@@ -372,7 +372,7 @@ async def handle_view_driver_detail(
         return
 
     try:
-        detail = await get_driver_application_detail(session, callback_data.driver_id)
+        detail = await get_driver_application_detail(session=session, driver_id=callback_data.driver_id)
         text = (
             f"🚘 **Driver Application Review**\n\n"
             f"👤 **Name:** {detail.full_name}\n"
@@ -412,7 +412,7 @@ async def handle_approve_driver(
             driver_id=callback_data.driver_id,
             admin_telegram_id=user.telegram_id,
         )
-        approved_driver = await approve_driver(session, dto)
+        approved_driver = await approve_driver(session=session, dto=dto)
 
         # Trigger instant notification
         await notify_driver_approval_status(
@@ -453,7 +453,7 @@ async def handle_reject_driver(
             driver_id=callback_data.driver_id,
             admin_telegram_id=user.telegram_id,
         )
-        rejected_driver = await reject_driver(session, dto)
+        rejected_driver = await reject_driver(session=session, dto=dto)
 
         # Trigger instant notification
         await notify_driver_approval_status(
@@ -487,7 +487,7 @@ async def handle_back_to_pending_list(
         await callback.answer(ErrorMessages.ADMIN_ACCESS_REQUIRED, show_alert=True)
         return
 
-    drivers, total_pages = await get_pending_drivers(session, page=1)
+    drivers, total_pages = await get_pending_drivers(session=session, page=1)
     if not drivers:
         await callback.message.edit_text("ℹ️ No pending driver applications found.")
         return
@@ -515,7 +515,7 @@ async def cmd_drivers(
         await message.answer(MSG_NO_PERMISSION)
         return
 
-    drivers, total_pages = await get_all_drivers(session, page=1)
+    drivers, total_pages = await get_all_drivers(session=session, page=1)
     if not drivers:
         await message.answer("ℹ️ No driver records found.")
         return
@@ -540,7 +540,7 @@ async def handle_drivers_pagination(
         return
 
     page = int(callback.data.split(":")[1])
-    drivers, total_pages = await get_all_drivers(session, page=page)
+    drivers, total_pages = await get_all_drivers(session=session, page=page)
     if not drivers:
         await callback.message.edit_text("ℹ️ No driver records found.")
         return
@@ -567,7 +567,7 @@ async def handle_view_driver_detail_manage(
         return
 
     try:
-        detail = await get_driver_by_id(session, callback_data.driver_id)
+        detail = await get_driver_by_id(session=session, driver_id=callback_data.driver_id)
         text = MSG_DRIVER_DETAIL_TITLE.format(
             full_name=detail.full_name,
             phone_number=detail.phone_number,
@@ -684,7 +684,7 @@ async def handle_driver_field_input(
             value=new_value,
             admin_telegram_id=user.telegram_id,
         )
-        updated_driver = await update_driver_field(session, dto)
+        updated_driver = await update_driver_field(session=session, dto=dto)
 
         field_labels = {
             "full_name": "Name",
@@ -723,7 +723,7 @@ async def handle_remove_driver_confirm(
         return
 
     try:
-        detail = await get_driver_by_id(session, callback_data.driver_id)
+        detail = await get_driver_by_id(session=session, driver_id=callback_data.driver_id)
         keyboard = driver_remove_confirm_keyboard(detail.driver_id)
         await callback.message.edit_text(
             MSG_DRIVER_REMOVE_CONFIRM.format(full_name=detail.full_name),
@@ -751,12 +751,12 @@ async def handle_remove_driver_execute(
         return
 
     try:
-        detail = await get_driver_by_id(session, callback_data.driver_id)
+        detail = await get_driver_by_id(session=session, driver_id=callback_data.driver_id)
         dto = RemoveDriverDTO(
             driver_id=callback_data.driver_id,
             admin_telegram_id=user.telegram_id,
         )
-        await remove_driver(session, dto)
+        await remove_driver(session=session, dto=dto)
 
         await callback.message.edit_text(
             MSG_DRIVER_REMOVED.format(full_name=detail.full_name),
@@ -783,7 +783,7 @@ async def handle_remove_driver_cancel(
         return
 
     try:
-        detail = await get_driver_by_id(session, callback_data.driver_id)
+        detail = await get_driver_by_id(session=session, driver_id=callback_data.driver_id)
         keyboard = driver_detail_keyboard(detail.driver_id)
         text = MSG_DRIVER_DETAIL_TITLE.format(
             full_name=detail.full_name,
@@ -825,7 +825,7 @@ async def handle_driver_edit_back(
 
     try:
         driver_id = int(callback.data.split(":")[1])
-        detail = await get_driver_by_id(session, driver_id)
+        detail = await get_driver_by_id(session=session, driver_id=driver_id)
         keyboard = driver_detail_keyboard(detail.driver_id)
         text = MSG_DRIVER_DETAIL_TITLE.format(
             full_name=detail.full_name,
@@ -861,7 +861,7 @@ async def handle_drivers_back(
         await callback.answer(ErrorMessages.ADMIN_ACCESS_REQUIRED, show_alert=True)
         return
 
-    drivers, total_pages = await get_all_drivers(session, page=1)
+    drivers, total_pages = await get_all_drivers(session=session, page=1)
     if not drivers:
         await callback.message.edit_text("ℹ️ No driver records found.")
         return
@@ -1197,7 +1197,7 @@ async def execute_broadcast(
 
     await callback.message.edit_text("⏳ Dispatching broadcast messages... Please wait.")
 
-    target_telegram_ids = await get_broadcast_target_telegram_ids(session, broadcast_dto.audience)
+    target_telegram_ids = await get_broadcast_target_telegram_ids(session=session, audience=broadcast_dto.audience)
     total_targets = len(target_telegram_ids)
     success_count = 0
 
@@ -1269,7 +1269,7 @@ async def cmd_add_driver(
     target_tg_id = int(parts[1])
 
     try:
-        added = await add_authorized_driver(target_tg_id, user.telegram_id, session)
+        added = await add_authorized_driver(session=session, telegram_id=target_tg_id, admin_telegram_id=user.telegram_id)
         if added:
             await message.answer(
                 f"✅ Telegram user {target_tg_id} has been added to the authorized driver list."
