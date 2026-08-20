@@ -18,7 +18,7 @@ class TestNotifyDriverApprovalStatus:
         bot.send_message.assert_awaited_once_with(
             chat_id=123456789,
             text=MSG_NOTIFY_DRIVER_APPROVED,
-            parse_mode="Markdown",
+            parse_mode="HTML",
         )
 
     async def test_sends_rejection_message(self):
@@ -32,7 +32,7 @@ class TestNotifyDriverApprovalStatus:
         assert result is True
         call_kwargs = bot.send_message.call_args[1]
         assert "Incomplete docs" in call_kwargs["text"]
-        assert call_kwargs["parse_mode"] == "Markdown"
+        assert call_kwargs["parse_mode"] == "HTML"
 
     async def test_returns_false_on_send_failure(self):
         bot = MagicMock()

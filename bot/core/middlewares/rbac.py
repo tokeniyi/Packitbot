@@ -41,6 +41,7 @@ from bot.core.constants.messages import (
 from bot.core.keyboards.common_kb import HomeButton
 from bot.core.models.admin_profile import AdminProfile
 from bot.core.models.driver_profile import DriverProfile
+from bot.core.constants.enums import DriverStatus
 from bot.core.models.student_profile import StudentProfile
 
 logger = logging.getLogger(__name__)
@@ -111,7 +112,10 @@ class RBACMiddleware(BaseMiddleware):
         if user.role == UserRole.STUDENT:
             stmt = select(StudentProfile).where(StudentProfile.user_id == user.id)
         elif user.role == UserRole.DRIVER:
-            stmt = select(DriverProfile).where(DriverProfile.user_id == user.id)
+            stmt = select(DriverProfile).where(
+                DriverProfile.user_id == user.id,
+                DriverProfile.status == DriverStatus.APPROVED,
+            )
         elif user.role == UserRole.ADMIN:
             stmt = select(AdminProfile).where(AdminProfile.user_id == user.id)
         else:

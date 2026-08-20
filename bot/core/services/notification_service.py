@@ -22,6 +22,7 @@
 # ---------------------------------------------------------------------------
 
 import logging
+from html import escape
 from typing import Optional
 
 from aiogram import Bot
@@ -57,11 +58,11 @@ async def notify_driver_approval_status(
         text = MSG_NOTIFY_DRIVER_REJECTED
         # Append the rejection reason if one was provided.
         if reason:
-            text += f"\n\n**Reason:** {reason}"
+            text += f"\n\n<b>Reason:</b> {escape(str(reason))}"
 
     # Attempt to send the message via the aiogram Bot instance.
     try:
-        await bot.send_message(chat_id=telegram_id, text=text, parse_mode="Markdown")
+        await bot.send_message(chat_id=telegram_id, text=text, parse_mode="HTML")
         return True
     except Exception as e:
         # Log the failure and return False so the caller can handle it.

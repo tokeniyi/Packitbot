@@ -34,7 +34,7 @@ class ReviewDriverDTO:
 
     Attributes:
         driver_id (int): The primary key of the ``DriverProfile`` being reviewed.
-        admin_telegram_id (int): Telegram ID of the admin performing the action.
+        admin_user_id (int): Telegram ID of the admin performing the action.
         rejection_reason (Optional[str]): Optional reason provided when rejecting.
             Defaults to ``None``.
 
@@ -44,7 +44,7 @@ class ReviewDriverDTO:
     """
 
     driver_id: int
-    admin_telegram_id: int
+    admin_user_id: int
     rejection_reason: Optional[str] = None
 
 
@@ -55,7 +55,7 @@ class BroadcastDTO:
     Attributes:
         audience (str): Target audience identifier ("students", "drivers", or "all").
         message_text (str): The broadcast message body.
-        admin_telegram_id (int): Telegram ID of the admin sending the broadcast.
+        admin_user_id (int): Telegram ID of the admin sending the broadcast.
 
     Used by:
         - ``bot/admin/service.py``: ``get_broadcast_target_telegram_ids``
@@ -64,7 +64,7 @@ class BroadcastDTO:
 
     audience: str
     message_text: str
-    admin_telegram_id: int
+    admin_user_id: int
 
 
 @dataclass
@@ -226,7 +226,7 @@ class UpdateDriverFieldDTO:
             ``phone_number``, ``vehicle_type``, ``plate_number``,
             ``license_number``, ``status``).
         value (str): The new value for the field.
-        admin_telegram_id (int): Telegram ID of the admin performing the update.
+        admin_user_id (int): Telegram ID of the admin performing the update.
 
     Used by:
         - ``bot/admin/service.py``: ``update_driver_field``
@@ -236,7 +236,7 @@ class UpdateDriverFieldDTO:
     driver_id: int
     field: str
     value: str
-    admin_telegram_id: int
+    admin_user_id: int
 
 
 @dataclass
@@ -245,7 +245,7 @@ class RemoveDriverDTO:
 
     Attributes:
         driver_id (int): Primary key of the ``DriverProfile`` to remove.
-        admin_telegram_id (int): Telegram ID of the admin performing the removal.
+        admin_user_id (int): Telegram ID of the admin performing the removal.
 
     Used by:
         - ``bot/admin/service.py``: ``remove_driver``
@@ -253,7 +253,7 @@ class RemoveDriverDTO:
     """
 
     driver_id: int
-    admin_telegram_id: int
+    admin_user_id: int
 
 
 @dataclass
@@ -262,7 +262,7 @@ class BanUserDTO:
 
     Attributes:
         target_user_id (int): Primary key of the ``User`` to ban.
-        admin_telegram_id (int): Telegram ID of the admin performing the ban.
+        admin_user_id (int): Telegram ID of the admin performing the ban.
         reason (Optional[str]): Optional ban reason. Defaults to ``None``.
 
     Used by:
@@ -271,7 +271,7 @@ class BanUserDTO:
     """
 
     target_user_id: int
-    admin_telegram_id: int
+    admin_user_id: int
     reason: Optional[str] = None
 
 
@@ -281,7 +281,7 @@ class UnbanUserDTO:
 
     Attributes:
         target_user_id (int): Primary key of the ``User`` to unban.
-        admin_telegram_id (int): Telegram ID of the admin performing the unban.
+        admin_user_id (int): Telegram ID of the admin performing the unban.
         reason (Optional[str]): Optional note explaining the unban. Defaults to ``None``.
 
     Used by:
@@ -290,7 +290,7 @@ class UnbanUserDTO:
     """
 
     target_user_id: int
-    admin_telegram_id: int
+    admin_user_id: int
     reason: Optional[str] = None
 
 
@@ -300,7 +300,7 @@ class PromoteAdminDTO:
 
     Attributes:
         target_user_id (int): Primary key of the ``User`` to promote.
-        admin_telegram_id (int): Telegram ID of the admin performing the promotion.
+        admin_user_id (int): Telegram ID of the admin performing the promotion.
 
     Used by:
         - ``bot/admin/service.py``: ``promote_admin``
@@ -308,7 +308,7 @@ class PromoteAdminDTO:
     """
 
     target_user_id: int
-    admin_telegram_id: int
+    admin_user_id: int
 
 
 @dataclass

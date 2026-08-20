@@ -1,3 +1,4 @@
+from html import escape
 """Driver module router - registration FSM, availability, and active delivery flows.
 
 This module defines the aiogram Router for all driver-related conversation
@@ -91,11 +92,11 @@ async def _show_review_screen(target: Message | CallbackQuery, state: FSMContext
 
     summary = (
         "🚗 <b>Driver Registration Review</b>\n\n"
-        f"• <b>Full Name:</b> {data.get('full_name')}\n"
-        f"• <b>Phone Number:</b> {data.get('phone_number')}\n"
-        f"• <b>Vehicle Type:</b> {data.get('vehicle_type', '').upper()}\n"
-        f"• <b>Plate Number:</b> {data.get('plate_number')}\n"
-        f"• <b>License Number:</b> {data.get('license_number')}\n\n"
+        f"• <b>Full Name:</b> {escape(str(data.get('full_name') or ""))}\n"
+        f"• <b>Phone Number:</b> {escape(str(data.get('phone_number') or ""))}\n"
+        f"• <b>Vehicle Type:</b> {escape(str(data.get('vehicle_type', '') or '').upper())}\n"
+        f"• <b>Plate Number:</b> {escape(str(data.get('plate_number') or ""))}\n"
+        f"• <b>License Number:</b> {escape(str(data.get('license_number') or ""))}\n\n"
         "Please confirm your registration details."
     )
 
@@ -646,10 +647,10 @@ async def process_driver_accept(callback: CallbackQuery, session=None) -> None:
             f"📦 <b>Request #{req.id}</b>\n"
             f"📍 Pickup: {req.pickup_detail} ({req.hall_of_residence})\n"
             f"🎯 Dropoff: {req.dropoff_address}\n"
-            f"👤 Recipient: {req.recipient_name} ({req.recipient_phone})\n\n"
+            f"👤 Recipient: {escape(str(req.recipient_name or ""))} ({escape(str(req.recipient_phone or ""))})\n\n"
             f"📞 <b>Student Contact Details:</b>\n"
             f"• Name: {student_name}\n"
-            f"• Phone: {student_phone}",
+            f"• Phone: {escape(str(student_phone or ""))}",
             parse_mode="HTML",
             reply_markup=delivery_status_update_keyboard(req.id, req.status),
         )
@@ -665,7 +666,7 @@ async def process_driver_accept(callback: CallbackQuery, session=None) -> None:
                         f"📦 <b>Request #{req.id}</b>\n"
                         f"📞 <b>Driver Contact Details:</b>\n"
                         f"• Name: {driver_name}\n"
-                        f"• Phone: {driver_phone}"
+                        f"• Phone: {escape(str(driver_phone or ""))}"
                     ),
                     parse_mode="HTML",
                 )
@@ -756,12 +757,12 @@ async def active_delivery_dashboard_handler(message: Message, session=None) -> N
             f"📌 <b>Status:</b> {active_req.status.value.replace('_', ' ').title()}\n"
             f"📍 <b>Pickup:</b> {active_req.pickup_detail} ({active_req.hall_of_residence})\n"
             f"🎯 <b>Dropoff:</b> {active_req.dropoff_address} ({active_req.dropoff_landmark or 'N/A'})\n"
-            f"👤 <b>Recipient:</b> {active_req.recipient_name} ({active_req.recipient_phone})\n"
+            f"👤 <b>Recipient:</b> {escape(str(active_req.recipient_name or ""))} ({escape(str(active_req.recipient_phone or ""))})\n"
             f"🧳 <b>Luggage:</b> {active_req.luggage_size.value.title()} x{active_req.luggage_count}\n"
             f"📝 <b>Instructions:</b> {active_req.special_instructions or 'None'}\n\n"
             f"📞 <b>Student Contact Details:</b>\n"
             f"• Name: {student_name}\n"
-            f"• Phone: {student_phone}"
+            f"• Phone: {escape(str(student_phone or ""))}"
         )
 
         kb = delivery_status_update_keyboard(active_req.id, active_req.status)
@@ -886,10 +887,10 @@ async def process_delivery_status_step(callback: CallbackQuery, session=None) ->
             f"📌 <b>Current Status:</b> {new_status_title}\n"
             f"📍 <b>Pickup:</b> {req.pickup_detail} ({req.hall_of_residence})\n"
             f"🎯 <b>Dropoff:</b> {req.dropoff_address}\n"
-            f"👤 <b>Recipient:</b> {req.recipient_name} ({req.recipient_phone})\n\n"
+            f"👤 <b>Recipient:</b> {escape(str(req.recipient_name or ""))} ({escape(str(req.recipient_phone or ""))})\n\n"
             f"📞 <b>Student Contact Details:</b>\n"
             f"• Name: {student_name}\n"
-            f"• Phone: {student_phone}",
+            f"• Phone: {escape(str(student_phone or ""))}",
             parse_mode="HTML",
             reply_markup=kb,
         )

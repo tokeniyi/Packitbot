@@ -367,7 +367,7 @@ async def approve_driver(
         - ``bot/admin/handler.py``: ``handle_approve_driver``
     """
     # 1. Verify admin user
-    admin_stmt = select(User).where(User.telegram_id == dto.admin_telegram_id)
+    admin_stmt = select(User).where(User.id == dto.admin_user_id)
     admin_res = await session.execute(admin_stmt)
     admin_user = admin_res.scalar_one_or_none()
     if not admin_user or admin_user.role != UserRole.ADMIN:
@@ -456,7 +456,7 @@ async def reject_driver(
         - ``bot/admin/handler.py``: ``handle_reject_driver``
     """
     # 1. Verify admin user
-    admin_stmt = select(User).where(User.telegram_id == dto.admin_telegram_id)
+    admin_stmt = select(User).where(User.id == dto.admin_user_id)
     admin_res = await session.execute(admin_stmt)
     admin_user = admin_res.scalar_one_or_none()
     if not admin_user or admin_user.role != UserRole.ADMIN:
@@ -670,7 +670,7 @@ async def ban_user(
         - ``bot/admin/handler.py``: ``process_ban_reason``
     """
     # Verify admin
-    admin_stmt = select(User).where(User.telegram_id == dto.admin_telegram_id)
+    admin_stmt = select(User).where(User.id == dto.admin_user_id)
     admin_res = await session.execute(admin_stmt)
     admin_user = admin_res.scalar_one_or_none()
     if not admin_user or admin_user.role != UserRole.ADMIN:
@@ -748,7 +748,7 @@ async def unban_user(
         - ``bot/admin/handler.py``: ``handle_unban_user``
     """
     # Verify admin
-    admin_stmt = select(User).where(User.telegram_id == dto.admin_telegram_id)
+    admin_stmt = select(User).where(User.id == dto.admin_user_id)
     admin_res = await session.execute(admin_stmt)
     admin_user = admin_res.scalar_one_or_none()
     if not admin_user or admin_user.role != UserRole.ADMIN:
@@ -826,7 +826,7 @@ async def promote_admin(
         - ``bot/admin/handler.py``: ``handle_promote_admin``
     """
     # Verify admin
-    admin_stmt = select(User).where(User.telegram_id == dto.admin_telegram_id)
+    admin_stmt = select(User).where(User.id == dto.admin_user_id)
     admin_res = await session.execute(admin_stmt)
     admin_user = admin_res.scalar_one_or_none()
     if not admin_user or admin_user.role != UserRole.ADMIN:
@@ -1131,7 +1131,7 @@ async def update_driver_field(
     Called by:
         - ``bot/admin/handler.py``: ``handle_driver_field_input``
     """
-    admin_stmt = select(User).where(User.telegram_id == dto.admin_telegram_id)
+    admin_stmt = select(User).where(User.id == dto.admin_user_id)
     admin_res = await session.execute(admin_stmt)
     admin_user = admin_res.scalar_one_or_none()
     if not admin_user or admin_user.role != UserRole.ADMIN:
@@ -1252,7 +1252,7 @@ async def remove_driver(
     Called by:
         - ``bot/admin/handler.py``: ``handle_remove_driver_execute``
     """
-    admin_stmt = select(User).where(User.telegram_id == dto.admin_telegram_id)
+    admin_stmt = select(User).where(User.id == dto.admin_user_id)
     admin_res = await session.execute(admin_stmt)
     admin_user = admin_res.scalar_one_or_none()
     if not admin_user or admin_user.role != UserRole.ADMIN:
@@ -1287,7 +1287,7 @@ async def remove_driver(
 async def add_authorized_driver(
     session: AsyncSession,
     telegram_id: int,
-    admin_telegram_id: int,
+    admin_user_id: int,
 ) -> bool:
     """Add a Telegram user ID to the pre-approved authorized driver list.
 
@@ -1299,7 +1299,7 @@ async def add_authorized_driver(
 
     Args:
         telegram_id:        The Telegram user ID to authorize.
-        admin_telegram_id:  The Telegram ID of the admin performing the action.
+        admin_user_id:  The Telegram ID of the admin performing the action.
         session:            Optional injected ``AsyncSession``.
 
     Returns:
@@ -1314,7 +1314,7 @@ async def add_authorized_driver(
     """
 
     # Verify admin user
-    admin_stmt = select(User).where(User.telegram_id == admin_telegram_id)
+    admin_stmt = select(User).where(User.telegram_id == admin_user_id)
     admin_res = await session.execute(admin_stmt)
     admin_user = admin_res.scalar_one_or_none()
     if not admin_user or admin_user.role != UserRole.ADMIN:

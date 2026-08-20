@@ -410,7 +410,7 @@ async def handle_approve_driver(
     try:
         dto = ReviewDriverDTO(
             driver_id=callback_data.driver_id,
-            admin_telegram_id=user.telegram_id,
+            admin_user_id=user.id,
         )
         approved_driver = await approve_driver(session=session, dto=dto)
 
@@ -451,7 +451,7 @@ async def handle_reject_driver(
     try:
         dto = ReviewDriverDTO(
             driver_id=callback_data.driver_id,
-            admin_telegram_id=user.telegram_id,
+            admin_user_id=user.id,
         )
         rejected_driver = await reject_driver(session=session, dto=dto)
 
@@ -682,7 +682,7 @@ async def handle_driver_field_input(
             driver_id=driver_id,
             field=field,
             value=new_value,
-            admin_telegram_id=user.telegram_id,
+            admin_user_id=user.id,
         )
         updated_driver = await update_driver_field(session=session, dto=dto)
 
@@ -754,7 +754,7 @@ async def handle_remove_driver_execute(
         detail = await get_driver_by_id(session=session, driver_id=callback_data.driver_id)
         dto = RemoveDriverDTO(
             driver_id=callback_data.driver_id,
-            admin_telegram_id=user.telegram_id,
+            admin_user_id=user.id,
         )
         await remove_driver(session=session, dto=dto)
 
@@ -991,7 +991,7 @@ async def process_ban_reason(
     try:
         dto = BanUserDTO(
             target_user_id=target_user_id,
-            admin_telegram_id=user.telegram_id,
+            admin_user_id=user.id,
             reason=reason,
         )
         updated_user = await ban_user(session, dto)
@@ -1024,7 +1024,7 @@ async def handle_unban_user(
     try:
         dto = UnbanUserDTO(
             target_user_id=callback_data.user_id,
-            admin_telegram_id=user.telegram_id,
+            admin_user_id=user.id,
         )
         updated_user = await unban_user(session, dto)
         await callback.message.edit_text(
@@ -1056,7 +1056,7 @@ async def handle_promote_admin(
     try:
         dto = PromoteAdminDTO(
             target_user_id=callback_data.user_id,
-            admin_telegram_id=user.telegram_id,
+            admin_user_id=user.id,
         )
         updated_user = await promote_admin(session, dto)
         await callback.message.edit_text(
@@ -1192,7 +1192,7 @@ async def execute_broadcast(
     broadcast_dto = BroadcastDTO(
         audience=audience,
         message_text=content,
-        admin_telegram_id=user.telegram_id,
+        admin_user_id=user.id,
     )
 
     await callback.message.edit_text("⏳ Dispatching broadcast messages... Please wait.")
@@ -1269,7 +1269,7 @@ async def cmd_add_driver(
     target_tg_id = int(parts[1])
 
     try:
-        added = await add_authorized_driver(session=session, telegram_id=target_tg_id, admin_telegram_id=user.telegram_id)
+        added = await add_authorized_driver(session=session, telegram_id=target_tg_id, admin_user_id=user.id)
         if added:
             await message.answer(
                 f"✅ Telegram user {target_tg_id} has been added to the authorized driver list."

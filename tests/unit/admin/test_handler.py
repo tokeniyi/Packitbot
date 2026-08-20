@@ -39,6 +39,7 @@ def _make_callback(data: str = "", user_id: int = 1, driver_id: int = 1) -> Magi
 def _make_admin_user(telegram_id: int = 42) -> User:
     user = MagicMock(spec=User)
     user.telegram_id = telegram_id
+    user.id = 99
     user.role = UserRole.ADMIN
     return user
 
@@ -215,7 +216,7 @@ class TestHandleApproveDriver:
 
                 mock_approve.assert_awaited_once()
                 assert mock_approve.call_args.kwargs["session"] is None
-                assert mock_approve.call_args.kwargs["dto"].admin_telegram_id == user.telegram_id
+                assert mock_approve.call_args.kwargs["dto"].admin_user_id == user.id
                 mock_notify.assert_awaited_once()
                 callback.message.edit_text.assert_awaited_once()
 
@@ -249,7 +250,7 @@ class TestHandleRejectDriver:
 
                 mock_reject.assert_awaited_once()
                 assert mock_reject.call_args.kwargs["session"] is None
-                assert mock_reject.call_args.kwargs["dto"].admin_telegram_id == user.telegram_id
+                assert mock_reject.call_args.kwargs["dto"].admin_user_id == user.id
                 mock_notify.assert_awaited_once()
                 callback.message.edit_text.assert_awaited_once()
 

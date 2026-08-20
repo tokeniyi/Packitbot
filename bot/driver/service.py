@@ -101,7 +101,7 @@ async def register_driver(
             username=dto.username,
             full_name=validated_name,
             phone_number=validated_phone,
-            role=UserRole.DRIVER,
+            role=None,
             account_status=AccountStatus.ACTIVE,
         )
     else:
@@ -109,7 +109,6 @@ async def register_driver(
             user.id,
             full_name=validated_name,
             phone_number=validated_phone,
-            role=UserRole.DRIVER,
         )
 
     # Check existing driver profile

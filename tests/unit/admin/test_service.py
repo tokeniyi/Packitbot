@@ -130,9 +130,9 @@ class TestApproveDriver:
         session.flush.return_value = None
 
         from bot.admin.schemas import ReviewDriverDTO
-        dto = ReviewDriverDTO(driver_id=1, admin_telegram_id=42)
+        dto = ReviewDriverDTO(driver_id=1, admin_user_id=42)
 
-        result = await approve_driver(dto, session=session)
+        result = await approve_driver(session=session, dto=dto)
 
         assert dp.status == DriverStatus.APPROVED
         assert user.role == UserRole.DRIVER
@@ -150,10 +150,10 @@ class TestApproveDriver:
         session.execute.return_value = result_mock
 
         from bot.admin.schemas import ReviewDriverDTO
-        dto = ReviewDriverDTO(driver_id=1, admin_telegram_id=42)
+        dto = ReviewDriverDTO(driver_id=1, admin_user_id=42)
 
         with pytest.raises(ValidationError, match="Admin permission required"):
-            await approve_driver(dto, session=session)
+            await approve_driver(session=session, dto=dto)
 
     async def test_raises_when_already_approved(self):
         session = AsyncMock()
@@ -170,10 +170,10 @@ class TestApproveDriver:
         session.execute.side_effect = [admin_row, driver_row]
 
         from bot.admin.schemas import ReviewDriverDTO
-        dto = ReviewDriverDTO(driver_id=1, admin_telegram_id=42)
+        dto = ReviewDriverDTO(driver_id=1, admin_user_id=42)
 
         with pytest.raises(ValidationError, match="already approved"):
-            await approve_driver(dto, session=session)
+            await approve_driver(session=session, dto=dto)
 
 
 class TestRejectDriver:
@@ -197,10 +197,10 @@ class TestRejectDriver:
 
         from bot.admin.schemas import ReviewDriverDTO
         dto = ReviewDriverDTO(
-            driver_id=1, admin_telegram_id=42, rejection_reason="Incomplete docs"
+            driver_id=1, admin_user_id=42, rejection_reason="Incomplete docs"
         )
 
-        result = await reject_driver(dto, session=session)
+        result = await reject_driver(session=session, dto=dto)
 
         assert dp.status == DriverStatus.REJECTED
         session.add.assert_called_once()
@@ -219,10 +219,10 @@ class TestRejectDriver:
         session.execute.return_value = result_mock
 
         from bot.admin.schemas import ReviewDriverDTO
-        dto = ReviewDriverDTO(driver_id=1, admin_telegram_id=42)
+        dto = ReviewDriverDTO(driver_id=1, admin_user_id=42)
 
         with pytest.raises(ValidationError, match="Admin permission required"):
-            await reject_driver(dto, session=session)
+            await reject_driver(session=session, dto=dto)
 
     async def test_raises_when_driver_not_found(self):
         session = AsyncMock()
@@ -238,10 +238,10 @@ class TestRejectDriver:
         session.execute.side_effect = [admin_row, driver_row]
 
         from bot.admin.schemas import ReviewDriverDTO
-        dto = ReviewDriverDTO(driver_id=999, admin_telegram_id=42)
+        dto = ReviewDriverDTO(driver_id=999, admin_user_id=42)
 
         with pytest.raises(NotFoundError):
-            await reject_driver(dto, session=session)
+            await reject_driver(session=session, dto=dto)
 
 
 class TestGetStats:

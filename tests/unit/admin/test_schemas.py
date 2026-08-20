@@ -7,14 +7,14 @@ from bot.core.constants.enums import DriverStatus, UserRole
 
 class TestReviewDriverDTO:
     def test_valid_construction(self):
-        dto = ReviewDriverDTO(driver_id=1, admin_telegram_id=42)
+        dto = ReviewDriverDTO(driver_id=1, admin_user_id=42)
         assert dto.driver_id == 1
-        assert dto.admin_telegram_id == 42
+        assert dto.admin_user_id == 42
         assert dto.rejection_reason is None
 
     def test_with_rejection_reason(self):
         dto = ReviewDriverDTO(
-            driver_id=1, admin_telegram_id=42, rejection_reason="Incomplete docs"
+            driver_id=1, admin_user_id=42, rejection_reason="Incomplete docs"
         )
         assert dto.rejection_reason == "Incomplete docs"
 
