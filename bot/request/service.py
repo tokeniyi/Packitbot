@@ -162,7 +162,7 @@ class RequestService:
             PermissionDeniedError: If the request cannot be edited (wrong status or actor).
             ValidationError: If a database integrity constraint is violated.
         """
-        request = await self.request_repo.get_by_id(dto.request_id)
+        request = await self.request_repo.get_by_id_for_update(dto.request_id)
         if request is None:
             raise NotFoundError(f"DeliveryRequest with id={dto.request_id} not found")
 
@@ -207,7 +207,7 @@ class RequestService:
                 transition to ``ASSIGNED``.
             ValidationError: If a database integrity constraint is violated.
         """
-        request = await self.request_repo.get_by_id(dto.request_id)
+        request = await self.request_repo.get_by_id_for_update(dto.request_id)
         if request is None:
             raise NotFoundError(f"DeliveryRequest with id={dto.request_id} not found")
 
@@ -266,7 +266,7 @@ class RequestService:
             InvalidStatusTransitionError: If the transition is not permitted by the state machine.
             ValidationError: If a database integrity constraint is violated.
         """
-        request = await self.request_repo.get_by_id(dto.request_id)
+        request = await self.request_repo.get_by_id_for_update(dto.request_id)
         if request is None:
             raise NotFoundError(f"DeliveryRequest with id={dto.request_id} not found")
 

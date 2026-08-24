@@ -23,6 +23,17 @@ class BaseRepository(Generic[T]):
     async def get_by_id(self, entity_id: int) -> Optional[T]:
         return await self.session.get(self.model, entity_id)
 
+    async def get_by_id_for_update(self, entity_id: int) -> Optional[T]:
+        """Load an entity while locking its row for the current transaction.
+
+        Mutation services use this method when validation depends on the
+        current persisted state.  The lock closes the read/validate/update
+        race between concurrent handlers.
+        """
+        stmt = select(self.model).where(self.model.id == entity_id).with_for_update()
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def create(self, **kwargs) -> T:
         entity = self.model(**kwargs)
         self.session.add(entity)

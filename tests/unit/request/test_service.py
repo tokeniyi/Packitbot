@@ -42,6 +42,14 @@ def _make_session():
     return AsyncMock()
 
 
+@pytest.fixture(autouse=True)
+def configure_locked_request_reads(monkeypatch):
+    async def locked_read(self, entity_id):
+        return await self.session.get(self.model, entity_id)
+
+    monkeypatch.setattr(RequestRepository, "get_by_id_for_update", locked_read)
+
+
 def _make_request(
     id: int = 1,
     status: RequestStatus = RequestStatus.PENDING,
@@ -78,6 +86,8 @@ class TestRequestServiceCreateRequest:
 
         request = _make_request(id=1, status=RequestStatus.PENDING)
         session.get.return_value = None
+        session.execute.return_value = None
+
         repo.create = AsyncMock(return_value=request)
         status_log_repo.create = AsyncMock(return_value=MagicMock(spec=RequestStatusLog))
 
@@ -142,6 +152,8 @@ class TestRequestServiceUpdateRequest:
         repo = RequestRepository(session)
         req = _make_request(id=42, status=RequestStatus.PENDING, student_id=1)
         session.get.return_value = req
+        session.execute.return_value = req
+
         repo.update = AsyncMock(return_value=req)
 
         service = RequestService(session)
@@ -157,6 +169,8 @@ class TestRequestServiceUpdateRequest:
         session = _make_session()
         repo = RequestRepository(session)
         session.get.return_value = None
+        session.execute.return_value = None
+
 
         service = RequestService(session)
         service.request_repo = repo
@@ -170,6 +184,8 @@ class TestRequestServiceUpdateRequest:
         repo = RequestRepository(session)
         req = _make_request(id=42, status=RequestStatus.PENDING, student_id=1)
         session.get.return_value = req
+        session.execute.return_value = req
+
 
         service = RequestService(session)
         service.request_repo = repo
@@ -183,6 +199,8 @@ class TestRequestServiceUpdateRequest:
         repo = RequestRepository(session)
         req = _make_request(id=42, status=RequestStatus.ASSIGNED, student_id=1)
         session.get.return_value = req
+        session.execute.return_value = req
+
 
         service = RequestService(session)
         service.request_repo = repo
@@ -199,6 +217,8 @@ class TestRequestServiceAssignDriver:
         status_log_repo = StatusLogRepository(session)
         req = _make_request(id=1, status=RequestStatus.PENDING, student_id=1)
         session.get.return_value = req
+        session.execute.return_value = req
+
         repo.update = AsyncMock(return_value=req)
         status_log_repo.create = AsyncMock(return_value=MagicMock(spec=RequestStatusLog))
 
@@ -219,6 +239,8 @@ class TestRequestServiceAssignDriver:
         session = _make_session()
         repo = RequestRepository(session)
         session.get.return_value = None
+        session.execute.return_value = None
+
 
         service = RequestService(session)
         service.request_repo = repo
@@ -233,6 +255,8 @@ class TestRequestServiceAssignDriver:
         repo = RequestRepository(session)
         req = _make_request(id=1)
         session.get.return_value = req
+        session.execute.return_value = req
+
 
         service = RequestService(session)
         service.request_repo = repo
@@ -247,6 +271,8 @@ class TestRequestServiceAssignDriver:
         repo = RequestRepository(session)
         req = _make_request(id=1, status=RequestStatus.DELIVERED)
         session.get.return_value = req
+        session.execute.return_value = req
+
 
         service = RequestService(session)
         service.request_repo = repo
@@ -264,6 +290,8 @@ class TestRequestServiceTransitionStatus:
         status_log_repo = StatusLogRepository(session)
         req = _make_request(id=1, status=RequestStatus.ASSIGNED)
         session.get.return_value = req
+        session.execute.return_value = req
+
         repo.update = AsyncMock(return_value=req)
         status_log_repo.create = AsyncMock(return_value=MagicMock(spec=RequestStatusLog))
 
@@ -290,6 +318,8 @@ class TestRequestServiceTransitionStatus:
         session = _make_session()
         repo = RequestRepository(session)
         session.get.return_value = None
+        session.execute.return_value = None
+
 
         service = RequestService(session)
         service.request_repo = repo
@@ -303,6 +333,8 @@ class TestRequestServiceTransitionStatus:
         repo = RequestRepository(session)
         req = _make_request(id=1, status=RequestStatus.PENDING)
         session.get.return_value = req
+        session.execute.return_value = req
+
 
         service = RequestService(session)
         service.request_repo = repo
@@ -319,6 +351,8 @@ class TestRequestServiceCancelRequest:
         status_log_repo = StatusLogRepository(session)
         req = _make_request(id=1, status=RequestStatus.PENDING, student_id=42)
         session.get.return_value = req
+        session.execute.return_value = req
+
 
         async def _apply_updates(entity_id, **kwargs):
             for key, value in kwargs.items():
@@ -349,6 +383,8 @@ class TestRequestServiceCancelRequest:
         repo = RequestRepository(session)
         req = _make_request(id=1, status=RequestStatus.EN_ROUTE_TO_PICKUP, student_id=42)
         session.get.return_value = req
+        session.execute.return_value = req
+
 
         service = RequestService(session)
         service.request_repo = repo
@@ -367,6 +403,8 @@ class TestRequestServiceCancelRequest:
         status_log_repo = StatusLogRepository(session)
         req = _make_request(id=1, status=RequestStatus.ASSIGNED, student_id=42)
         session.get.return_value = req
+        session.execute.return_value = req
+
 
         async def _apply_updates(entity_id, **kwargs):
             for key, value in kwargs.items():
@@ -395,6 +433,8 @@ class TestRequestServiceCancelRequest:
         session = _make_session()
         repo = RequestRepository(session)
         session.get.return_value = None
+        session.execute.return_value = None
+
 
         service = RequestService(session)
         service.request_repo = repo
@@ -408,6 +448,8 @@ class TestRequestServiceCancelRequest:
         repo = RequestRepository(session)
         req = _make_request(id=1, status=RequestStatus.DELIVERED, student_id=42)
         session.get.return_value = req
+        session.execute.return_value = req
+
 
         service = RequestService(session)
         service.request_repo = repo
@@ -424,6 +466,8 @@ class TestRequestServiceSubmitFeedback:
         feedback_repo = FeedbackRepository(session)
         req = _make_request(id=1, status=RequestStatus.DELIVERED, student_id=42)
         session.get.return_value = req
+        session.execute.return_value = req
+
         feedback_repo.get_for_request = AsyncMock(return_value=None)
 
         feedback = MagicMock(spec=Feedback)
@@ -449,6 +493,8 @@ class TestRequestServiceSubmitFeedback:
         session = _make_session()
         repo = RequestRepository(session)
         session.get.return_value = None
+        session.execute.return_value = None
+
 
         service = RequestService(session)
         service.request_repo = repo
@@ -463,6 +509,8 @@ class TestRequestServiceSubmitFeedback:
         feedback_repo = FeedbackRepository(session)
         req = _make_request(id=1, status=RequestStatus.DELIVERED)
         session.get.return_value = req
+        session.execute.return_value = req
+
         existing_feedback = MagicMock(spec=Feedback)
         feedback_repo.get_for_request = AsyncMock(return_value=existing_feedback)
 
@@ -480,6 +528,8 @@ class TestRequestServiceSubmitFeedback:
         feedback_repo = FeedbackRepository(session)
         req = _make_request(id=1, status=RequestStatus.PENDING, student_id=42)
         session.get.return_value = req
+        session.execute.return_value = req
+
         feedback_repo.get_for_request = AsyncMock(return_value=None)
 
         service = RequestService(session)
@@ -496,6 +546,8 @@ class TestRequestServiceSubmitFeedback:
         feedback_repo = FeedbackRepository(session)
         req = _make_request(id=1, status=RequestStatus.DELIVERED, student_id=42)
         session.get.return_value = req
+        session.execute.return_value = req
+
         feedback_repo.get_for_request = AsyncMock(return_value=None)
 
         service = RequestService(session)
@@ -512,6 +564,8 @@ class TestRequestServiceSubmitFeedback:
         feedback_repo = FeedbackRepository(session)
         req = _make_request(id=1, status=RequestStatus.DELIVERED, student_id=42)
         session.get.return_value = req
+        session.execute.return_value = req
+
         feedback_repo.get_for_request = AsyncMock(return_value=None)
 
         service = RequestService(session)

@@ -53,6 +53,10 @@ class RequestRepository(BaseRepository[DeliveryRequest]):
         """
         super().__init__(session, DeliveryRequest)
 
+    async def get_by_id_for_update(self, request_id: int) -> DeliveryRequest | None:
+        """Load a request with a row lock for an in-transaction mutation."""
+        return await super().get_by_id_for_update(request_id)
+
     async def get_pending(self, page: int = 1) -> list[DeliveryRequest]:
         """Retrieve a paginated list of requests awaiting driver assignment.
 
@@ -119,7 +123,7 @@ class RequestRepository(BaseRepository[DeliveryRequest]):
             .order_by(desc(DeliveryRequest.created_at))
         )
         result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
+        return result.scalars().first()
 
     async def get_history_for_student(
         self, student_id: int, page: int = 1
