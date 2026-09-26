@@ -1299,7 +1299,8 @@ async def add_authorized_driver(
 
     Args:
         telegram_id:        The Telegram user ID to authorize.
-        admin_user_id:  The Telegram ID of the admin performing the action.
+        admin_user_id:      The internal ``users.id`` of the admin performing
+                            the action (as passed by ``cmd_add_driver``).
         session:            Optional injected ``AsyncSession``.
 
     Returns:
@@ -1314,7 +1315,7 @@ async def add_authorized_driver(
     """
 
     # Verify admin user
-    admin_stmt = select(User).where(User.telegram_id == admin_user_id)
+    admin_stmt = select(User).where(User.id == admin_user_id)
     admin_res = await session.execute(admin_stmt)
     admin_user = admin_res.scalar_one_or_none()
     if not admin_user or admin_user.role != UserRole.ADMIN:
