@@ -9,6 +9,7 @@ from bot.admin.handler import (
     cmd_verify_drivers,
     handle_approve_driver,
     handle_back_to_pending_list,
+    handle_confirm_driver_assignment,
     handle_reject_driver,
     handle_view_driver_detail,
 )
@@ -260,6 +261,76 @@ class TestHandleRejectDriver:
         student.role = UserRole.STUDENT
 
         await handle_reject_driver(callback, MagicMock(), user=student)
+
+        callback.answer.assert_awaited_once()
+
+
+class TestHandleConfirmDriverAssignment:
+    async def test_assigns_using_users_id_not_profile_id(self):
+        """The handler must hand ``RequestService`` the driver's ``users.id``.
+
+        ``AdminAssign.driver_id`` is a ``DriverProfile`` primary key, but
+        ``DeliveryRequest.driver_id`` is a foreign key to ``users.id``.
+        """
+        callback = _make_callback()
+        user = _make_admin_user()
+
+        callback_data = MagicMock(request_id=5, driver_id=7)  # 7 = DriverProfile.id
+
+        driver_profile = MagicMock()
+        driver_profile.id = 7
+        driver_profile.user_id = 42  # the real users.id
+
+        captured: dict = {}
+
+        class _FakeRequestService:
+            def __init__(self, session):
+                pass
+
+            async def assign_driver(self, dto, profile):
+                captured["dto"] = dto
+                req = MagicMock(id=5)
+                req.id = 5
+                return req, MagicMock()
+
+        class _FakeDriverRepository:
+            def __init__(self, session):
+                pass
+
+            async def get_by_id(self, entity_id):
+                assert entity_id == 7
+                return driver_profile
+
+        class _FakeSession:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+            async def commit(self):
+                pass
+
+            async def rollback(self):
+                pass
+
+        with (
+            patch("bot.admin.handler.async_session", return_value=_FakeSession()),
+            patch("bot.admin.handler.RequestService", _FakeRequestService),
+            patch("bot.admin.handler.DriverRepository", _FakeDriverRepository),
+        ):
+            await handle_confirm_driver_assignment(callback, callback_data, user=user)
+
+        assert captured["dto"].driver_id == 42
+        assert captured["dto"].request_id == 5
+        assert captured["dto"].admin_id == user.id
+
+    async def test_non_admin_denied(self):
+        callback = _make_callback()
+        student = MagicMock()
+        student.role = UserRole.STUDENT
+
+        await handle_confirm_driver_assignment(callback, MagicMock(), user=student)
 
         callback.answer.assert_awaited_once()
 

@@ -296,9 +296,12 @@ async def handle_confirm_driver_assignment(
                 await callback.answer("❌ Driver profile not found.", show_alert=True)
                 return
 
+            # ``callback_data.driver_id`` is a ``DriverProfile`` primary key, but
+            # ``DeliveryRequest.driver_id`` is a foreign key to ``users.id``.
+            # Persist the owning user id, not the profile row id.
             dto = AssignDriverDTO(
                 request_id=callback_data.request_id,
-                driver_id=callback_data.driver_id,
+                driver_id=driver_profile.user_id,
                 admin_id=user.id,
             )
             updated_req, event = await req_service.assign_driver(dto, driver_profile)
