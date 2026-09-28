@@ -10,8 +10,8 @@ from bot.core.constants.enums import RequestStatus
 from bot.core.constants.messages import ErrorMessages
 from bot.core.exceptions import PackitbotError, PermissionDeniedError, ValidationError
 from bot.core.models.delivery_request import DeliveryRequest
-from bot.core.models.driver_profile import DriverProfile
 from bot.core.models.feedback import Feedback
+from bot.driver.repository import DriverRepository
 from bot.request.repository import RequestRepository
 from bot.request.schemas import CreateFeedbackDTO
 from bot.request.service import RequestService
@@ -23,16 +23,22 @@ logger = logging.getLogger(__name__)
 feedback_router = Router()
 
 
-async def _recalculate_driver_rating(session, driver_id: int) -> None:
-    """Recalculates driver's running average rating and total deliveries count."""
-    driver_profile = await session.get(DriverProfile, driver_id)
+async def _recalculate_driver_rating(session, driver_user_id: int) -> None:
+    """Recalculates driver's running average rating and total deliveries count.
+
+    Args:
+        driver_user_id: The assigned driver's ``users.id``. ``DeliveryRequest.driver_id``
+            is a FK to ``users.id``, NOT to ``DriverProfile.id``, so the profile must be
+            resolved through ``DriverProfile.user_id``.
+    """
+    driver_profile = await DriverRepository(session).get_by_user_id(driver_user_id)
     if not driver_profile:
         return
 
     stmt = (
         select(func.avg(Feedback.rating), func.count(Feedback.id))
         .join(DeliveryRequest, Feedback.request_id == DeliveryRequest.id)
-        .where(DeliveryRequest.driver_id == driver_id)
+        .where(DeliveryRequest.driver_id == driver_user_id)
     )
     res = await session.execute(stmt)
     avg_rating, total_count = res.one()
