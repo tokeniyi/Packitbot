@@ -33,6 +33,7 @@ from bot.core.models.feedback import Feedback
 from bot.core.models.status_log import RequestStatusLog
 from bot.request.business_rules import (
     can_assign_driver,
+    can_driver_act_on_request,
     can_edit_request,
     can_rate_delivery,
     can_student_cancel,
@@ -251,7 +252,18 @@ class RequestService:
         Used by drivers (and potentially admins) to move requests through
         the operational pipeline (e.g., ACCEPTED -> EN_ROUTE_TO_PICKUP).
 
-        **Calls / Depends on:** ``RequestRepository.get_by_id``, ``RequestRepository.update``, ``StatusLogRepository.create``, ``can_transition``, ``RequestStatusChangedEvent``.
+        Two independent rules are enforced before any write:
+
+        1. **Ownership** — unless ``dto.require_assigned_driver`` is ``False``,
+           the actor must be the driver currently assigned to the request.
+           The state machine below only rejects illegal *transitions*; it
+           never rejects an illegal *actor*, so without this check any
+           Telegram user could accept or complete any delivery by guessing
+           a sequential request ID.
+        2. **Transition legality** — the state machine must permit the
+           ``old_status -> new_status`` move.
+
+        **Calls / Depends on:** ``RequestRepository.get_by_id_for_update``, ``RequestRepository.update``, ``StatusLogRepository.create``, ``can_transition``, ``can_driver_act_on_request``, ``RequestStatusChangedEvent``.
 
         **Called by:** ``bot/driver/handler.py`` (driver action handlers).
 
@@ -263,12 +275,19 @@ class RequestService:
 
         Raises:
             NotFoundError: If the request does not exist.
+            PermissionDeniedError: If the actor is not the assigned driver and
+                ``dto.require_assigned_driver`` is ``True``.
             InvalidStatusTransitionError: If the transition is not permitted by the state machine.
             ValidationError: If a database integrity constraint is violated.
         """
         request = await self.request_repo.get_by_id_for_update(dto.request_id)
         if request is None:
             raise NotFoundError(f"DeliveryRequest with id={dto.request_id} not found")
+
+        if dto.require_assigned_driver and not can_driver_act_on_request(request, dto.actor_id):
+            raise PermissionDeniedError(
+                f"User {dto.actor_id} is not the driver assigned to request {dto.request_id}"
+            )
 
         old_status = request.status
         if not can_transition(old_status, dto.new_status):

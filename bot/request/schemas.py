@@ -120,11 +120,18 @@ class TransitionDTO:
         new_status: Target ``RequestStatus`` to transition to.
         actor_id: Telegram user ID of the driver or admin triggering the transition.
         note: Optional free-text note explaining the transition reason.
+        require_assigned_driver: When ``True`` (the default), the service
+            raises :class:`PermissionDeniedError` unless ``actor_id`` is the
+            driver currently assigned to the request. Only set this to
+            ``False`` for callers that have already established a different
+            authorisation basis (e.g. an admin acting on another driver's
+            request). Defaults to ``True`` so new callers fail closed.
     """
     request_id: int
     new_status: RequestStatus
     actor_id: int
     note: str | None = None
+    require_assigned_driver: bool = True
 
 
 @dataclass(frozen=True)

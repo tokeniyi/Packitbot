@@ -956,6 +956,7 @@ async def process_driver_reject(callback: CallbackQuery, session=None) -> None:
     from bot.core.exceptions import PackitbotError
     from bot.core.models.delivery_request import DeliveryRequest
     from bot.core.models.user import User
+    from bot.request.business_rules import can_driver_act_on_request
     from bot.request.repository import RequestRepository
 
     try:
@@ -968,7 +969,20 @@ async def process_driver_reject(callback: CallbackQuery, session=None) -> None:
             await callback.answer("Driver profile not found.", show_alert=True)
             return
 
+        # Ownership guard: only the assigned driver may reject. This path
+        # mutates through the repository rather than RequestService, so the
+        # guard cannot be inherited from transition_status and must be
+        # applied explicitly here.
         req_repo = RequestRepository(session)
+        assigned_req = await req_repo.get_by_id(request_id)
+        if assigned_req is None:
+            await callback.answer("Request not found.", show_alert=True)
+            return
+        if not can_driver_act_on_request(assigned_req, driver_user.id):
+            await session.rollback()
+            await callback.answer("This delivery is not assigned to you.", show_alert=True)
+            return
+
         # Update request: set status back to PENDING and clear driver_id
         updated_req = await req_repo.update(
             request_id,
