@@ -45,46 +45,43 @@ def _make_callback(data: str = "", user_id: int = 1) -> MagicMock:
 
 
 async def test_register_student_creates_user_and_profile_atomically():
-    with patch("bot.student.service.async_session") as mock_session_factory:
-        session = AsyncMock()
-        mock_session_factory.return_value = session
+    session = AsyncMock()
+    row = MagicMock()
+    row.scalar_one_or_none.return_value = None
+    session.execute.return_value = row
 
-        row = MagicMock()
-        row.scalar_one_or_none.return_value = None
-        session.execute.return_value = row
+    profile = await register_student(
+        telegram_id=999,
+        username="johndoe",
+        full_name=VALID_FULL_NAME,
+        hall=VALID_HALL,
+        phone=VALID_PHONE,
+        session=session,
+    )
 
-        profile = await register_student(
-            telegram_id=999,
-            username="johndoe",
-            full_name=VALID_FULL_NAME,
-            hall=VALID_HALL,
-            phone=VALID_PHONE,
-        )
-
-        assert isinstance(profile, StudentProfile)
-        assert profile.hall_of_residence == VALID_HALL
-        assert session.add.call_count == 2
-        session.commit.assert_awaited_once()
+    assert isinstance(profile, StudentProfile)
+    assert profile.hall_of_residence == VALID_HALL
+    assert session.add.call_count == 2
 
 
 async def test_register_student_duplicate_raises_validation_error():
-    with patch("bot.student.service.async_session") as mock_session_factory:
-        session = AsyncMock()
-        mock_session_factory.return_value = session
+    session = AsyncMock()
+    row = MagicMock()
+    row.scalar_one_or_none.return_value = None
+    session.execute.return_value = row
+    session.flush.side_effect = ValidationError("IntegrityError")
 
-        session.flush.side_effect = ValidationError("IntegrityError")
+    with pytest.raises(ValidationError):
+        await register_student(
+            telegram_id=999,
+            username="janedoe",
+            full_name="Jane Doe",
+            hall=VALID_HALL,
+            phone=VALID_PHONE,
+            session=session,
+        )
 
-        with pytest.raises(ValidationError):
-            await register_student(
-                telegram_id=999,
-                username="janedoe",
-                full_name="Jane Doe",
-                hall=VALID_HALL,
-                phone=VALID_PHONE,
-            )
-
-        session.rollback.assert_awaited_once()
-        session.commit.assert_not_awaited()
+    session.flush.assert_awaited()
 
 
 async def test_is_registered_returns_false_before_registration():
@@ -193,7 +190,7 @@ async def test_submit_registration_creates_profile():
     )
     state.clear = AsyncMock()
 
-    with patch("bot.student.handler.register_student", new_callable=AsyncMock) as mock_reg:
+    with patch("bot.student.handlers.registration.register_student", new_callable=AsyncMock) as mock_reg:
         mock_reg.return_value = MagicMock(spec=StudentProfile)
         await submit_registration(callback, state)
 
@@ -218,7 +215,7 @@ async def test_submit_registration_shows_error_on_duplicate():
         }
     )
 
-    with patch("bot.student.handler.register_student", new_callable=AsyncMock) as mock_reg:
+    with patch("bot.student.handlers.registration.register_student", new_callable=AsyncMock) as mock_reg:
         mock_reg.side_effect = ValidationError(
             "This full name is already registered."
         )

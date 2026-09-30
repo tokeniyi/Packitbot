@@ -247,30 +247,15 @@ class TestRejectDriver:
 class TestGetStats:
     async def test_returns_stats_dto(self):
         session = AsyncMock()
-        scalar_values = [
-            100,  # total_requests
-            10,  # pending_requests
-            5,  # assigned_requests
-            8,  # accepted_requests
-            3,  # en_route_requests
-            2,  # picked_up_requests
-            4,  # in_transit_requests
-            60,  # delivered_requests
-            5,  # cancelled_requests
-            2,  # failed_requests
-            1,  # rejected_by_driver_requests
-            200,  # total_users
-            150,  # total_students
-            45,  # total_drivers
-            5,  # total_admins
-            40,  # approved_drivers
-            3,  # pending_drivers
-            1,  # rejected_drivers
-            1,  # suspended_drivers
-            80,  # total_feedbacks
-            4.5,  # avg_rating
+        # 11 request-count columns, 4 user-count columns, 5 driver-count columns,
+        # 2 feedback-count columns, then duration query uses .all()
+        result_mocks = [
+            MagicMock(one=MagicMock(return_value=(100, 10, 5, 8, 3, 2, 4, 60, 5, 2, 1))),
+            MagicMock(one=MagicMock(return_value=(200, 150, 45, 5))),
+            MagicMock(one=MagicMock(return_value=(40, 35, 3, 1, 1))),
+            MagicMock(one=MagicMock(return_value=(80, 4.5))),
+            MagicMock(all=MagicMock(return_value=[])),
         ]
-        result_mocks = [MagicMock(scalar=MagicMock(return_value=v)) for v in scalar_values]
         session.execute.side_effect = result_mocks
 
         stats = await get_stats(session=session)
@@ -292,15 +277,14 @@ class TestGetStats:
 
     async def test_returns_zero_counts_when_empty(self):
         session = AsyncMock()
-        zero = MagicMock(scalar=MagicMock(return_value=0))
-        none_mock = MagicMock(scalar=MagicMock(return_value=None))
-        session.execute.side_effect = [
-            zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
-            zero, zero, zero, zero,
-            zero, zero, zero, zero,
-            zero,
-            none_mock,
+        result_mocks = [
+            MagicMock(one=MagicMock(return_value=(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))),
+            MagicMock(one=MagicMock(return_value=(0, 0, 0, 0))),
+            MagicMock(one=MagicMock(return_value=(0, 0, 0, 0, 0))),
+            MagicMock(one=MagicMock(return_value=(0, None))),
+            MagicMock(all=MagicMock(return_value=[])),
         ]
+        session.execute.side_effect = result_mocks
 
         stats = await get_stats(session=session)
 

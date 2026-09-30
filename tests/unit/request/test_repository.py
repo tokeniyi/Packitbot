@@ -52,7 +52,7 @@ async def test_request_repository_get_active_for_driver_returns_one():
     session = AsyncMock()
     driver_req = _make_request(id=1, status=RequestStatus.ASSIGNED, driver_id=7)
     result_mock = MagicMock()
-    result_mock.scalar_one_or_none.return_value = driver_req
+    result_mock.scalars.return_value.first.return_value = driver_req
     session.execute.return_value = result_mock
 
     repo = RequestRepository(session)
@@ -66,7 +66,7 @@ async def test_request_repository_get_active_for_driver_returns_one():
 async def test_request_repository_get_active_for_driver_returns_none():
     session = AsyncMock()
     result_mock = MagicMock()
-    result_mock.scalar_one_or_none.return_value = None
+    result_mock.scalars.return_value.first.return_value = None
     session.execute.return_value = result_mock
 
     repo = RequestRepository(session)

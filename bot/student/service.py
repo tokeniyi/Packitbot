@@ -30,57 +30,87 @@ async def register_student(
     full_name: str,
     hall: str,
     phone: Optional[str] = None,
+    session: Optional[AsyncSession] = None,
 ) -> StudentProfile:
-    """Register a student user, creating or updating the User and StudentProfile records."""
+    """Register a student user, creating or updating the User and StudentProfile records.
+
+    Args:
+        telegram_id:    The unique Telegram user identifier.
+        username:       Optional Telegram @username.
+        full_name:      Student's full name (validated).
+        hall:           Hall of residence (validated).
+        phone:          Optional contact phone number (validated).
+        session:        Optional injected ``AsyncSession``. If ``None``, a new
+                        session scope is created via ``async_session()``.
+
+    Returns:
+        The persisted (or updated) :class:`StudentProfile`.
+
+    Raises:
+        ValidationError: If any field fails validation.
+
+    Called by:
+        ``bot/student/handler.py`` -> ``submit_registration``.
+    """
     validated_full_name = validate_full_name(full_name)
     validated_phone = validate_phone(phone) if phone else None
+    validated_hall = validate_hall(hall)
 
-    async with async_session() as session:
-        async with session.begin():
-            # 1. Fetch existing user by telegram_id if present
-            stmt = select(User).where(User.telegram_id == telegram_id)
-            result = await session.execute(stmt)
-            user = result.scalar_one_or_none()
+    async def _execute(s: AsyncSession) -> StudentProfile:
+        # 1. Fetch existing user by telegram_id if present
+        stmt = select(User).where(User.telegram_id == telegram_id)
+        result = await s.execute(stmt)
+        user = result.scalar_one_or_none()
 
-            if user:
-                # Update existing user attributes
-                user.username = username
-                user.full_name = validated_full_name
-                user.phone_number = validated_phone
-                user.role = UserRole.STUDENT
-                user.account_status = AccountStatus.ACTIVE
-            else:
-                # Create a new user record
-                user = User(
-                    telegram_id=telegram_id,
-                    username=username,
-                    full_name=validated_full_name,
-                    phone_number=validated_phone,
-                    role=UserRole.STUDENT,
-                    account_status=AccountStatus.ACTIVE,
-                )
-                session.add(user)
-                await session.flush()  # Ensures user.id is available
+        if user:
+            # Update existing user attributes
+            user.username = username
+            user.full_name = validated_full_name
+            user.phone_number = validated_phone
+            user.role = UserRole.STUDENT
+            user.account_status = AccountStatus.ACTIVE
+        else:
+            # Create a new user record
+            user = User(
+                telegram_id=telegram_id,
+                username=username,
+                full_name=validated_full_name,
+                phone_number=validated_phone,
+                role=UserRole.STUDENT,
+                account_status=AccountStatus.ACTIVE,
+            )
+            s.add(user)
+            await s.flush()  # Ensures user.id is available
 
-            # 2. Fetch or create the associated StudentProfile
-            stmt_profile = select(StudentProfile).where(StudentProfile.user_id == user.id)
-            profile_result = await session.execute(stmt_profile)
-            profile = profile_result.scalar_one_or_none()
+        # 2. Fetch or create the associated StudentProfile
+        stmt_profile = select(StudentProfile).where(StudentProfile.user_id == user.id)
+        profile_result = await s.execute(stmt_profile)
+        profile = profile_result.scalar_one_or_none()
 
-            if profile:
-                # Update existing profile
-                profile.hall_of_residence = hall
-            else:
-                # Create profile if missing
-                profile = StudentProfile(
-                    user_id=user.id,
-                    hall_of_residence=hall,
-                    verification_status=None,
-                )
-                session.add(profile)
+        if profile:
+            # Update existing profile
+            profile.hall_of_residence = validated_hall
+        else:
+            # Create profile if missing
+            profile = StudentProfile(
+                user_id=user.id,
+                hall_of_residence=validated_hall,
+                verification_status=None,
+            )
+            s.add(profile)
 
-        await session.refresh(profile)
         return profile
+
+    if session is not None:
+        result = await _execute(session)
+        await session.refresh(result)
+        return result
+
+    async with async_session() as s:
+        async with s.begin():
+            result = await _execute(s)
+        await s.refresh(result)
+        return result
 
 
 async def get_profile(user_id: int) -> Optional[StudentProfile]:

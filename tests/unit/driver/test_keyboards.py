@@ -32,8 +32,9 @@ class TestVehicleTypeKeyboard:
         kb = vehicle_type_keyboard()
         for row in kb.inline_keyboard:
             for btn in row:
-                if btn.text != "❌ Cancel":
-                    assert btn.callback_data.startswith("driver_vtype:")
+                if btn.text in ("❌ Cancel", "🏠 Home"):
+                    continue
+                assert btn.callback_data.startswith("driver_vtype:")
 
 
 class TestDriverRegistrationReviewKeyboard:

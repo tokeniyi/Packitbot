@@ -70,11 +70,11 @@ def driver_approval_keyboard(driver_id: int) -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Approve",
+                    text="✅ Approve",
                     callback_data=AdminDriverApproval(action="approve", driver_id=driver_id).pack(),
                 ),
                 InlineKeyboardButton(
-                    text="Reject",
+                    text="❌ Reject",
                     callback_data=AdminDriverApproval(action="reject", driver_id=driver_id).pack(),
                 ),
             ],
