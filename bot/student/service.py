@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.core.constants.enums import AccountStatus, RequestStatus, UserRole, VerificationStatus
 from bot.core.db.session import async_session
-from bot.core.exceptions import NotFoundError, ValidationError
+from bot.core.exceptions import DuplicateResourceError, NotFoundError, ValidationError
 from bot.core.models.delivery_request import DeliveryRequest
 from bot.core.models.student_profile import StudentProfile
 from bot.core.models.user import User
@@ -22,6 +22,7 @@ from bot.core.utils.validators import (
     validate_hall,
     validate_phone,
 )
+from sqlalchemy.exc import IntegrityError
 
 
 async def register_student(
@@ -80,7 +81,12 @@ async def register_student(
                 account_status=AccountStatus.ACTIVE,
             )
             s.add(user)
-            await s.flush()  # Ensures user.id is available
+            try:
+                await s.flush()  # Ensures user.id is available
+            except IntegrityError:
+                raise DuplicateResourceError(
+                    "A user with this Telegram ID already exists."
+                )
 
         # 2. Fetch or create the associated StudentProfile
         stmt_profile = select(StudentProfile).where(StudentProfile.user_id == user.id)

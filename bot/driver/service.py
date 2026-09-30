@@ -71,10 +71,10 @@ async def register_driver(
         The persisted (or updated) :class:`DriverProfile`.
 
     Raises:
-        PackitbotError:            If an approved profile already exists for the user.
-        DuplicateResourceError:    If the plate or license number is already taken
+        ValidationError:            If an approved profile already exists for the user.
+        DuplicateResourceError:     If the plate or license number is already taken
                                    (unique constraint violation on flush).
-        ValidationError:           If any field fails validation (raised by validators).
+        ValidationError:             If any field fails validation (raised by validators).
 
     Called by:
         ``bot/driver/handler.py`` -> ``process_submit_registration``.
@@ -113,13 +113,18 @@ async def register_driver(
             if dp.status == DriverStatus.APPROVED:
                 raise ValidationError("Driver profile is already approved.")
             # Update pending profile details
-            await driver_repo.update(
-                dp.id,
-                vehicle_type=validate_vehicle_type(dto.vehicle_type),
-                plate_number=validate_plate_number(dto.plate_number),
-                license_number=validate_license_number(dto.license_number),
-                status=DriverStatus.PENDING_APPROVAL,
-            )
+            try:
+                dp = await driver_repo.update(
+                    dp.id,
+                    vehicle_type=validate_vehicle_type(dto.vehicle_type),
+                    plate_number=validate_plate_number(dto.plate_number),
+                    license_number=validate_license_number(dto.license_number),
+                    status=DriverStatus.PENDING_APPROVAL,
+                )
+            except IntegrityError:
+                raise DuplicateResourceError(
+                    "A driver profile with this plate or license number already exists."
+                )
         else:
             try:
                 dp = await driver_repo.create(
