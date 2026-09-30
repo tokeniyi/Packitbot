@@ -1,7 +1,9 @@
 from datetime import date, timedelta
 
 import pytest
+from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.schema import CreateTable
 
 from bot.core.constants.enums import (
     AccountStatus,
@@ -23,6 +25,54 @@ from bot.core.models.status_log import RequestStatusLog
 from bot.core.models.student_profile import StudentProfile
 from bot.core.models.user import User
 from bot.core.repositories.base_repository import BaseRepository
+
+
+@pytest.mark.asyncio
+async def test_user_pk_autoincrements_on_sqlite():
+    """Regression: ``users.id`` must be a rowid alias on SQLite.
+
+    SQLite only auto-assigns a primary key when the column is declared exactly
+    ``INTEGER``. A plain ``BigInteger`` primary key emits no id, so every insert
+    dies with "NOT NULL constraint failed: users.id" and the entire
+    SQLite-backed test tier is red.
+    """
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    compiled = str(CreateTable(User.__table__).compile(dialect=sqlite.dialect()))
+    await engine.dispose()
+
+    assert "id INTEGER NOT NULL" in compiled, compiled
+
+
+def test_user_pk_stays_bigserial_on_postgres():
+    """The SQLite variant must not change the production PostgreSQL DDL."""
+    compiled = str(
+        CreateTable(User.__table__).compile(dialect=postgresql.dialect())
+    )
+
+    assert "id BIGSERIAL NOT NULL" in compiled, compiled
+
+
+@pytest.mark.asyncio
+async def test_user_id_is_assigned_by_the_database():
+    """Two users inserted without an explicit id must get distinct ids."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    session = AsyncSession(engine, expire_on_commit=False)
+
+    first = User(telegram_id=1, full_name="A")
+    second = User(telegram_id=2, full_name="B")
+    session.add_all([first, second])
+    await session.commit()
+
+    assert first.id is not None
+    assert second.id is not None
+    assert first.id != second.id
+
+    await session.close()
+    await engine.dispose()
 
 
 @pytest.mark.asyncio
