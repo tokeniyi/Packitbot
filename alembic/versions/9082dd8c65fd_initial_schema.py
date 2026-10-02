@@ -6,7 +6,7 @@ PostgreSQL ENUM types required for users, drivers, students, delivery
 requests, admin actions, feedbacks, and status change logs.
 
 Revision ID: 9082dd8c65fd
-Revises: 3ec380728795
+Revises:
 Create Date: 2026-07-23 18:12:54.343781
 
 upgrade() -> None
@@ -30,7 +30,7 @@ import sqlalchemy as sa
 # Revision identifiers, used by Alembic.
 # ---------------------------------------------------------------------------
 revision: str = '9082dd8c65fd'
-down_revision: Union[str, None] = '3ec380728795'
+down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

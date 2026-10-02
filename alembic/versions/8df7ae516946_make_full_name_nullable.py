@@ -1,7 +1,7 @@
 """make full_name nullable
 
 Revision ID: 8df7ae516946
-Revises: 6a695af86a3b
+Revises: 9082dd8c65fd
 Create Date: 2026-07-24 11:51:08.865547
 
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 revision: str = '8df7ae516946'
-down_revision: Union[str, None] = '6a695af86a3b'
+down_revision: Union[str, None] = '9082dd8c65fd'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
