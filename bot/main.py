@@ -336,10 +336,9 @@ async def set_bot_commands(bot: Bot) -> None:
                 await bot.set_my_commands(
                     commands, scope=BotCommandScopeChat(chat_id=chat_id)
                 )
-                if bot.set_my_commands():
-                    print(f"Successfully set {role_label} commands for chat_id={chat_id}")
-                else:
-                    print(f"Failed to set {role_label} commands for chat_id={chat_id}")
+                logger.info(
+                    "Successfully set %s commands for chat_id=%s", role_label, chat_id
+                )
             except Exception as e:
                 logger.warning(
                     f"Failed to set {role_label} commands for chat_id={chat_id}: {e}"
