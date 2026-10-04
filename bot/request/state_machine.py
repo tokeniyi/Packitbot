@@ -31,6 +31,12 @@ ALLOWED_TRANSITIONS: dict[RequestStatus, set[RequestStatus]] = {
     RequestStatus.ASSIGNED: {
         RequestStatus.ACCEPTED,
         RequestStatus.REJECTED_BY_DRIVER,
+        # A driver may hand an assignment back before accepting it, which
+        # returns the request to the unassigned pool. This is distinct from
+        # REJECTED_BY_DRIVER, which preserves the rejection as an audit
+        # record; here the request must become assignable again, which only
+        # the PENDING state achieves (see admin/service.py::get_pending_requests).
+        RequestStatus.PENDING,
         RequestStatus.CANCELLED,
     },
     RequestStatus.ACCEPTED: {

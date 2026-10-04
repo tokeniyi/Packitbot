@@ -21,6 +21,7 @@ from bot.request.events import (
     RequestCreatedEvent,
     RequestStatusChangedEvent,
 )
+from bot.driver.repository import DriverRepository
 from bot.request.repository import (
     FeedbackRepository,
     RequestRepository,
@@ -31,6 +32,7 @@ from bot.request.schemas import (
     CancelRequestDTO,
     CreateFeedbackDTO,
     CreateRequestDTO,
+    RejectAssignmentDTO,
     TransitionDTO,
     UpdateRequestDTO,
 )
@@ -575,3 +577,201 @@ class TestRequestServiceSubmitFeedback:
         dto = CreateFeedbackDTO(request_id=1, student_id=42, rating=0)
         with pytest.raises(ValidationError):
             await service.submit_feedback(dto)
+
+
+class TestRequestServiceRejectAssignment:
+    """Covers driver hand-back of an assignment (P1 #9).
+
+    The regression these guard: the driver_reject handler used to write
+    ``status=PENDING`` straight through ``RequestRepository.update``, so the
+    ``ASSIGNED -> PENDING`` transition was never validated against the state
+    machine, no ``RequestStatusLog`` row was written (silently dropping the
+    rejection from ``admin/service.py::get_stats``), and driver availability
+    was never reset.
+    """
+
+    def _service(self, session, request, driver_profile=None):
+        repo = RequestRepository(session)
+        status_log_repo = StatusLogRepository(session)
+        driver_repo = DriverRepository(session)
+
+        session.get.return_value = request
+        session.execute.return_value = request
+
+        repo.update = AsyncMock(return_value=request)
+        status_log_repo.create = AsyncMock(return_value=MagicMock(spec=RequestStatusLog))
+        driver_repo.get_by_user_id = AsyncMock(return_value=driver_profile)
+
+        service = RequestService(session)
+        service.request_repo = repo
+        service.status_log_repo = status_log_repo
+        service.driver_repo = driver_repo
+        return service, repo, status_log_repo, driver_repo
+
+    async def test_reject_assignment_returns_request_to_pending(self):
+        session = _make_session()
+        req = _make_request(
+            id=5, status=RequestStatus.ASSIGNED, student_id=42, driver_id=7
+        )
+        driver = _make_driver_profile(
+            user_id=7, availability=DriverAvailability.BUSY
+        )
+        service, repo, status_log_repo, driver_repo = self._service(
+            session, req, driver
+        )
+
+        dto = RejectAssignmentDTO(request_id=5, driver_id=7, reason="No capacity")
+        result_req, event = await service.reject_assignment(dto)
+
+        # driver_id must be cleared so the request re-enters the assignable pool.
+        repo.update.assert_called_once_with(
+            5, status=RequestStatus.PENDING, driver_id=None
+        )
+        assert result_req.id == 5
+        assert isinstance(event, RequestStatusChangedEvent)
+        assert event.old_status == RequestStatus.ASSIGNED
+        assert event.new_status == RequestStatus.PENDING
+        assert event.actor_id == 7
+
+    async def test_reject_assignment_writes_status_log(self):
+        session = _make_session()
+        req = _make_request(
+            id=5, status=RequestStatus.ASSIGNED, student_id=42, driver_id=7
+        )
+        driver = _make_driver_profile(user_id=7)
+        service, repo, status_log_repo, driver_repo = self._service(
+            session, req, driver
+        )
+
+        dto = RejectAssignmentDTO(request_id=5, driver_id=7, reason="No capacity")
+        await service.reject_assignment(dto)
+
+        status_log_repo.create.assert_called_once_with(
+            request_id=5,
+            old_status=RequestStatus.ASSIGNED,
+            new_status=RequestStatus.PENDING,
+            changed_by_user_id=7,
+            note="No capacity",
+        )
+
+    async def test_reject_assignment_default_note_when_reason_missing(self):
+        session = _make_session()
+        req = _make_request(id=5, status=RequestStatus.ASSIGNED, driver_id=7)
+        driver = _make_driver_profile(user_id=7)
+        service, repo, status_log_repo, driver_repo = self._service(
+            session, req, driver
+        )
+
+        await service.reject_assignment(
+            RejectAssignmentDTO(request_id=5, driver_id=7)
+        )
+
+        _, kwargs = status_log_repo.create.call_args
+        assert kwargs["note"] == "Assignment declined by driver 7"
+
+    async def test_reject_assignment_resets_driver_availability(self):
+        session = _make_session()
+        req = _make_request(id=5, status=RequestStatus.ASSIGNED, driver_id=7)
+        driver = _make_driver_profile(
+            user_id=7, availability=DriverAvailability.BUSY
+        )
+        service, repo, status_log_repo, driver_repo = self._service(
+            session, req, driver
+        )
+
+        await service.reject_assignment(
+            RejectAssignmentDTO(request_id=5, driver_id=7)
+        )
+
+        driver_repo.get_by_user_id.assert_awaited_once_with(7)
+        assert driver.availability == DriverAvailability.AVAILABLE
+
+    async def test_reject_assignment_survives_missing_driver_profile(self):
+        """A driver with no profile must not abort the hand-back."""
+        session = _make_session()
+        req = _make_request(id=5, status=RequestStatus.ASSIGNED, driver_id=7)
+        service, repo, status_log_repo, driver_repo = self._service(
+            session, req, None
+        )
+
+        result_req, event = await service.reject_assignment(
+            RejectAssignmentDTO(request_id=5, driver_id=7)
+        )
+
+        assert result_req.id == 5
+        assert event.new_status == RequestStatus.PENDING
+        repo.update.assert_called_once_with(
+            5, status=RequestStatus.PENDING, driver_id=None
+        )
+
+    async def test_reject_assignment_not_found(self):
+        session = _make_session()
+        repo = RequestRepository(session)
+        session.get.return_value = None
+        session.execute.return_value = None
+
+        service = RequestService(session)
+        service.request_repo = repo
+
+        with pytest.raises(NotFoundError):
+            await service.reject_assignment(
+                RejectAssignmentDTO(request_id=99, driver_id=7)
+            )
+
+    @pytest.mark.parametrize(
+        "current_status",
+        [
+            RequestStatus.PENDING,
+            RequestStatus.ACCEPTED,
+            RequestStatus.IN_TRANSIT,
+            RequestStatus.DELIVERED,
+            RequestStatus.CANCELLED,
+            RequestStatus.FAILED,
+        ],
+    )
+    async def test_reject_assignment_rejects_illegal_source_status(
+        self, current_status
+    ):
+        """Only an ASSIGNED request may be handed back."""
+        session = _make_session()
+        req = _make_request(id=5, status=current_status, driver_id=7)
+        repo = RequestRepository(session)
+        status_log_repo = StatusLogRepository(session)
+        driver_repo = DriverRepository(session)
+
+        session.get.return_value = req
+        session.execute.return_value = req
+        repo.update = AsyncMock(return_value=req)
+        status_log_repo.create = AsyncMock(return_value=MagicMock(spec=RequestStatusLog))
+        driver_repo.get_by_user_id = AsyncMock(return_value=None)
+
+        service = RequestService(session)
+        service.request_repo = repo
+        service.status_log_repo = status_log_repo
+        service.driver_repo = driver_repo
+
+        with pytest.raises(InvalidStatusTransitionError):
+            await service.reject_assignment(
+                RejectAssignmentDTO(request_id=5, driver_id=7)
+            )
+
+        repo.update.assert_not_called()
+        status_log_repo.create.assert_not_called()
+
+    async def test_reject_assignment_translates_integrity_error(self):
+        from sqlalchemy.exc import IntegrityError
+
+        session = _make_session()
+        req = _make_request(id=5, status=RequestStatus.ASSIGNED, driver_id=7)
+        driver = _make_driver_profile(user_id=7)
+        service, repo, status_log_repo, driver_repo = self._service(
+            session, req, driver
+        )
+        repo.update = AsyncMock(
+            side_effect=IntegrityError("stmt", {}, Exception("fk"))
+        )
+
+        with pytest.raises(ValidationError):
+            await service.reject_assignment(
+                RejectAssignmentDTO(request_id=5, driver_id=7)
+            )

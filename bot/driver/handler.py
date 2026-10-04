@@ -928,10 +928,12 @@ async def process_delivery_status_step(callback: CallbackQuery, session=None) ->
 async def process_driver_reject(callback: CallbackQuery, session=None) -> None:
     """Handle a driver rejecting an assigned delivery request.
 
-    Parses the ``driver_reject:<request_id>`` callback, resets the request
-    to ``PENDING`` status with ``driver_id`` cleared via
-    :class:`RequestRepository`, edits the original message, and alerts all
-    admins via direct message.
+    Parses the ``driver_reject:<request_id>`` callback and hands the
+    transition to :meth:`RequestService.reject_assignment`, the only
+    sanctioned path for returning an assignment to ``PENDING``. The service
+    validates the state machine, clears ``driver_id``, writes the status log
+    row, and restores the driver's availability. This handler then edits the
+    original message, notifies the student, and alerts all admins.
 
     Args:
         callback: The incoming :class:`CallbackQuery` with
@@ -939,7 +941,8 @@ async def process_driver_reject(callback: CallbackQuery, session=None) -> None:
         session:  Optional injected SQLAlchemy ``AsyncSession``.
 
     Calls / Depends on:
-        :class:`RequestRepository` (``update``), :class:`PackitbotError`.
+        :class:`RequestService` (``reject_assignment``),
+        :class:`RejectAssignmentDTO`, :class:`PackitbotError`.
 
     Registered on ``driver_router`` for callback data starting with
     ``driver_reject:``.
@@ -952,11 +955,11 @@ async def process_driver_reject(callback: CallbackQuery, session=None) -> None:
         return
 
     from sqlalchemy import select
-    from bot.core.constants.enums import RequestStatus, UserRole
+    from bot.core.constants.enums import UserRole
     from bot.core.exceptions import PackitbotError
-    from bot.core.models.delivery_request import DeliveryRequest
     from bot.core.models.user import User
-    from bot.request.repository import RequestRepository
+    from bot.request.schemas import RejectAssignmentDTO
+    from bot.request.service import RequestService
 
     try:
         # Fetch driver user
@@ -968,13 +971,15 @@ async def process_driver_reject(callback: CallbackQuery, session=None) -> None:
             await callback.answer("Driver profile not found.", show_alert=True)
             return
 
-        req_repo = RequestRepository(session)
-        # Update request: set status back to PENDING and clear driver_id
-        updated_req = await req_repo.update(
-            request_id,
-            status=RequestStatus.PENDING,
-            driver_id=None,
+        # Route through the service: it enforces the state machine, clears
+        # driver_id, writes the audit row and resets driver availability.
+        req_service = RequestService(session)
+        dto = RejectAssignmentDTO(
+            request_id=request_id,
+            driver_id=driver_user.id,
+            reason=f"Assignment declined by driver {driver_user.id}",
         )
+        updated_req, event = await req_service.reject_assignment(dto)
         await session.commit()
 
         await callback.message.edit_text(
@@ -982,6 +987,31 @@ async def process_driver_reject(callback: CallbackQuery, session=None) -> None:
             parse_mode="HTML",
         )
         await callback.answer("Request rejected.")
+
+        # Tell the student their request is back in the pool for reassignment.
+        if updated_req.student_id:
+            student_res = await session.execute(
+                select(User).where(User.id == updated_req.student_id)
+            )
+            student = student_res.scalar_one_or_none()
+            if student and student.telegram_id:
+                try:
+                    await callback.bot.send_message(
+                        chat_id=student.telegram_id,
+                        text=(
+                            "ℹ️ <b>Driver Unavailable</b>\n\n"
+                            f"📦 Request #{request_id} was returned to the pending "
+                            "pool because the assigned driver declined it. "
+                            "An admin will reassign it shortly."
+                        ),
+                        parse_mode="HTML",
+                    )
+                except Exception as notif_err:
+                    logger.error(
+                        "Failed to notify student %s of rejection: %s",
+                        student.telegram_id,
+                        notif_err,
+                    )
 
         # Alert admins about the rejected request
         admin_res = await session.execute(

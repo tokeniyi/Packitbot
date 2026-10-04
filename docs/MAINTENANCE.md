@@ -205,13 +205,45 @@ with `DriverProfile.id`, and lookups treat it as a `DriverProfile` PK. Items **#
   tests fail and the real `RuntimeWarning: coroutine ... was never awaited`
   is reported at `main.py:339`.
 
-**#9 `process_driver_reject` bypasses the FSM and the audit log**
-- `bot/driver/handler.py:971-978` — `ASSIGNED → PENDING` is not in `ALLOWED_TRANSITIONS`
-  (`state_machine.py:26-61`); no `RequestStatusLog` row is written (so `get_stats` at
-  `admin/service.py:585-609` silently loses every rejection); driver `availability` is
-  never reset to `AVAILABLE`; the student is never notified.
-- **Fix:** add `PENDING` as a legal target of `ASSIGNED`, or add
-  `RequestService.reject_assignment()`. Never call the repository from a handler.
+**#9 ~~`process_driver_reject` bypasses the FSM and the audit log~~ — FIXED 2026-10-04 (PR #12, `fix/driver-reject-bypasses-fsm`)**
+- **Problem (confirmed by reading the code, not just the doc):**
+  `bot/driver/handler.py` mutated the request through `RequestRepository.update`
+  directly. Four concrete defects followed:
+  1. `ASSIGNED -> PENDING` was **not in `ALLOWED_TRANSITIONS`** (`state_machine.py:31-34`),
+     so the write was never validated against the state machine.
+  2. No `RequestStatusLog` row was written, so `get_stats`
+     (`admin/service.py:554`) silently lost **every** driver rejection.
+  3. Driver `availability` was never reset — a driver who declined stayed
+     `BUSY` forever and could not receive another request.
+  4. The student was never told; only admins were alerted.
+- **Changed:**
+  - `bot/request/state_machine.py` — added `PENDING` as a legal target of
+    `ASSIGNED`. `PENDING` (not `REJECTED_BY_DRIVER`) is required because
+    `admin/service.py:125,134` (`get_pending_requests`) and
+    `request/repository.py:81` (`get_pending`) both filter on `PENDING`;
+    a `REJECTED_BY_DRIVER` row would never reappear in an admin's queue.
+  - `bot/request/schemas.py` — new `RejectAssignmentDTO`
+    (`request_id`, `driver_id`, optional `reason`).
+  - `bot/request/service.py` — new `RequestService.reject_assignment()`,
+    the single sanctioned path: validates `can_transition`, clears
+    `driver_id`, writes the status log row, and resets availability to
+    `AVAILABLE` via `DriverRepository.get_by_user_id`. `driver_repo` added in
+    `__init__`. Handlers no longer call a repository directly.
+  - `bot/driver/handler.py` — `process_driver_reject` now calls the service
+    and additionally notifies the student. Dead imports (`RequestStatus`,
+    `DeliveryRequest`, `RequestRepository`) removed.
+- **Tests:** `tests/unit/request/test_service.py` gained
+  `TestRequestServiceRejectAssignment` — 8 test functions, 13 cases counting
+  the 6 parametrised illegal source statuses (status/cleared `driver_id`,
+  audit row, default note, availability reset, missing-profile tolerance,
+  not-found, illegal source statuses, `IntegrityError` translation) — plus
+  one `(ASSIGNED, PENDING)` case in `tests/unit/request/test_state_machine.py`.
+  **Tripwire verified:** with the state-machine edge reverted, **7 of these
+  fail**; the file was restored byte-identically afterwards.
+- **Deliberately NOT done here:** the missing ownership check on this
+  handler. That is P0 #5 and already in flight as PR #7 — adding it here
+  would duplicate/conflict with an open PR.
+
 
 **#10 RBAC never authorizes callbacks** — `rbac.py:171`. Add a per-router allowlist of
 callback prefixes mapped to roles. Defence-in-depth for #5.
@@ -401,8 +433,38 @@ gate here before adding more tests on top of a red suite.
 |---|---|---|---|---|
 | 2026-09-26 | `chore/maintenance-doc` | Initial review + this document | — | Baseline established, 0 P0–P3 items closed |
 | 2026-10-03 | `fix/unawaited-set-my-commands` | P1 #8 un-awaited `set_my_commands` | #11 | **Fixed.** 4 new tests. Also **disproved P0 #6** — it was a documentation error, not a bug. |
+| 2026-10-04 | `fix/driver-reject-bypasses-fsm` | P1 #9 `process_driver_reject` bypassed the FSM and audit log | #12 | **Fixed.** 13 new/updated tests; 7 verified to fail when the fix is reverted. Full suite unchanged at 34 pre-existing failures. |
 
-**Remaining backlog:** 6 × P0 (#6 removed as non-existent), 14 × P1, 12 × P2, 7 × P3 = **39 open items**.
+**Remaining backlog:** 6 × P0 (#6 removed as non-existent), 13 × P1, 12 × P2, 7 × P3 = **38 open items**.
+
+### 2026-10-04 run notes
+
+- **All 7 P0 items already have open PRs** (#0→PR #8, #2→#5, #3→#6, #4→#9,
+  #5→#7, #7→#10; #6 disproved). Per the "skip anything already in an open PR"
+  rule, the highest available item was **P1 #9**, which is what this run took.
+- **Validation:** baseline on `main` before the change was **34 failed / 371
+  passed** (405 tests). After the change: **34 failed / 385 passed**
+  (419 tests, 68.50s under CPython 3.12.7). The failure *count and identity*
+  are unchanged — the same 34 tests that fail on `main`, all tracked under
+  #43 and the open P0 PRs. **13 new tests (+1 new state-machine parametrised
+  case), all passing**; 371 + 14 = 385.
+- **Tripwire evidence:** reverting only the `ASSIGNED → PENDING` edge makes
+  7 of the new tests fail with
+  `InvalidStatusTransitionError: Cannot transition from RequestStatus.ASSIGNED
+  to RequestStatus.PENDING`. Reverted state was restored byte-identically.
+- **`uv pip install -e .` still fails** (P1 #42, `setuptools.backends.legacy`).
+  Deps installed from the transcoded requirements file into a 3.12 venv.
+- **No linter exists** in the project (`ruff`/`flake8`/`mypy` all absent —
+  that is item #33). Validation used `pytest` + `python -m compileall`.
+- **Note on #9's ownership check:** the missing actor check on
+  `driver_reject` is *not* fixed by this branch. It is P0 #5 (PR #7), and
+  merging both would conflict.
+- **Discovered, not fixed:** `bot/request/service.py` now depends on
+  `bot.driver.repository`. There is no import cycle today (verified by
+  importing both modules), but it inverts the layering that
+  `.agents/rules/GEMINI.md` describes. Worth revisiting under #24 when the
+  repository layer is consolidated.
+
 
 ### 2026-10-03 run notes
 
