@@ -77,7 +77,7 @@ from bot.core.constants.messages import (
 from bot.core.exceptions import PackitbotError, ValidationError
 from bot.core.models.user import User
 from bot.core.services.notification_service import notify_driver_approval_status, send_broadcast_message
-from bot.core.utils.callback_data import AdminAssign, AdminDriverApproval, AdminDriverEdit, AdminDriverManage, AdminDriverRemove, AdminUserAction, PaginationNav
+from bot.core.utils.callback_data import AdminAssign, AdminDriverApproval, AdminDriverEdit, AdminDriverManage, AdminDriverRemove, AdminUserAction
 from bot.request.schemas import AssignDriverDTO
 from bot.request.service import RequestService
 
@@ -93,6 +93,28 @@ class AdminUserMgmtState(StatesGroup):
 
 def _is_admin(user: User | None) -> bool:
     return user is not None and user.role == UserRole.ADMIN
+
+
+def _parse_page_number(callback_data: str) -> int | None:
+    """Parse the page number out of a ``<prefix>:<page>`` callback payload.
+
+    Callback data is attacker-controlled: any client can craft an
+    ``admin_drv_page:abc`` payload. A bare ``int()`` turned that into an
+    uncaught ``ValueError`` that escaped the handler, so the admin got no
+    response at all (backlog P1 #22).
+
+    Args:
+        callback_data: The raw ``callback.data`` string.
+
+    Returns:
+        The 1-based page number clamped to at least 1, or ``None`` when the
+        payload does not carry a valid integer page.
+    """
+    try:
+        page = int(callback_data.split(":")[1])
+    except (IndexError, ValueError):
+        return None
+    return max(1, page)
 
 
 
@@ -233,7 +255,11 @@ async def handle_pending_requests_pagination(
         await callback.answer(ErrorMessages.ADMIN_ACCESS_REQUIRED, show_alert=True)
         return
 
-    page = int(callback.data.split(":")[1])
+    page = _parse_page_number(callback.data)
+    if page is None:
+        await callback.answer(ErrorMessages.INVALID_INPUT, show_alert=True)
+        return
+
     requests, total_pages = await get_pending_requests(session=session, page=page)
     if not requests:
         await callback.message.edit_text("ℹ️ No pending delivery requests waiting for assignment.")
@@ -539,7 +565,11 @@ async def handle_drivers_pagination(
         await callback.answer(ErrorMessages.ADMIN_ACCESS_REQUIRED, show_alert=True)
         return
 
-    page = int(callback.data.split(":")[1])
+    page = _parse_page_number(callback.data)
+    if page is None:
+        await callback.answer(ErrorMessages.INVALID_INPUT, show_alert=True)
+        return
+
     drivers, total_pages = await get_all_drivers(session=session, page=page)
     if not drivers:
         await callback.message.edit_text("ℹ️ No driver records found.")

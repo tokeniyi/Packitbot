@@ -329,7 +329,7 @@ def test_format_request_summary():
     (DateQuickPick, "date_pick"),
     (AddressQuickPick, "addr_pick"),
     (ReviewFieldEdit, "review_edit"),
-    (NavHome, "nav"),
+    (NavHome, "nav_home"),
 ])
 def test_callback_data_factory_prefix(factory, expected_prefix):
     assert factory.__prefix__ == expected_prefix
