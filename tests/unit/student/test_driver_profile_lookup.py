@@ -1,6 +1,7 @@
-"""Regression tests for the DriverProfile wrong-FK lookup (maintenance item #3).
+"""
+Regression tests for the DriverProfile wrong-FK lookup (maintenance item #3).
 
-``DeliveryRequest.driver_id`` is a ForeignKey to ``users.id`` — NOT to
+``DeliveryRequest.driver_id`` is a ForeignKey to ``users.id`` -- NOT to
 ``DriverProfile.id``. The cancellation and feedback-rating paths used to pass that
 value to ``session.get(DriverProfile, ...)``, which looks up the *profile* primary
 key. When the two keys differ (the normal case, since the two tables have
@@ -15,8 +16,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from bot.core.models.driver_profile import DriverProfile
 from bot.student.handlers.feedback import _recalculate_driver_rating
+from bot.student.handlers.requests import show_request_detail
 
 
 def _make_session() -> MagicMock:
@@ -31,9 +32,30 @@ def _make_session() -> MagicMock:
 
 
 @pytest.mark.asyncio
-async def test_recalculate_resolves_profile_via_user_id_not_profile_pk() -> None:
+async def test_recalculate_driver_rating_resolves_profile_by_user_id():
+    session = MagicMock()
+    result = MagicMock()
+    result.one.return_value = (4.5, 3)
+    session.execute = AsyncMock(return_value=result)
+    session.flush = AsyncMock()
+    session.get = AsyncMock()
+    profile = MagicMock(rating_avg=0.0, total_deliveries=0)
+
+    with patch("bot.student.handlers.feedback.DriverRepository") as repo_cls:
+        repo_cls.return_value.get_by_user_id = AsyncMock(return_value=profile)
+        await _recalculate_driver_rating(session, 42)
+
+    repo_cls.return_value.get_by_user_id.assert_awaited_once_with(42)
+    session.get.assert_not_called()
+    assert profile.rating_avg == 4.5
+    assert profile.total_deliveries == 3
+
+
+@pytest.mark.asyncio
+async def test_recalculate_resolves_profile_via_user_id_not_profile_pk():
     """The assigned driver's users.id must be matched against DriverProfile.user_id."""
     session = _make_session()
+    from bot.core.models.driver_profile import DriverProfile
     profile = MagicMock(spec=DriverProfile)
     profile.rating_avg = None
     profile.total_deliveries = None
@@ -63,7 +85,7 @@ async def test_recalculate_resolves_profile_via_user_id_not_profile_pk() -> None
 
 
 @pytest.mark.asyncio
-async def test_recalculate_is_a_noop_when_driver_has_no_profile() -> None:
+async def test_recalculate_is_a_noop_when_driver_has_no_profile():
     """A missing profile must not crash and must not run the aggregate query."""
     session = _make_session()
 
@@ -77,7 +99,7 @@ async def test_recalculate_is_a_noop_when_driver_has_no_profile() -> None:
 
 
 @pytest.mark.asyncio
-async def test_cancel_restores_availability_of_the_correct_driver() -> None:
+async def test_cancel_restores_availability_of_the_correct_driver():
     """Cancelling a request must mark the ASSIGNED driver available again.
 
     Regression: the handler used ``session.get(DriverProfile, updated_req.driver_id)``.
@@ -120,3 +142,39 @@ async def test_cancel_restores_availability_of_the_correct_driver() -> None:
     session_get.assert_not_called()
     assert profile.availability is DriverAvailability.AVAILABLE
     session.flush.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_show_request_detail_uses_eager_driver_query():
+    callback = MagicMock()
+    callback.data = "my_req_detail:9"
+    callback.from_user.id = 1001
+    callback.answer = AsyncMock()
+    callback.message = MagicMock()
+    callback.message.answer = AsyncMock()
+    callback.message.edit_text = AsyncMock()
+
+    request_obj = MagicMock()
+    request_obj.student_id = 77
+    request_obj.id = 9
+
+    class FakeRepo:
+        def __init__(self, session):
+            pass
+
+        async def get_by_id_with_driver(self, request_id):
+            assert request_id == 9
+            return request_obj
+
+        async def get_by_id(self, request_id):
+            raise AssertionError("show_request_detail should use get_by_id_with_driver")
+
+    with (
+        patch("bot.student.handlers.requests.RequestRepository", FakeRepo),
+        patch("bot.student.handlers.requests.resolve_user_id", AsyncMock(return_value=77)),
+        patch("bot.student.handlers.requests._format_request_detail", return_value="detail"),
+        patch("bot.student.handlers.requests.request_detail_keyboard", return_value=MagicMock()),
+    ):
+        await show_request_detail(callback, session=MagicMock())
+
+    callback.message.edit_text.assert_awaited_once()

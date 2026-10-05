@@ -34,6 +34,7 @@ from bot.core.models.status_log import RequestStatusLog
 from bot.driver.repository import DriverRepository
 from bot.request.business_rules import (
     can_assign_driver,
+    can_driver_act_on_request,
     can_edit_request,
     can_rate_delivery,
     can_student_cancel,
@@ -256,6 +257,7 @@ class RequestService:
         except IntegrityError as exc:
             raise ValidationError("Failed to assign driver due to integrity constraint.") from exc
 
+
     async def transition_status(
         self, dto: TransitionDTO
     ) -> tuple[DeliveryRequest, RequestStatusChangedEvent]:
@@ -282,6 +284,11 @@ class RequestService:
         request = await self.request_repo.get_by_id_for_update(dto.request_id)
         if request is None:
             raise NotFoundError(f"DeliveryRequest with id={dto.request_id} not found")
+
+        if dto.require_assigned_driver and not can_driver_act_on_request(request, dto.actor_id):
+            raise PermissionDeniedError(
+                f"User {dto.actor_id} is not the driver assigned to request {dto.request_id}"
+            )
 
         old_status = request.status
         if not can_transition(old_status, dto.new_status):
@@ -352,6 +359,11 @@ class RequestService:
         if request is None:
             raise NotFoundError(f"DeliveryRequest with id={dto.request_id} not found")
 
+        if not can_driver_act_on_request(request, dto.driver_id):
+            raise PermissionDeniedError(
+                f"User {dto.driver_id} is not the driver assigned to request {dto.request_id}"
+            )
+
         old_status = request.status
         if not can_transition(old_status, RequestStatus.PENDING):
             raise InvalidStatusTransitionError(
@@ -384,6 +396,7 @@ class RequestService:
             return updated_request, event
         except IntegrityError as exc:
             raise ValidationError("Failed to reject assignment.") from exc
+
 
     async def cancel_request(
         self, dto: CancelRequestDTO

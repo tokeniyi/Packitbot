@@ -27,6 +27,16 @@ from bot.core.models.user import User
 from bot.core.repositories.base_repository import BaseRepository
 
 
+def test_user_pk_sqlite_variant_is_integer():
+    compiled = str(CreateTable(User.__table__).compile(dialect=sqlite.dialect()))
+    assert "id INTEGER NOT NULL" in compiled
+
+
+def test_user_pk_postgres_stays_bigserial():
+    compiled = str(CreateTable(User.__table__).compile(dialect=postgresql.dialect()))
+    assert "id BIGSERIAL NOT NULL" in compiled
+
+
 @pytest.mark.asyncio
 async def test_user_pk_autoincrements_on_sqlite():
     """Regression: ``users.id`` must be a rowid alias on SQLite.

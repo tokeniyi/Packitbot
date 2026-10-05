@@ -97,11 +97,12 @@ class AssignDriverDTO:
         request_id: Primary key of the ``DeliveryRequest``.
         driver_id: Primary key of the driver's ``users`` row
             (``DriverProfile.user_id``). This is **not** the ``DriverProfile``
-            primary key and not the Telegram account id — ``DeliveryRequest.driver_id``
+            primary key and not the Telegram account id -- ``DeliveryRequest.driver_id``
             is a foreign key to ``users.id``.
         admin_id: Primary key of the ``User`` row of the admin performing
             the assignment.
     """
+
     request_id: int
     driver_id: int
     admin_id: int
@@ -124,11 +125,19 @@ class TransitionDTO:
         new_status: Target ``RequestStatus`` to transition to.
         actor_id: Telegram user ID of the driver or admin triggering the transition.
         note: Optional free-text note explaining the transition reason.
+        require_assigned_driver: When ``True`` (the default), the service
+            raises :class:`PermissionDeniedError` unless ``actor_id`` is the
+            driver currently assigned to the request. Only set this to
+            ``False`` for callers that have already established a different
+            authorisation basis (e.g. an admin acting on another driver's
+            request). Defaults to ``True`` so new callers fail closed.
     """
+
     request_id: int
     new_status: RequestStatus
     actor_id: int
     note: str | None = None
+    require_assigned_driver: bool = True
 
 
 @dataclass(frozen=True)
@@ -150,6 +159,7 @@ class RejectAssignmentDTO:
         driver_id: Primary key of the rejecting driver (``users.id``).
         reason: Optional free-text explanation stored on the status log row.
     """
+
     request_id: int
     driver_id: int
     reason: str | None = None
@@ -175,6 +185,7 @@ class CancelRequestDTO:
         cancelled_by: The role of the cancelling user (``CancelledBy`` enum).
         cancellation_reason: Optional explanation for the cancellation.
     """
+
     request_id: int
     actor_id: int
     cancelled_by: CancelledBy
@@ -197,6 +208,7 @@ class CreateFeedbackDTO:
         rating: Integer score from 1 to 5.
         comment: Optional free-text comment accompanying the rating.
     """
+
     request_id: int
     student_id: int
     rating: int

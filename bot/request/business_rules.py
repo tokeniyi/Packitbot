@@ -98,6 +98,11 @@ def can_assign_driver(driver: DriverProfile) -> bool:
     )
 
 
+def can_driver_act_on_request(request: DeliveryRequest, actor_id: int) -> bool:
+    """Check whether the actor is the currently assigned driver for a request."""
+    return request.driver_id is not None and request.driver_id == actor_id
+
+
 def can_rate_delivery(request: DeliveryRequest, existing_feedback: Any = None) -> bool:
     """Check whether a delivered request is eligible to receive feedback.
 
