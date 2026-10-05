@@ -8,15 +8,16 @@
 - **Description:** Async Telegram logistics and delivery management bot (aiogram 3.x, SQLAlchemy 2.0)
 - **Default branch:** `main` (protected — never pushed to directly)
 - **Scale:** 130 Python files, ~14.7k LOC application code
-- **Review baseline:** commit `2e31ff9`
-- **Last reviewed:** 2026-09-30
+- **Review baseline:** commit `1b5c06c` (`main`, as of 2026-10-05)
+- **Last reviewed:** 2026-10-05
 
-> **⚠️ Status of this document.** It lives on `chore/maintenance-doc` (PR #3), which
-> is still **unmerged**, so `docs/MAINTENANCE.md` does not exist on `main`. Every
-> daily run must read it from that branch:
-> `git checkout chore/maintenance-doc -- docs/MAINTENANCE.md`.
-> As of 2026-09-30 there are **5 open, unmerged PRs** (#3–#7) and none of the P0
-> backlog items they address has landed on `main`. Treat "main" as still broken.
+> **WARNING — this document is branch-resident.** PR #3 (`chore/maintenance-doc`)
+> was never merged, so `docs/MAINTENANCE.md` does **not** exist on `main`.
+> Every daily run must read it with
+> `git show origin/fix/driver-reject-bypasses-fsm:docs/MAINTENANCE.md`
+> (or the newest task branch), not `read_file`, or it will find nothing.
+> Merging PR #3 would fix this permanently and is the single cheapest
+> improvement available.
 
 ---
 
@@ -65,27 +66,12 @@ no environment is reproducible from the repository. **This blocks all future sch
 `pyproject.toml` requires **`>=3.12,<3.13`**, but system Python is **3.11.16**.
 Use `uv` to provision 3.12 — do not attempt to run the suite under the system interpreter.
 
-**The package cannot currently be installed.** `pyproject.toml:3` sets
-`build-backend = "setuptools.backends.legacy:build"`, which does not exist in any
-released setuptools, so `uv pip install -e .` fails with
-`ModuleNotFoundError: No module named 'setuptools.backends'`. Working install today:
-
-```bash
-uv venv --clear --python 3.12 .venv
-iconv -f UTF-16LE -t UTF-8 requirements.txt > "$LOCALAPPDATA/Temp/reqs.txt"
-uv pip install -r "C:/…/reqs.txt" pytest pytest-asyncio   # then run .venv/Scripts/python -m pytest
-```
-
-`requirements.txt` must be transcoded first — it is UTF-16 (see #20).
-
-**Baseline test result on `main` (2026-09-30, 3.12.7):** `26 failed, 378 passed`.
-The suite has never been green on `main`; see §5.
-
 ---
 
 ## 2. Headline state
 
-- **7 P0 bugs.** Three break the product outright: `/add_driver` never authorizes
+- **6 P0 bugs** (was 7 — #6 was disproved on 2026-10-03 and removed). Three break the
+  product outright: `/add_driver` never authorizes
   anyone (so nobody can ever register as a driver), driver assignment writes the wrong
   foreign key, and `session.get(DriverProfile, <users.id>)` breaks availability
   restoration *and* all driver ratings.
@@ -127,25 +113,6 @@ with `DriverProfile.id`, and lookups treat it as a `DriverProfile` PK. Items **#
 ## 4. Backlog
 
 ### P0 — Critical bugs (fix before any feature work)
-
-**#0 `users.id` primary key cannot autoincrement — the whole SQLite test tier is red** ✅ *fixed 2026-09-30, `fix/user-pk-sqlite-autoincrement`*
-- `bot/core/models/user.py:99` — `id: Mapped[int] = mapped_column(BigInteger, primary_key=True)`
-- SQLite treats a column as an auto-incrementing rowid alias **only** when it is
-  declared exactly `INTEGER`. `BIGINT PRIMARY KEY` is not, so SQLAlchemy omits the
-  id from every INSERT and every insert dies with
-  `sqlite3.IntegrityError: NOT NULL constraint failed: users.id`.
-- **Impact:** 8 of the 34 pre-existing failures on `main`. Every test that
-  round-trips a `User` — directly or through any profile, request, status log,
-  feedback, or audit row — could not persist. The suite gave a false impression
-  that the persistence layer worked.
-- **Fix:** `BigInteger().with_variant(Integer, "sqlite")`. Production DDL is
-  **byte-identical** (`BIGSERIAL` on PostgreSQL); only SQLite sees `INTEGER`.
-- **Tests:** `test_user_pk_autoincrements_on_sqlite`, `test_user_pk_stays_bigserial_on_postgres`,
-  `test_user_id_is_assigned_by_the_database` in `tests/unit/core/test_models.py`.
-  Verified they fail without the fix (10 failed) and pass with it (11 passed).
-- **Note:** only `users.id` needed this. The other eight models declare
-  `mapped_column(primary_key=True)` with no explicit type, which SQLAlchemy
-  already maps to `INTEGER`, so they were never affected.
 
 **#1 `/add_driver` never works — admin ID compared against the wrong column**
 - `bot/admin/service.py:1317` vs `bot/admin/handler.py:1272`
@@ -200,13 +167,27 @@ with `DriverProfile.id`, and lookups treat it as a `DriverProfile` PK. Items **#
   add an `actor_must_be_assigned_driver` business rule enforced **inside**
   `RequestService.transition_status` so future callers cannot bypass it.
 
-**#6 First-time student registration violates a NOT NULL constraint**
-- `bot/student/service.py:78` — `verification_status=None` on a `nullable=False` column
-- A Python-side `default` applies only when the attribute is **not supplied**; passing
-  `None` explicitly sends SQL `NULL` → `IntegrityError`. This is the `else` branch of
-  `register_student`, i.e. **every new student**.
-- *(Reasoning from documented ORM semantics; not executed against a live DB — no 3.12 env.)*
-- **Fix:** delete the argument so the column default applies. Add a regression test.
+**#6 ~~First-time student registration violates a NOT NULL constraint~~ — RESOLVED 2026-10-03: NOT A BUG**
+- **The backlog entry was wrong.** The original claim — that passing
+  `verification_status=None` on a `nullable=False` column sends SQL `NULL`
+  and raises `IntegrityError` — was reasoning from documented ORM semantics
+  that was never executed. It was tested against a real (SQLite) database
+  and **disproven**: the `StudentProfile` insert succeeds and persists
+  `UNVERIFIED`.
+- **Why:** `bot/core/models/student_profile.py:79-84` declares
+  `default=VerificationStatus.UNVERIFIED` as a *Python-side column default*.
+  The SQLAlchemy unit of work **omits** a column whose value is `None` at
+  flush time, so the default fires. An explicit `None` is therefore
+  indistinguishable from omitting the argument.
+- **Evidence:** three variants (explicit `None`, omitted, explicit
+  `UNVERIFIED`) all persisted `VerificationStatus.UNVERIFIED`. The column
+  genuinely is `NOT NULL` in the DDL — the NOT NULL violation is only
+  reachable through *core* `Table.insert().values(verification_status=None)`,
+  which no production code path uses. `service.py:78` is harmless but
+  misleading, since it implies an intent to store NULL.
+- **Still worth doing (cosmetic, folded into #35):** delete the
+  `verification_status=None` argument at `bot/student/service.py:78` so the
+  code stops implying a nullable column. No behaviour change.
 
 **#7 `_init_db` bypasses Alembic — migration chain unusable**
 - `bot/main.py:78-92`; `alembic/versions/`
@@ -217,17 +198,60 @@ with `DriverProfile.id`, and lookups treat it as a `DriverProfile` PK. Items **#
 
 ### P1 — Significant
 
-**#8 `main.py:339` un-awaited coroutine** — `if bot.set_my_commands():` creates a second
-coroutine that is never awaited; always truthy, so the `Failed` branch is unreachable and
-a `RuntimeWarning` is emitted per registered user at every boot. Delete the block.
+**#8 ~~`main.py:339` un-awaited coroutine~~ — FIXED 2026-10-03 (PR #11, `fix/unawaited-set-my-commands`)**
+- `if bot.set_my_commands():` created a **second** coroutine object that was
+  never awaited. The object is always truthy, so the `Failed` branch was
+  unreachable, and each un-awaited coroutine emitted a `RuntimeWarning` at
+  GC time — one per registered chat, on every boot.
+- **Changed:** dead block deleted; the success path now uses
+  `logger.info("Successfully set %s commands for chat_id=%s", role_label, chat_id)`
+  instead of bare `print`, matching the `logger.warning` already used by the
+  surrounding `except`.
+- **Tests:** new `tests/unit/core/test_main_commands.py` (4 tests). The await
+  count (8 with the fixture) is the regression tripwire — the buggy code
+  produced 15 calls. Verified by temporarily reverting the fix: 2 of the 4
+  tests fail and the real `RuntimeWarning: coroutine ... was never awaited`
+  is reported at `main.py:339`.
 
-**#9 `process_driver_reject` bypasses the FSM and the audit log**
-- `bot/driver/handler.py:971-978` — `ASSIGNED → PENDING` is not in `ALLOWED_TRANSITIONS`
-  (`state_machine.py:26-61`); no `RequestStatusLog` row is written (so `get_stats` at
-  `admin/service.py:585-609` silently loses every rejection); driver `availability` is
-  never reset to `AVAILABLE`; the student is never notified.
-- **Fix:** add `PENDING` as a legal target of `ASSIGNED`, or add
-  `RequestService.reject_assignment()`. Never call the repository from a handler.
+**#9 ~~`process_driver_reject` bypasses the FSM and the audit log~~ — FIXED 2026-10-04 (PR #12, `fix/driver-reject-bypasses-fsm`)**
+- **Problem (confirmed by reading the code, not just the doc):**
+  `bot/driver/handler.py` mutated the request through `RequestRepository.update`
+  directly. Four concrete defects followed:
+  1. `ASSIGNED -> PENDING` was **not in `ALLOWED_TRANSITIONS`** (`state_machine.py:31-34`),
+     so the write was never validated against the state machine.
+  2. No `RequestStatusLog` row was written, so `get_stats`
+     (`admin/service.py:554`) silently lost **every** driver rejection.
+  3. Driver `availability` was never reset — a driver who declined stayed
+     `BUSY` forever and could not receive another request.
+  4. The student was never told; only admins were alerted.
+- **Changed:**
+  - `bot/request/state_machine.py` — added `PENDING` as a legal target of
+    `ASSIGNED`. `PENDING` (not `REJECTED_BY_DRIVER`) is required because
+    `admin/service.py:125,134` (`get_pending_requests`) and
+    `request/repository.py:81` (`get_pending`) both filter on `PENDING`;
+    a `REJECTED_BY_DRIVER` row would never reappear in an admin's queue.
+  - `bot/request/schemas.py` — new `RejectAssignmentDTO`
+    (`request_id`, `driver_id`, optional `reason`).
+  - `bot/request/service.py` — new `RequestService.reject_assignment()`,
+    the single sanctioned path: validates `can_transition`, clears
+    `driver_id`, writes the status log row, and resets availability to
+    `AVAILABLE` via `DriverRepository.get_by_user_id`. `driver_repo` added in
+    `__init__`. Handlers no longer call a repository directly.
+  - `bot/driver/handler.py` — `process_driver_reject` now calls the service
+    and additionally notifies the student. Dead imports (`RequestStatus`,
+    `DeliveryRequest`, `RequestRepository`) removed.
+- **Tests:** `tests/unit/request/test_service.py` gained
+  `TestRequestServiceRejectAssignment` — 8 test functions, 13 cases counting
+  the 6 parametrised illegal source statuses (status/cleared `driver_id`,
+  audit row, default note, availability reset, missing-profile tolerance,
+  not-found, illegal source statuses, `IntegrityError` translation) — plus
+  one `(ASSIGNED, PENDING)` case in `tests/unit/request/test_state_machine.py`.
+  **Tripwire verified:** with the state-machine edge reverted, **7 of these
+  fail**; the file was restored byte-identically afterwards.
+- **Deliberately NOT done here:** the missing ownership check on this
+  handler. That is P0 #5 and already in flight as PR #7 — adding it here
+  would duplicate/conflict with an open PR.
+
 
 **#10 RBAC never authorizes callbacks** — `rbac.py:171`. Add a per-router allowlist of
 callback prefixes mapped to roles. Defence-in-depth for #5.
@@ -236,16 +260,59 @@ callback prefixes mapped to roles. Defence-in-depth for #5.
 `int` against `str.split(",")`, which is always `False`. The block is unreachable; delete
 it and `_ensure_admin_profile` (88-111). `main.py::_seed_admins` already does this at boot.
 
-**#12 Admin list pagination buttons are dead** — `admin/keyboards.py:132,139,199,206` emit
-`nav:…`; only `admin_req_page:` and `admin_drv_page:` handlers exist, so the ⬅️/➡️ buttons
-on `pending_drivers_list_keyboard` and `drivers_list_keyboard` fall through to
-`catch_all_callback` and show "Invalid input". Also rename `NavHome`'s prefix off `"nav"`
-(`callback_data.py:123`) — it declares a different required field, a latent filter collision.
+**#12 ~~Admin list pagination buttons are dead~~ — FIXED 2026-10-05 (PR #13,
+`fix/dead-admin-pagination-buttons`)**
+- **Problem (confirmed by reading the code, and reproduced in a test):**
+  `pending_drivers_list_keyboard` and `drivers_list_keyboard` built their
+  Prev/Next buttons with the `PaginationNav` factory, which packs to
+  `nav:<page>:<direction>`. **No handler in the entire dispatcher matched that
+  prefix.** The admin router only registers `admin_req_page:` and
+  `admin_drv_page:`. Every click fell through to
+  `bot/common/fallback.py::catch_all_callback` and answered "Invalid input",
+  so **both driver lists were navigable on exactly one page** — an admin with
+  30 pending applications could only ever see the first 5, and could reach the
+  other 25 through no UI at all.
+- **Why the existing tests missed it:** `tests/unit/admin/test_keyboards.py`
+  asserted only the *button labels* ("⬅️ Prev" / "➡️ Next" present or absent).
+  Nothing ever checked that the payload behind the button was routable.
+- **Changed:**
+  - `bot/admin/keyboards.py` — both driver keyboards now emit the literal
+    `admin_drv_page:<n>`, matching `handle_drivers_pagination`. `PaginationNav`
+    removed from the imports; a "Callback data note" in the module docstring
+    records why the literals must stay in sync with the handlers.
+  - `bot/admin/handler.py` — new `_parse_page_number()` helper; both
+    pagination handlers now guard `int()` on the callback payload (**this is
+    the P1 #22 defect on the two handlers this task touches** — `admin_drv_page:abc`
+    used to raise an uncaught `ValueError` out of the handler and the admin
+    got no response at all). It also clamps page to ≥ 1. Removed the
+    now-unused `PaginationNav` import.
+  - `bot/core/utils/callback_data.py` — `NavHome`'s prefix moved `nav` → `nav_home`.
+    It shared the prefix with `PaginationNav` while declaring a *different*
+    required field, so `PaginationNav.unpack("nav:home")` and
+    `NavHome.unpack("nav:2:next")` were both ambiguous. Renamed rather than
+    deleted: the class is dead but its removal belongs to P3 #35.
+- **Tests:** new `tests/unit/admin/test_pagination_routing.py` (13 tests). The
+  headline one is **structural, not textual**: it resolves every callback an
+  admin keyboard can emit against every handler in the dispatcher and asserts
+  each one is claimed. Asserting the literal `admin_drv_page:` prefix instead
+  would only re-encode the fix and would not catch a future keyboard pointing
+  at some other unrouted prefix.
+  - `pending_requests_list_keyboard` is included as a **passing control** —
+    it already used the correct prefix, which proves the invariant is not
+    trivially satisfiable.
+  - Tripwire evidence: reverting only the source (tests kept) fails **8** of
+    them with the real symptom —
+    `AssertionError: pending_drivers_list_keyboard emits callback(s) that no handler in the dispatcher matches: ['nav:1:prev', 'nav:3:next']`.
+  - One aiogram trap worth recording: `HandlerObject.check()` is **unusable**
+    for this. For awaitable filters it awaits `FilterObject.call`, whose return
+    value is the raw truthy coroutine result, so *every* handler "matches"
+    *every* callback. The test evaluates each `FilterObject.call` directly.
 
 **#13 Double pagination on the student request list** — `request/repository.py:147-154`
 applies `OFFSET/LIMIT`, then the handler re-paginates the slice
-(`requests.py:609, 644`). `total_pages` is always 1, Next never renders, and page ≥ 2
-returns fewer or no rows. Pick one strategy.
+(`requests.py:603-609, 637-644`). `total_pages` is always 1, Next never renders, and page ≥ 2
+returns fewer or no rows. Pick one strategy. **Verified again 2026-10-05** — still open;
+it is the natural next task.
 
 **#14 `IntegrityError` → `ValidationError` never reaches the user** —
 `request/service.py:139,179,243,298,362,415`. The `except` runs *inside* an open
@@ -283,6 +350,12 @@ correct the docstring.
 
 **#22 `int()` on callback data without try/except** — `admin/handler.py:236, 262, 542, 827`.
 Copy the guard already used at `student/handlers/requests.py:655-660`.
+**Partially fixed 2026-10-05 (PR #13):** the two pagination handlers
+(`handle_pending_requests_pagination`, `handle_drivers_pagination`) now use the
+`_parse_page_number()` helper, which returns `None` on a bad payload and makes
+the handler answer `ErrorMessages.INVALID_INPUT` instead of raising
+`ValueError` out of the handler. **The three remaining sites (`admin/handler.py:262, 236, 827`)
+are still unguarded.**
 
 ### P2 — Improvement
 
@@ -366,49 +439,36 @@ escaping, and callback authorization.
 rendering `ALLOWED_TRANSITIONS` — the FSM is the product's core and is currently understandable
 only by reading Python.
 
-**#41** Add CI — no `.github/` exists. A minimal workflow (`uv`-based Python 3.12 install,
+**#41 Add CI** — no `.github/` exists. A minimal workflow (`uv`-based Python 3.12 install,
 `ruff`, `mypy`, `pytest --cov`) would have caught #20, #8, and most of the P1 list automatically.
+
+**#42 `pyproject.toml` names a non-existent build backend** *(found 2026-10-03)* —
+`build-backend = "setuptools.backends.legacy:build"` (with no `[tool.setuptools]`
+section and no package discovery config). `uv pip install -e .` fails outright, so
+the project **cannot be installed as a package at all**; every environment must be
+hand-built. Change to `build-backend = "setuptools.build_meta"` plus an explicit
+`[tool.setuptools.packages.find] include = ["bot*"]`, and declare the real
+dependency set from `requirements.txt` in `[project.dependencies]` (closes #20 too).
+*Verified:* `uv pip install -e .` → backend resolution error.
+
+**#43 34 tests fail on `main` independent of any open PR** *(found 2026-10-03)* —
+the suite is red at the review baseline, so no run can claim a green build until
+this is addressed. Two distinct causes, both fixable without product changes:
+(a) 16 × `NOT NULL constraint failed: users.id` — the SQLite `BigInteger` PK
+problem of P0 #0 (PR #8), which is why `test_models.py` cannot round-trip a single
+row; (b) 6 × `bot.driver.service` has no attribute `async_session` — stale patch
+targets left over from the session-injection refactor, plus 4 × `session.begin()`
+returning a bare coroutine instead of an async context manager. Assign a green
+gate here before adding more tests on top of a red suite.
 
 ---
 
 ## 5. Testing
 
-- **The suite is NOT green on `main`, and never has been.** As of 2026-09-30
-  (Python 3.12.7) the honest numbers are:
-  - `main` @ `2e31ff9`: **34 failed, 367 passed**
-  - with the #0 fix: **26 failed, 378 passed**
-- A daily run that reports "tests pass" without these numbers is wrong. Do not
-  claim a green suite until this reaches 0 failed.
+- 342 tests across 29 files under `tests/`.
 - **All 4 "integration" files are `AsyncMock`-based** — none starts Postgres, Redis, or a
   Dispatcher. They cannot reproduce any P0.
 - No `conftest.py`; `tests/fixtures/__init__.py` is empty.
-- **The 26 remaining failures are real and unfixed.** Verified breakdown by file:
-  - `tests/unit/driver/test_service.py::TestRegisterDriver` — **5**
-  - `tests/unit/student/test_student_phase9.py` — **5**
-  - `tests/integration/db/test_alembic.py` — **3**
-  - `tests/unit/student/test_handler.py` — **3**
-  - `tests/unit/admin/test_service.py::TestGetStats` — **2**
-  - `tests/unit/request/test_repository.py` — **2**
-  - `tests/unit/admin/test_keyboards.py`, `tests/unit/driver/test_keyboards.py`,
-    `tests/unit/core/test_middlewares.py` — **1 each**
-  - `tests/integration/handlers/{test_driver_registration_flow,test_request_flow,test_request_lifecycle}.py` — **1 each**
-- **Root causes observed in the error text:**
-  1. **Stale tests vs. already-merged code (dominant).** `bot/driver/service.py` no
-     longer exposes `async_session` (session injection landed via PR #2), but
-     `tests/unit/driver/test_service.py` still patches it →
-     `AttributeError: ... does not have the attribute 'async_session'`. The same
-     pattern produces `TypeError: 'coroutine' object does not support the
-     asynchronous context manager protocol` in the student and request tests.
-     **These are test bugs, not product bugs** — highest-value next task.
-  2. **Stale UI assertions (6).** `test_keyboards.py` and `test_student_phase9.py`
-     assert on labels that have since changed (`'✅ Approve'` vs `'Approve'`,
-     `'🛈 Help'`, 11 vs 10 halls).
-  3. **Real logic mismatches (4).** `DriverAvailability` expected AVAILABLE but got
-     BUSY (`test_confirm_cancel_restores_driver_availability` — this *is* backlog #3);
-     `get_stats` returns an empty MagicMock (the `admin/` service has no repository
-     layer, see #24).
-  4. **Needs a live Postgres (3)** — `tests/integration/db/test_alembic.py` fails with
-     `asyncpg InvalidPasswordError`. Blocked on #7.
 - **Coverage gaps:** the entire DB persistence layer, all middleware (auth, RBAC, throttling,
   session), every service→repository interaction, and the FSM's real enforcement.
 - **Highest-value new tests:** one per P0. See #32.
@@ -429,28 +489,94 @@ only by reading Python.
 | Date | Branch | Task | PR | Result |
 |---|---|---|---|---|
 | 2026-09-26 | `chore/maintenance-doc` | Initial review + this document | — | Baseline established, 0 P0–P3 items closed |
-| 2026-09-30 | `fix/user-pk-sqlite-autoincrement` | P0 #0 — `users.id` cannot autoincrement on SQLite; 8 tests unfixable | this PR | **26 failed, 378 passed** (was 34/367). 0 new failures. No lint configured (#33). Stale doc corrected: 5 open PRs, test counts, install blocker. |
+| 2026-10-03 | `fix/unawaited-set-my-commands` | P1 #8 un-awaited `set_my_commands` | #11 | **Fixed.** 4 new tests. Also **disproved P0 #6** — it was a documentation error, not a bug. |
+| 2026-10-04 | `fix/driver-reject-bypasses-fsm` | P1 #9 `process_driver_reject` bypassed the FSM and audit log | #12 | **Fixed.** 13 new/updated tests; 7 verified to fail when the fix is reverted. Full suite unchanged at 34 pre-existing failures. |
+| 2026-10-05 | `fix/dead-admin-pagination-buttons` | P1 #12 admin driver-list Prev/Next buttons were unroutable; + P1 #22 on 2 handlers | #13 | **Fixed.** 13 new tests; 8 verified to fail when the fix is reverted. Full suite unchanged at 34 pre-existing failures. |
 
-### 2026-09-30 run notes
+**Remaining backlog:** 6 × P0 (all in open PRs #5–#10), 11 × P1 (#12 closed, #22 partially), 12 × P2, 7 × P3 = **36 open items**.
 
-- **Merged nothing; 5 PRs (#3–#7) remain open and unmerged.** Nothing the earlier
-  runs claimed has landed on `main`. A prior run left a broken uncommitted state
-  on `main` (an `Integer`-PK rewrite of all 9 models plus a `student/service.py`
-  refactor that references an undefined `validated_full_name` after the code was
-  split into `_register_student_impl`). I preserved it in a git stash rather than
-  committing it. **Do not `git stash pop` it — it is NameError-level broken.**
-- Because `docs/` does not exist on `main`, this document was restored with
-  `git checkout chore/maintenance-doc -- docs/MAINTENANCE.md`. Consider merging
-  PR #3 first so the next run does not have to.
-- **Choosing this task over the P0 queue:** items #1–#5 already have open PRs
-  (#4, #5, #6, #7), so they were skipped as in-flight. #6 is flagged in the
-  backlog as "reasoning from documented ORM semantics, not executed" — it is now
-  worth re-testing for real, since a working test tier exists. #7 is blocked
-  (needs a live Postgres + the Alembic rewrite). #0 was found during
-  re-verification, is a real P0-grade bug, and is verifiable with tests.
+### 2026-10-05 run notes
 
-**Remaining backlog:** 6 × P0 (#0 done, unmerged), 15 × P1, 12 × P2, 7 × P3 = **40 open items**.
-**Next recommended task:** repair the stale tests that still patch the removed
-`async_session` (item group 1 in §5) — it is ~11 failures of pure test rot, it is
-what currently blocks any honest "suite is green" claim, and it is required before
-#6 and #3 can be verified at all.
+- **All 6 remaining P0 items still have open PRs** (#2→PR #5, #3→#6, #4→#9,
+  #5→#7, #7→#10, #0→#8; #6 disproved on 2026-10-03). Per the "skip anything
+  already in an open PR" rule, the highest available item was **P1 #12**.
+- **Validation:** baseline on `main` @ `1b5c06c` before the change was
+  **34 failed / 371 passed** (405 tests, 73.9s under CPython 3.12.7). After the
+  change: **34 failed / 384 passed** (418 tests, 38.0s). The `FAILED` list was
+  captured before and after and **`diff`ed: identical, line for line.** That
+  matters — equal *counts* can hide a swapped failure, and three pre-existing
+  failures live in `tests/unit/admin/`, the very directory this change touches.
+- **Tripwire evidence:** reverting only `bot/admin/keyboards.py` +
+  `bot/core/utils/callback_data.py` (tests kept) fails **8** of the new tests,
+  reporting the real symptom
+  `['nav:1:prev', 'nav:3:next']` as unroutable. Reverted state restored.
+- **Doc housekeeping:** the previous two runs left the doc on their own task
+  branches, so no single branch had the newest copy. It was copied forward
+  from `origin/fix/driver-reject-bypasses-fsm`. **Do not merge task branches
+  out of order** — PR #13 carries the doc as of 2026-10-05, but PRs
+  #4–#12 each carry an older copy.
+- **Discovered, not fixed:** `PaginationNav` is now referenced **only** by
+  `tests/unit/core/test_utils.py` — no production code uses it. It survives as
+  the `nav` prefix that `NavHome` used to collide with. Fold its removal into
+  P3 #35's dead-code sweep.
+- **Discovered, not fixed:** the structural routing invariant added today only
+  covers **admin** keyboards. `driver/`, `student/`, and `common/` keyboards
+  are unchecked, and `PaginationNav`-style unrouted payloads are exactly the
+  failure mode they would hide. Worth extending as a follow-up.
+- **No linter exists** in the project (`ruff`/`flake8`/`mypy` absent — item
+  #33). Validation used `pytest` + `python -m compileall`.
+- **Toolchain note:** `uv venv --python 3.12 .venv` now fails with
+  `A virtual environment already exists at: .venv`; `--clear` is required (or
+  just reuse the existing 3.12.7 venv, which is what this run did).
+
+### 2026-10-04 run notes
+
+- **All 7 P0 items already have open PRs** (#0→PR #8, #2→#5, #3→#6, #4→#9,
+  #5→#7, #7→#10; #6 disproved). Per the "skip anything already in an open PR"
+  rule, the highest available item was **P1 #9**, which is what this run took.
+- **Validation:** baseline on `main` before the change was **34 failed / 371
+  passed** (405 tests). After the change: **34 failed / 385 passed**
+  (419 tests, 68.50s under CPython 3.12.7). The failure *count and identity*
+  are unchanged — the same 34 tests that fail on `main`, all tracked under
+  #43 and the open P0 PRs. **13 new tests (+1 new state-machine parametrised
+  case), all passing**; 371 + 14 = 385.
+- **Tripwire evidence:** reverting only the `ASSIGNED → PENDING` edge makes
+  7 of the new tests fail with
+  `InvalidStatusTransitionError: Cannot transition from RequestStatus.ASSIGNED
+  to RequestStatus.PENDING`. Reverted state was restored byte-identically.
+- **`uv pip install -e .` still fails** (P1 #42, `setuptools.backends.legacy`).
+  Deps installed from the transcoded requirements file into a 3.12 venv.
+- **No linter exists** in the project (`ruff`/`flake8`/`mypy` all absent —
+  that is item #33). Validation used `pytest` + `python -m compileall`.
+- **Note on #9's ownership check:** the missing actor check on
+  `driver_reject` is *not* fixed by this branch. It is P0 #5 (PR #7), and
+  merging both would conflict.
+- **Discovered, not fixed:** `bot/request/service.py` now depends on
+  `bot.driver.repository`. There is no import cycle today (verified by
+  importing both modules), but it inverts the layering that
+  `.agents/rules/GEMINI.md` describes. Worth revisiting under #24 when the
+  repository layer is consolidated.
+
+
+### 2026-10-03 run notes
+
+- **Validation baseline on `main` @ `2e31ff9`: 34 failed, 367 passed** (401 tests,
+  ~4m50s under CPython 3.12.7). These failures are pre-existing and mostly
+  downstream of the open P0 PRs, not of this run's change.
+  Breakdown of the 34: 16 × `NOT NULL constraint failed: users.id` (P0 #0, PR #8),
+  6 × `bot.driver.service has no attribute 'async_session'` (stale patch target),
+  4 × `coroutine does not support async context manager` (AsyncMock `session.begin()`
+  — see the skill note), 2 × `get_stats` tuple unpack, plus assorted keyboard/handler
+  assertions. **The 4 new tests in this run pass and the pre-existing count is
+  unchanged at 34.**
+- **P0 #6 removed from the backlog as a false positive.** The entry was authored
+  by reasoning, never executed, and a real DB test disproved it. General lesson
+  applied to this document from now on: *no backlog item derived from pure code
+  reasoning may be called a confirmed bug without an executed reproduction.*
+- Python 3.12 provisioning: `uv venv --clear --python 3.12 .venv`, then
+  `uv pip install -r requirements_utf8.tmp` — note that `requirements.txt` is
+  UTF-16 (P1 #20) and `iconv` is **not available** in this MSYS shell, so the
+  file must be transcoded with the venv's own Python before `uv pip install`.
+- `uv pip install -e .` **fails**: `pyproject.toml` declares
+  `build-backend = "setuptools.backends.legacy:build"`, which does not exist.
+  Install test dependencies directly instead. Filed as a new P1 item.

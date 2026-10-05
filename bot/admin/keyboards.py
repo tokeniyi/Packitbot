@@ -29,10 +29,19 @@ Dependencies:
     - ``bot.core.constants.quick_replies``: ``BTN_BACK``, ``BTN_HOME``
     - ``bot.core.utils.callback_data``: ``AdminAssign``, ``AdminDriverApproval``,
       ``AdminDriverManage``, ``AdminDriverEdit``, ``AdminDriverRemove``,
-      ``AdminUserAction``, ``PaginationNav``
+      ``AdminUserAction``
     - ``bot.admin.schemas``: ``AvailableDriverDTO``, ``DriverListItemDTO``,
       ``UserDetailDTO``
     - ``bot.core.constants.enums``: ``DriverStatus``
+
+Callback data note:
+    Pagination controls are emitted as literal ``admin_drv_page:<n>`` and
+    ``admin_req_page:<n>`` strings rather than through a ``CallbackData``
+    factory, because those are the prefixes ``bot/admin/handler.py`` routes.
+    The ``PaginationNav`` factory packs to ``nav:<page>:<direction>``, which
+    **no** handler matches — using it here made the Prev/Next buttons fall
+    through to ``catch_all_callback`` and answer "Invalid input". Keep the
+    literals in sync with the handlers (backlog P1 #12).
 
 Called by:
     - ``bot/admin/handler.py``: All admin handler functions that render menus.
@@ -47,7 +56,6 @@ from bot.core.utils.callback_data import (
     AdminDriverManage,
     AdminDriverRemove,
     AdminUserAction,
-    PaginationNav,
 )
 from bot.admin.schemas import AvailableDriverDTO, DriverListItemDTO, UserDetailDTO
 from bot.core.constants.enums import DriverStatus
@@ -129,14 +137,14 @@ def pending_drivers_list_keyboard(
         nav_row.append(
             InlineKeyboardButton(
                 text="⬅️ Prev",
-                callback_data=PaginationNav(page=page - 1, direction="prev").pack(),
+                callback_data=f"admin_drv_page:{page - 1}",
             )
         )
     if page < total_pages:
         nav_row.append(
             InlineKeyboardButton(
                 text="➡️ Next",
-                callback_data=PaginationNav(page=page + 1, direction="next").pack(),
+                callback_data=f"admin_drv_page:{page + 1}",
             )
         )
     if nav_row:
@@ -196,14 +204,14 @@ def drivers_list_keyboard(
         nav_row.append(
             InlineKeyboardButton(
                 text="⬅️ Prev",
-                callback_data=PaginationNav(page=page - 1, direction="prev").pack(),
+                callback_data=f"admin_drv_page:{page - 1}",
             )
         )
     if page < total_pages:
         nav_row.append(
             InlineKeyboardButton(
                 text="➡️ Next",
-                callback_data=PaginationNav(page=page + 1, direction="next").pack(),
+                callback_data=f"admin_drv_page:{page + 1}",
             )
         )
     if nav_row:
