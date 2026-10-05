@@ -11,6 +11,7 @@ from bot.core.models.driver_profile import DriverProfile
 from bot.core.models.user import User
 from bot.request.business_rules import (
     can_assign_driver,
+    can_driver_act_on_request,
     can_edit_request,
     can_rate_delivery,
     can_student_cancel,
@@ -138,6 +139,20 @@ class TestCanAssignDriver:
             availability=DriverAvailability.OFFLINE,
         )
         assert can_assign_driver(driver) is False
+
+
+class TestCanDriverActOnRequest:
+    def test_assigned_driver_can_act(self):
+        req = _make_request(status=RequestStatus.ASSIGNED, driver_id=7)
+        assert can_driver_act_on_request(req, actor_id=7) is True
+
+    def test_other_driver_cannot_act(self):
+        req = _make_request(status=RequestStatus.ASSIGNED, driver_id=7)
+        assert can_driver_act_on_request(req, actor_id=8) is False
+
+    def test_unassigned_request_has_no_driver_actor(self):
+        req = _make_request(status=RequestStatus.ASSIGNED, driver_id=None)
+        assert can_driver_act_on_request(req, actor_id=7) is False
 
 
 class TestCanRateDelivery:

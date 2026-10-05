@@ -1,7 +1,9 @@
 from datetime import date, timedelta
 
 import pytest
+from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.schema import CreateTable
 
 from bot.core.constants.enums import (
     AccountStatus,
@@ -23,6 +25,16 @@ from bot.core.models.status_log import RequestStatusLog
 from bot.core.models.student_profile import StudentProfile
 from bot.core.models.user import User
 from bot.core.repositories.base_repository import BaseRepository
+
+
+def test_user_pk_sqlite_variant_is_integer():
+    compiled = str(CreateTable(User.__table__).compile(dialect=sqlite.dialect()))
+    assert "id INTEGER NOT NULL" in compiled
+
+
+def test_user_pk_postgres_stays_bigserial():
+    compiled = str(CreateTable(User.__table__).compile(dialect=postgresql.dialect()))
+    assert "id BIGSERIAL NOT NULL" in compiled
 
 
 @pytest.mark.asyncio

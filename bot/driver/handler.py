@@ -928,9 +928,8 @@ async def process_delivery_status_step(callback: CallbackQuery, session=None) ->
 async def process_driver_reject(callback: CallbackQuery, session=None) -> None:
     """Handle a driver rejecting an assigned delivery request.
 
-    Parses the ``driver_reject:<request_id>`` callback, resets the request
-    to ``PENDING`` status with ``driver_id`` cleared via
-    :class:`RequestRepository`, edits the original message, and alerts all
+    Parses the ``driver_reject:<request_id>`` callback, routes rejection
+    through :class:`RequestService`, edits the original message, and alerts
     admins via direct message.
 
     Args:
@@ -939,7 +938,8 @@ async def process_driver_reject(callback: CallbackQuery, session=None) -> None:
         session:  Optional injected SQLAlchemy ``AsyncSession``.
 
     Calls / Depends on:
-        :class:`RequestRepository` (``update``), :class:`PackitbotError`.
+        :class:`RequestService` (``reject_assignment``),
+        :class:`RejectAssignmentDTO`, :class:`PackitbotError`.
 
     Registered on ``driver_router`` for callback data starting with
     ``driver_reject:``.
@@ -952,11 +952,11 @@ async def process_driver_reject(callback: CallbackQuery, session=None) -> None:
         return
 
     from sqlalchemy import select
-    from bot.core.constants.enums import RequestStatus, UserRole
+    from bot.core.constants.enums import UserRole
     from bot.core.exceptions import PackitbotError
-    from bot.core.models.delivery_request import DeliveryRequest
     from bot.core.models.user import User
-    from bot.request.repository import RequestRepository
+    from bot.request.schemas import RejectAssignmentDTO
+    from bot.request.service import RequestService
 
     try:
         # Fetch driver user
@@ -968,13 +968,13 @@ async def process_driver_reject(callback: CallbackQuery, session=None) -> None:
             await callback.answer("Driver profile not found.", show_alert=True)
             return
 
-        req_repo = RequestRepository(session)
-        # Update request: set status back to PENDING and clear driver_id
-        updated_req = await req_repo.update(
-            request_id,
-            status=RequestStatus.PENDING,
-            driver_id=None,
+        req_service = RequestService(session)
+        dto = RejectAssignmentDTO(
+            request_id=request_id,
+            driver_id=driver_user.id,
+            reason=f"Assignment declined by driver {driver_user.id}",
         )
+        updated_req, _event = await req_service.reject_assignment(dto)
         await session.commit()
 
         await callback.message.edit_text(

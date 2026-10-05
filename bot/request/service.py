@@ -18,7 +18,7 @@ from typing import Optional
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.core.constants.enums import CancelledBy, RequestStatus
+from bot.core.constants.enums import CancelledBy, DriverAvailability, RequestStatus
 from bot.core.exceptions import (
     DriverUnavailableError,
     InvalidStatusTransitionError,
@@ -31,8 +31,10 @@ from bot.core.models.delivery_request import DeliveryRequest
 from bot.core.models.driver_profile import DriverProfile
 from bot.core.models.feedback import Feedback
 from bot.core.models.status_log import RequestStatusLog
+from bot.driver.repository import DriverRepository
 from bot.request.business_rules import (
     can_assign_driver,
+    can_driver_act_on_request,
     can_edit_request,
     can_rate_delivery,
     can_student_cancel,
@@ -54,6 +56,7 @@ from bot.request.schemas import (
     CancelRequestDTO,
     CreateFeedbackDTO,
     CreateRequestDTO,
+    RejectAssignmentDTO,
     TransitionDTO,
     UpdateRequestDTO,
 )
@@ -82,6 +85,7 @@ class RequestService:
         self.request_repo = RequestRepository(session)
         self.status_log_repo = StatusLogRepository(session)
         self.feedback_repo = FeedbackRepository(session)
+        self.driver_repo = DriverRepository(session)
 
     async def create_request(
         self, dto: CreateRequestDTO
@@ -214,6 +218,12 @@ class RequestService:
         if not can_assign_driver(driver_profile):
             raise DriverUnavailableError("Driver is not approved or available for assignment.")
 
+        if dto.driver_id != driver_profile.user_id:
+            raise ValidationError(
+                "AssignDriverDTO.driver_id must be the driver's users.id "
+                f"(expected {driver_profile.user_id}, got {dto.driver_id})."
+            )
+
         if not can_transition(request.status, RequestStatus.ASSIGNED):
             raise InvalidStatusTransitionError(
                 f"Cannot transition from {request.status} to {RequestStatus.ASSIGNED}"
@@ -270,6 +280,11 @@ class RequestService:
         if request is None:
             raise NotFoundError(f"DeliveryRequest with id={dto.request_id} not found")
 
+        if dto.require_assigned_driver and not can_driver_act_on_request(request, dto.actor_id):
+            raise PermissionDeniedError(
+                f"User {dto.actor_id} is not the driver assigned to request {dto.request_id}"
+            )
+
         old_status = request.status
         if not can_transition(old_status, dto.new_status):
             raise InvalidStatusTransitionError(
@@ -297,6 +312,51 @@ class RequestService:
             return updated_request, event
         except IntegrityError as exc:
             raise ValidationError("Failed to transition status.") from exc
+
+    async def reject_assignment(
+        self, dto: RejectAssignmentDTO
+    ) -> tuple[DeliveryRequest, RequestStatusChangedEvent]:
+        """Return an ASSIGNED request to PENDING when the assigned driver declines."""
+        request = await self.request_repo.get_by_id_for_update(dto.request_id)
+        if request is None:
+            raise NotFoundError(f"DeliveryRequest with id={dto.request_id} not found")
+
+        if not can_driver_act_on_request(request, dto.driver_id):
+            raise PermissionDeniedError(
+                f"User {dto.driver_id} is not the driver assigned to request {dto.request_id}"
+            )
+
+        old_status = request.status
+        if not can_transition(old_status, RequestStatus.PENDING):
+            raise InvalidStatusTransitionError(
+                f"Cannot transition from {old_status} to {RequestStatus.PENDING}"
+            )
+
+        try:
+            updated_request = await self.request_repo.update(
+                dto.request_id,
+                status=RequestStatus.PENDING,
+                driver_id=None,
+            )
+            await self.status_log_repo.create(
+                request_id=request.id,
+                old_status=old_status,
+                new_status=RequestStatus.PENDING,
+                changed_by_user_id=dto.driver_id,
+                note=dto.reason or f"Assignment declined by driver {dto.driver_id}",
+            )
+            driver_profile = await self.driver_repo.get_by_user_id(dto.driver_id)
+            if driver_profile is not None:
+                driver_profile.availability = DriverAvailability.AVAILABLE
+            event = RequestStatusChangedEvent(
+                request_id=request.id,
+                old_status=old_status,
+                new_status=RequestStatus.PENDING,
+                actor_id=dto.driver_id,
+            )
+            return updated_request, event
+        except IntegrityError as exc:
+            raise ValidationError("Failed to reject assignment.") from exc
 
     async def cancel_request(
         self, dto: CancelRequestDTO

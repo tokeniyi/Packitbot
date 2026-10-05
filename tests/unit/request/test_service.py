@@ -31,6 +31,7 @@ from bot.request.schemas import (
     CancelRequestDTO,
     CreateFeedbackDTO,
     CreateRequestDTO,
+    RejectAssignmentDTO,
     TransitionDTO,
     UpdateRequestDTO,
 )
@@ -282,13 +283,28 @@ class TestRequestServiceAssignDriver:
         with pytest.raises(InvalidStatusTransitionError):
             await service.assign_driver(dto, driver)
 
+    async def test_assign_driver_rejects_driver_profile_pk(self):
+        session = _make_session()
+        repo = RequestRepository(session)
+        req = _make_request(id=1, status=RequestStatus.PENDING, student_id=1)
+        session.get.return_value = req
+        session.execute.return_value = req
+
+        service = RequestService(session)
+        service.request_repo = repo
+
+        dto = AssignDriverDTO(request_id=1, driver_id=7, admin_id=3)
+        driver = _make_driver_profile(user_id=99)
+        with pytest.raises(ValidationError, match="users.id"):
+            await service.assign_driver(dto, driver)
+
 
 class TestRequestServiceTransitionStatus:
     async def test_transition_status_success(self):
         session = _make_session()
         repo = RequestRepository(session)
         status_log_repo = StatusLogRepository(session)
-        req = _make_request(id=1, status=RequestStatus.ASSIGNED)
+        req = _make_request(id=1, status=RequestStatus.ASSIGNED, driver_id=3)
         session.get.return_value = req
         session.execute.return_value = req
 
@@ -331,7 +347,7 @@ class TestRequestServiceTransitionStatus:
     async def test_transition_status_invalid_transition(self):
         session = _make_session()
         repo = RequestRepository(session)
-        req = _make_request(id=1, status=RequestStatus.PENDING)
+        req = _make_request(id=1, status=RequestStatus.PENDING, driver_id=3)
         session.get.return_value = req
         session.execute.return_value = req
 
@@ -342,6 +358,47 @@ class TestRequestServiceTransitionStatus:
         dto = TransitionDTO(request_id=1, new_status=RequestStatus.DELIVERED, actor_id=3)
         with pytest.raises(InvalidStatusTransitionError):
             await service.transition_status(dto)
+
+    async def test_transition_status_rejects_non_assigned_driver(self):
+        session = _make_session()
+        repo = RequestRepository(session)
+        req = _make_request(id=1, status=RequestStatus.ASSIGNED, driver_id=3)
+        session.get.return_value = req
+        session.execute.return_value = req
+
+        service = RequestService(session)
+        service.request_repo = repo
+
+        dto = TransitionDTO(
+            request_id=1,
+            new_status=RequestStatus.ACCEPTED,
+            actor_id=999,
+        )
+        with pytest.raises(PermissionDeniedError):
+            await service.transition_status(dto)
+
+    async def test_transition_status_can_opt_out_of_driver_check(self):
+        session = _make_session()
+        repo = RequestRepository(session)
+        status_log_repo = StatusLogRepository(session)
+        req = _make_request(id=1, status=RequestStatus.ASSIGNED, driver_id=3)
+        session.get.return_value = req
+        session.execute.return_value = req
+        repo.update = AsyncMock(return_value=req)
+        status_log_repo.create = AsyncMock(return_value=MagicMock(spec=RequestStatusLog))
+
+        service = RequestService(session)
+        service.request_repo = repo
+        service.status_log_repo = status_log_repo
+
+        dto = TransitionDTO(
+            request_id=1,
+            new_status=RequestStatus.ACCEPTED,
+            actor_id=999,
+            require_assigned_driver=False,
+        )
+        result, _ = await service.transition_status(dto)
+        assert result.id == 1
 
 
 class TestRequestServiceCancelRequest:
@@ -575,3 +632,41 @@ class TestRequestServiceSubmitFeedback:
         dto = CreateFeedbackDTO(request_id=1, student_id=42, rating=0)
         with pytest.raises(ValidationError):
             await service.submit_feedback(dto)
+
+
+class TestRequestServiceRejectAssignment:
+    async def test_reject_assignment_success(self):
+        session = _make_session()
+        repo = RequestRepository(session)
+        status_log_repo = StatusLogRepository(session)
+        req = _make_request(id=5, status=RequestStatus.ASSIGNED, driver_id=7)
+        session.get.return_value = req
+        session.execute.return_value = req
+        repo.update = AsyncMock(return_value=req)
+        status_log_repo.create = AsyncMock(return_value=MagicMock(spec=RequestStatusLog))
+
+        service = RequestService(session)
+        service.request_repo = repo
+        service.status_log_repo = status_log_repo
+        service.driver_repo.get_by_user_id = AsyncMock(
+            return_value=_make_driver_profile(user_id=7, availability=DriverAvailability.BUSY)
+        )
+
+        dto = RejectAssignmentDTO(request_id=5, driver_id=7, reason="No capacity")
+        result_req, event = await service.reject_assignment(dto)
+        assert result_req.id == 5
+        assert event.new_status == RequestStatus.PENDING
+        repo.update.assert_called_once_with(5, status=RequestStatus.PENDING, driver_id=None)
+
+    async def test_reject_assignment_rejects_non_owner(self):
+        session = _make_session()
+        repo = RequestRepository(session)
+        req = _make_request(id=5, status=RequestStatus.ASSIGNED, driver_id=7)
+        session.get.return_value = req
+        session.execute.return_value = req
+
+        service = RequestService(session)
+        service.request_repo = repo
+
+        with pytest.raises(PermissionDeniedError):
+            await service.reject_assignment(RejectAssignmentDTO(request_id=5, driver_id=8))

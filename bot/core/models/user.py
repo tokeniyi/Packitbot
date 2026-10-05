@@ -39,7 +39,7 @@ if TYPE_CHECKING:
     from bot.core.models.status_log import RequestStatusLog
     from bot.core.models.student_profile import StudentProfile
 
-from sqlalchemy import BigInteger, DateTime, Enum, String
+from sqlalchemy import BigInteger, DateTime, Enum, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from bot.core.constants.enums import AccountStatus, UserRole
@@ -96,7 +96,10 @@ class User(Base, TimestampMixin):
 
     __tablename__ = "users"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+    )
     telegram_id: Mapped[int] = mapped_column(
         BigInteger, unique=True, index=True, nullable=False
     )

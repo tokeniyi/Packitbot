@@ -14,6 +14,7 @@ ALL_STATUSES = list(RequestStatus)
         (RequestStatus.PENDING, RequestStatus.CANCELLED),
         (RequestStatus.ASSIGNED, RequestStatus.ACCEPTED),
         (RequestStatus.ASSIGNED, RequestStatus.REJECTED_BY_DRIVER),
+        (RequestStatus.ASSIGNED, RequestStatus.PENDING),
         (RequestStatus.ASSIGNED, RequestStatus.CANCELLED),
         (RequestStatus.ACCEPTED, RequestStatus.EN_ROUTE_TO_PICKUP),
         (RequestStatus.ACCEPTED, RequestStatus.CANCELLED),

@@ -31,6 +31,7 @@ ALLOWED_TRANSITIONS: dict[RequestStatus, set[RequestStatus]] = {
     RequestStatus.ASSIGNED: {
         RequestStatus.ACCEPTED,
         RequestStatus.REJECTED_BY_DRIVER,
+        RequestStatus.PENDING,
         RequestStatus.CANCELLED,
     },
     RequestStatus.ACCEPTED: {

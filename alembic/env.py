@@ -22,9 +22,26 @@ from bot.core.models import admin_action_log
 target_metadata = Base.metadata
 
 
+def _resolve_url() -> str:
+    url = config.get_main_option("sqlalchemy.url", None)
+    if url:
+        return url
+    try:
+        from bot.core.config import get_settings
+        url = get_settings().database_url
+    except Exception as exc:
+        raise RuntimeError(
+            "No database URL configured. Set DATABASE_URL/.env or sqlalchemy.url in alembic.ini."
+        ) from exc
+    if not url:
+        raise RuntimeError(
+            "No database URL configured. Set DATABASE_URL/.env or sqlalchemy.url in alembic.ini."
+        )
+    return url
+
+
 def run_migrations_offline() -> None:
-    url = config.get_main_option("sqlalchemy.url")
-    context.configure(url=url, target_metadata=target_metadata)
+    context.configure(url=_resolve_url(), target_metadata=target_metadata)
     with context.begin_transaction():
         context.run_migrations()
 
@@ -36,9 +53,7 @@ def do_run_migrations(connection: Connection) -> None:
 
 
 async def run_async_migrations() -> None:
-    from bot.core.config import get_settings
-    settings = get_settings()
-    connectable = create_async_engine(settings.database_url)
+    connectable = create_async_engine(_resolve_url())
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
     await connectable.dispose()

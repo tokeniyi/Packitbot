@@ -39,7 +39,6 @@ from bot.core.exceptions import (
     ValidationError,
 )
 from bot.core.keyboards.common_kb import HomeButton
-from bot.core.models.driver_profile import DriverProfile
 from bot.core.utils.formatters import format_step_prompt
 from bot.core.utils.pagination import paginate
 from bot.core.utils.validators import (
@@ -52,6 +51,7 @@ from bot.core.utils.validators import (
     validate_special_instructions,
     validate_time_window,
 )
+from bot.driver.repository import DriverRepository
 from bot.request.repository import RequestRepository
 from bot.request.schemas import CancelRequestDTO, CreateRequestDTO, UpdateRequestDTO
 from bot.request.service import RequestService
@@ -665,7 +665,7 @@ async def show_request_detail(callback: CallbackQuery, session=None) -> None:
         return
 
     repo = RequestRepository(session)
-    req = await repo.get_by_id(req_id)
+    req = await repo.get_by_id_with_driver(req_id)
 
     user_id = await resolve_user_id(callback.from_user.id, session)
     if not req or req.student_id != user_id:
@@ -1009,7 +1009,7 @@ async def confirm_cancel_request(callback: CallbackQuery, session=None) -> None:
 
         # Restore driver availability if request had assigned/accepted driver
         if updated_req.driver_id is not None:
-            driver = await session.get(DriverProfile, updated_req.driver_id)
+            driver = await DriverRepository(session).get_by_user_id(updated_req.driver_id)
             if driver:
                 driver.availability = DriverAvailability.AVAILABLE
                 await session.flush()

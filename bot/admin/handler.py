@@ -324,7 +324,7 @@ async def handle_confirm_driver_assignment(
 
             dto = AssignDriverDTO(
                 request_id=callback_data.request_id,
-                driver_id=callback_data.driver_id,
+                driver_id=driver_profile.user_id,
                 admin_id=user.id,
             )
             updated_req, event = await req_service.assign_driver(dto, driver_profile)

@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from bot.admin.service import (
+    add_authorized_driver,
     approve_driver,
     get_driver_application_detail,
     get_pending_drivers,
@@ -12,6 +13,7 @@ from bot.admin.schemas import SystemStatsDTO
 from bot.core.constants.enums import AdminActionType, DriverStatus, UserRole
 from bot.core.exceptions import NotFoundError, ValidationError
 from bot.core.models.admin_action_log import AdminActionLog
+from bot.core.models.authorized_driver import AuthorizedDriver
 from bot.core.models.delivery_request import DeliveryRequest
 from bot.core.models.driver_profile import DriverProfile
 from bot.core.models.feedback import Feedback
@@ -242,6 +244,40 @@ class TestRejectDriver:
 
         with pytest.raises(NotFoundError):
             await reject_driver(session=session, dto=dto)
+
+
+class TestAddAuthorizedDriver:
+    async def test_looks_up_admin_by_users_id(self):
+        session = AsyncMock()
+        session.add = MagicMock()
+        session.flush = AsyncMock()
+
+        admin = MagicMock(spec=User)
+        admin.id = 42
+        admin.role = UserRole.ADMIN
+
+        admin_row = MagicMock()
+        admin_row.scalar_one_or_none.return_value = admin
+        existing_row = MagicMock()
+        existing_row.scalar_one_or_none.return_value = None
+
+        session.execute.side_effect = [admin_row, existing_row]
+
+        added = await add_authorized_driver(
+            session=session,
+            telegram_id=123456789,
+            admin_user_id=42,
+        )
+
+        assert added is True
+        admin_stmt = session.execute.call_args_list[0].args[0]
+        compiled = str(admin_stmt)
+        assert "users.id" in compiled
+        assert "users.telegram_id" not in compiled
+
+        inserted = [c.args[0] for c in session.add.call_args_list if isinstance(c.args[0], AuthorizedDriver)]
+        assert inserted
+        assert inserted[0].added_by_admin_id == 42
 
 
 class TestGetStats:

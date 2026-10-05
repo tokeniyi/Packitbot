@@ -8,6 +8,7 @@ from bot.core.models.driver_profile import DriverProfile
 from bot.driver.handler import (
     cancel_driver_registration,
     check_approval_status,
+    process_driver_reject,
     process_full_name,
     process_license_number,
     process_phone_number,
@@ -38,6 +39,8 @@ def _make_callback(data: str = "", user_id: int = 1) -> MagicMock:
     cb.message.edit_text = AsyncMock()
     cb.message.answer = AsyncMock()
     cb.answer = AsyncMock()
+    cb.bot = MagicMock()
+    cb.bot.send_message = AsyncMock()
     return cb
 
 
@@ -286,3 +289,37 @@ class TestToggleAvailabilityHandler:
             await toggle_availability_handler(message)
 
         message.answer.assert_awaited_once()
+
+
+class TestProcessDriverReject:
+    async def test_routes_rejection_through_service(self):
+        callback = _make_callback(data="driver_reject:17", user_id=999)
+        session = AsyncMock()
+
+        driver_user = MagicMock(id=42, full_name="Driver", telegram_id=999)
+        driver_row = MagicMock()
+        driver_row.scalar_one_or_none.return_value = driver_user
+
+        admin = MagicMock(telegram_id=123)
+        admin_row = MagicMock()
+        admin_row.scalars.return_value.all.return_value = [admin]
+
+        session.execute.side_effect = [driver_row, admin_row]
+
+        captured = {}
+
+        class _FakeRequestService:
+            def __init__(self, _session):
+                pass
+
+            async def reject_assignment(self, dto):
+                captured["dto"] = dto
+                req = MagicMock(id=17)
+                return req, MagicMock()
+
+        with patch("bot.driver.handler.RequestService", _FakeRequestService):
+            await process_driver_reject(callback, session=session)
+
+        assert captured["dto"].request_id == 17
+        assert captured["dto"].driver_id == 42
+        session.commit.assert_awaited_once()
