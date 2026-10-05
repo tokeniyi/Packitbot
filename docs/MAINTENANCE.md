@@ -8,8 +8,16 @@
 - **Description:** Async Telegram logistics and delivery management bot (aiogram 3.x, SQLAlchemy 2.0)
 - **Default branch:** `main` (protected — never pushed to directly)
 - **Scale:** 130 Python files, ~14.7k LOC application code
-- **Review baseline:** commit `2e31ff9`
-- **Last reviewed:** 2026-09-26
+- **Review baseline:** commit `1b5c06c` (`main`, as of 2026-10-05)
+- **Last reviewed:** 2026-10-05
+
+> **WARNING — this document is branch-resident.** PR #3 (`chore/maintenance-doc`)
+> was never merged, so `docs/MAINTENANCE.md` does **not** exist on `main`.
+> Every daily run must read it with
+> `git show origin/fix/driver-reject-bypasses-fsm:docs/MAINTENANCE.md`
+> (or the newest task branch), not `read_file`, or it will find nothing.
+> Merging PR #3 would fix this permanently and is the single cheapest
+> improvement available.
 
 ---
 
@@ -252,16 +260,59 @@ callback prefixes mapped to roles. Defence-in-depth for #5.
 `int` against `str.split(",")`, which is always `False`. The block is unreachable; delete
 it and `_ensure_admin_profile` (88-111). `main.py::_seed_admins` already does this at boot.
 
-**#12 Admin list pagination buttons are dead** — `admin/keyboards.py:132,139,199,206` emit
-`nav:…`; only `admin_req_page:` and `admin_drv_page:` handlers exist, so the ⬅️/➡️ buttons
-on `pending_drivers_list_keyboard` and `drivers_list_keyboard` fall through to
-`catch_all_callback` and show "Invalid input". Also rename `NavHome`'s prefix off `"nav"`
-(`callback_data.py:123`) — it declares a different required field, a latent filter collision.
+**#12 ~~Admin list pagination buttons are dead~~ — FIXED 2026-10-05 (PR #13,
+`fix/dead-admin-pagination-buttons`)**
+- **Problem (confirmed by reading the code, and reproduced in a test):**
+  `pending_drivers_list_keyboard` and `drivers_list_keyboard` built their
+  Prev/Next buttons with the `PaginationNav` factory, which packs to
+  `nav:<page>:<direction>`. **No handler in the entire dispatcher matched that
+  prefix.** The admin router only registers `admin_req_page:` and
+  `admin_drv_page:`. Every click fell through to
+  `bot/common/fallback.py::catch_all_callback` and answered "Invalid input",
+  so **both driver lists were navigable on exactly one page** — an admin with
+  30 pending applications could only ever see the first 5, and could reach the
+  other 25 through no UI at all.
+- **Why the existing tests missed it:** `tests/unit/admin/test_keyboards.py`
+  asserted only the *button labels* ("⬅️ Prev" / "➡️ Next" present or absent).
+  Nothing ever checked that the payload behind the button was routable.
+- **Changed:**
+  - `bot/admin/keyboards.py` — both driver keyboards now emit the literal
+    `admin_drv_page:<n>`, matching `handle_drivers_pagination`. `PaginationNav`
+    removed from the imports; a "Callback data note" in the module docstring
+    records why the literals must stay in sync with the handlers.
+  - `bot/admin/handler.py` — new `_parse_page_number()` helper; both
+    pagination handlers now guard `int()` on the callback payload (**this is
+    the P1 #22 defect on the two handlers this task touches** — `admin_drv_page:abc`
+    used to raise an uncaught `ValueError` out of the handler and the admin
+    got no response at all). It also clamps page to ≥ 1. Removed the
+    now-unused `PaginationNav` import.
+  - `bot/core/utils/callback_data.py` — `NavHome`'s prefix moved `nav` → `nav_home`.
+    It shared the prefix with `PaginationNav` while declaring a *different*
+    required field, so `PaginationNav.unpack("nav:home")` and
+    `NavHome.unpack("nav:2:next")` were both ambiguous. Renamed rather than
+    deleted: the class is dead but its removal belongs to P3 #35.
+- **Tests:** new `tests/unit/admin/test_pagination_routing.py` (13 tests). The
+  headline one is **structural, not textual**: it resolves every callback an
+  admin keyboard can emit against every handler in the dispatcher and asserts
+  each one is claimed. Asserting the literal `admin_drv_page:` prefix instead
+  would only re-encode the fix and would not catch a future keyboard pointing
+  at some other unrouted prefix.
+  - `pending_requests_list_keyboard` is included as a **passing control** —
+    it already used the correct prefix, which proves the invariant is not
+    trivially satisfiable.
+  - Tripwire evidence: reverting only the source (tests kept) fails **8** of
+    them with the real symptom —
+    `AssertionError: pending_drivers_list_keyboard emits callback(s) that no handler in the dispatcher matches: ['nav:1:prev', 'nav:3:next']`.
+  - One aiogram trap worth recording: `HandlerObject.check()` is **unusable**
+    for this. For awaitable filters it awaits `FilterObject.call`, whose return
+    value is the raw truthy coroutine result, so *every* handler "matches"
+    *every* callback. The test evaluates each `FilterObject.call` directly.
 
 **#13 Double pagination on the student request list** — `request/repository.py:147-154`
 applies `OFFSET/LIMIT`, then the handler re-paginates the slice
-(`requests.py:609, 644`). `total_pages` is always 1, Next never renders, and page ≥ 2
-returns fewer or no rows. Pick one strategy.
+(`requests.py:603-609, 637-644`). `total_pages` is always 1, Next never renders, and page ≥ 2
+returns fewer or no rows. Pick one strategy. **Verified again 2026-10-05** — still open;
+it is the natural next task.
 
 **#14 `IntegrityError` → `ValidationError` never reaches the user** —
 `request/service.py:139,179,243,298,362,415`. The `except` runs *inside* an open
@@ -299,6 +350,12 @@ correct the docstring.
 
 **#22 `int()` on callback data without try/except** — `admin/handler.py:236, 262, 542, 827`.
 Copy the guard already used at `student/handlers/requests.py:655-660`.
+**Partially fixed 2026-10-05 (PR #13):** the two pagination handlers
+(`handle_pending_requests_pagination`, `handle_drivers_pagination`) now use the
+`_parse_page_number()` helper, which returns `None` on a bad payload and makes
+the handler answer `ErrorMessages.INVALID_INPUT` instead of raising
+`ValueError` out of the handler. **The three remaining sites (`admin/handler.py:262, 236, 827`)
+are still unguarded.**
 
 ### P2 — Improvement
 
@@ -434,8 +491,43 @@ gate here before adding more tests on top of a red suite.
 | 2026-09-26 | `chore/maintenance-doc` | Initial review + this document | — | Baseline established, 0 P0–P3 items closed |
 | 2026-10-03 | `fix/unawaited-set-my-commands` | P1 #8 un-awaited `set_my_commands` | #11 | **Fixed.** 4 new tests. Also **disproved P0 #6** — it was a documentation error, not a bug. |
 | 2026-10-04 | `fix/driver-reject-bypasses-fsm` | P1 #9 `process_driver_reject` bypassed the FSM and audit log | #12 | **Fixed.** 13 new/updated tests; 7 verified to fail when the fix is reverted. Full suite unchanged at 34 pre-existing failures. |
+| 2026-10-05 | `fix/dead-admin-pagination-buttons` | P1 #12 admin driver-list Prev/Next buttons were unroutable; + P1 #22 on 2 handlers | #13 | **Fixed.** 13 new tests; 8 verified to fail when the fix is reverted. Full suite unchanged at 34 pre-existing failures. |
 
-**Remaining backlog:** 6 × P0 (#6 removed as non-existent), 13 × P1, 12 × P2, 7 × P3 = **38 open items**.
+**Remaining backlog:** 6 × P0 (all in open PRs #5–#10), 11 × P1 (#12 closed, #22 partially), 12 × P2, 7 × P3 = **36 open items**.
+
+### 2026-10-05 run notes
+
+- **All 6 remaining P0 items still have open PRs** (#2→PR #5, #3→#6, #4→#9,
+  #5→#7, #7→#10, #0→#8; #6 disproved on 2026-10-03). Per the "skip anything
+  already in an open PR" rule, the highest available item was **P1 #12**.
+- **Validation:** baseline on `main` @ `1b5c06c` before the change was
+  **34 failed / 371 passed** (405 tests, 73.9s under CPython 3.12.7). After the
+  change: **34 failed / 384 passed** (418 tests, 38.0s). The `FAILED` list was
+  captured before and after and **`diff`ed: identical, line for line.** That
+  matters — equal *counts* can hide a swapped failure, and three pre-existing
+  failures live in `tests/unit/admin/`, the very directory this change touches.
+- **Tripwire evidence:** reverting only `bot/admin/keyboards.py` +
+  `bot/core/utils/callback_data.py` (tests kept) fails **8** of the new tests,
+  reporting the real symptom
+  `['nav:1:prev', 'nav:3:next']` as unroutable. Reverted state restored.
+- **Doc housekeeping:** the previous two runs left the doc on their own task
+  branches, so no single branch had the newest copy. It was copied forward
+  from `origin/fix/driver-reject-bypasses-fsm`. **Do not merge task branches
+  out of order** — PR #13 carries the doc as of 2026-10-05, but PRs
+  #4–#12 each carry an older copy.
+- **Discovered, not fixed:** `PaginationNav` is now referenced **only** by
+  `tests/unit/core/test_utils.py` — no production code uses it. It survives as
+  the `nav` prefix that `NavHome` used to collide with. Fold its removal into
+  P3 #35's dead-code sweep.
+- **Discovered, not fixed:** the structural routing invariant added today only
+  covers **admin** keyboards. `driver/`, `student/`, and `common/` keyboards
+  are unchecked, and `PaginationNav`-style unrouted payloads are exactly the
+  failure mode they would hide. Worth extending as a follow-up.
+- **No linter exists** in the project (`ruff`/`flake8`/`mypy` absent — item
+  #33). Validation used `pytest` + `python -m compileall`.
+- **Toolchain note:** `uv venv --python 3.12 .venv` now fails with
+  `A virtual environment already exists at: .venv`; `--clear` is required (or
+  just reuse the existing 3.12.7 venv, which is what this run did).
 
 ### 2026-10-04 run notes
 
