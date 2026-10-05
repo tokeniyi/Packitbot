@@ -282,6 +282,61 @@ class TestRequestServiceAssignDriver:
         with pytest.raises(InvalidStatusTransitionError):
             await service.assign_driver(dto, driver)
 
+    async def test_assign_driver_rejects_driver_profile_id(self):
+        """A ``DriverProfile`` primary key must never reach the ``users.id`` FK.
+
+        ``DeliveryRequest.driver_id`` is a foreign key to ``users.id``. Passing
+        the profile row id (7) instead of the owning user id (99) is the bug
+        that previously aborted assignments with an ``IntegrityError``.
+        """
+        session = _make_session()
+        repo = RequestRepository(session)
+        status_log_repo = StatusLogRepository(session)
+        req = _make_request(id=1, status=RequestStatus.PENDING, student_id=1)
+        session.get.return_value = req
+        session.execute.return_value = req
+
+        repo.update = AsyncMock(return_value=req)
+        status_log_repo.create = AsyncMock(return_value=MagicMock(spec=RequestStatusLog))
+
+        service = RequestService(session)
+        service.request_repo = repo
+        service.status_log_repo = status_log_repo
+
+        dto = AssignDriverDTO(request_id=1, driver_id=7, admin_id=3)
+        driver = _make_driver_profile(user_id=99)
+
+        with pytest.raises(ValidationError, match="users.id"):
+            await service.assign_driver(dto, driver)
+
+        # Nothing may be persisted when the id does not identify the driver.
+        repo.update.assert_not_awaited()
+        status_log_repo.create.assert_not_awaited()
+
+    async def test_assign_driver_persists_users_id(self):
+        """The value written to ``driver_id`` must be the driver's ``users.id``."""
+        session = _make_session()
+        repo = RequestRepository(session)
+        status_log_repo = StatusLogRepository(session)
+        req = _make_request(id=1, status=RequestStatus.PENDING, student_id=1)
+        session.get.return_value = req
+        session.execute.return_value = req
+
+        repo.update = AsyncMock(return_value=req)
+        status_log_repo.create = AsyncMock(return_value=MagicMock(spec=RequestStatusLog))
+
+        service = RequestService(session)
+        service.request_repo = repo
+        service.status_log_repo = status_log_repo
+
+        dto = AssignDriverDTO(request_id=1, driver_id=99, admin_id=3)
+        driver = _make_driver_profile(user_id=99)
+
+        _, event = await service.assign_driver(dto, driver)
+
+        repo.update.assert_awaited_once_with(1, driver_id=99, status=RequestStatus.ASSIGNED)
+        assert event.driver_id == 99
+
 
 class TestRequestServiceTransitionStatus:
     async def test_transition_status_success(self):

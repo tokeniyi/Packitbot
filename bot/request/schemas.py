@@ -95,8 +95,12 @@ class AssignDriverDTO:
 
     Attributes:
         request_id: Primary key of the ``DeliveryRequest``.
-        driver_id: Telegram user ID of the driver being assigned.
-        admin_id: Telegram user ID of the admin performing the assignment.
+        driver_id: Primary key of the driver's ``users`` row
+            (``DriverProfile.user_id``). This is **not** the ``DriverProfile``
+            primary key and not the Telegram account id — ``DeliveryRequest.driver_id``
+            is a foreign key to ``users.id``.
+        admin_id: Primary key of the ``User`` row of the admin performing
+            the assignment.
     """
     request_id: int
     driver_id: int

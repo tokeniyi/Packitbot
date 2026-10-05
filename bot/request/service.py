@@ -214,6 +214,16 @@ class RequestService:
         if not can_assign_driver(driver_profile):
             raise DriverUnavailableError("Driver is not approved or available for assignment.")
 
+        # ``DeliveryRequest.driver_id`` is a foreign key to ``users.id``, so the
+        # DTO must carry the driver's *user* id. Guard here as well as at the
+        # call site: a ``DriverProfile`` primary key would fail the foreign key
+        # constraint or, worse, record the wrong user as the driver.
+        if dto.driver_id != driver_profile.user_id:
+            raise ValidationError(
+                "AssignDriverDTO.driver_id must be the driver's users.id "
+                f"(expected {driver_profile.user_id}, got {dto.driver_id})."
+            )
+
         if not can_transition(request.status, RequestStatus.ASSIGNED):
             raise InvalidStatusTransitionError(
                 f"Cannot transition from {request.status} to {RequestStatus.ASSIGNED}"
