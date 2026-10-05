@@ -39,7 +39,6 @@ from bot.core.exceptions import (
     ValidationError,
 )
 from bot.core.keyboards.common_kb import HomeButton
-from bot.core.models.driver_profile import DriverProfile
 from bot.core.utils.formatters import format_step_prompt
 from bot.core.utils.pagination import paginate
 from bot.core.utils.validators import (
@@ -52,6 +51,7 @@ from bot.core.utils.validators import (
     validate_special_instructions,
     validate_time_window,
 )
+from bot.driver.repository import DriverRepository
 from bot.request.repository import RequestRepository
 from bot.request.schemas import CancelRequestDTO, CreateRequestDTO, UpdateRequestDTO
 from bot.request.service import RequestService
@@ -1007,9 +1007,11 @@ async def confirm_cancel_request(callback: CallbackQuery, session=None) -> None:
     try:
         updated_req, event = await service.cancel_request(dto)
 
-        # Restore driver availability if request had assigned/accepted driver
+        # Restore driver availability if request had assigned/accepted driver.
+        # DeliveryRequest.driver_id is a FK to users.id, not DriverProfile.id,
+        # so the profile must be resolved via DriverRepository.get_by_user_id.
         if updated_req.driver_id is not None:
-            driver = await session.get(DriverProfile, updated_req.driver_id)
+            driver = await DriverRepository(session).get_by_user_id(updated_req.driver_id)
             if driver:
                 driver.availability = DriverAvailability.AVAILABLE
                 await session.flush()
