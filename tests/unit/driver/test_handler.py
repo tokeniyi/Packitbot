@@ -71,7 +71,7 @@ class TestStartDriverRegistration:
             new_callable=AsyncMock,
             return_value=pending_profile,
         ):
-            await start_driver_registration(message, state)
+            await start_driver_registration(message, state, session=AsyncMock())
 
         message.answer.assert_awaited_once()
 
@@ -87,7 +87,7 @@ class TestStartDriverRegistration:
             new_callable=AsyncMock,
             return_value=approved_profile,
         ):
-            await start_driver_registration(message, state)
+            await start_driver_registration(message, state, session=AsyncMock())
 
         message.answer.assert_awaited_once()
 
@@ -202,7 +202,7 @@ class TestProcessSubmitRegistration:
             "bot.driver.handler.register_driver", new_callable=AsyncMock
         ) as mock_reg:
             mock_reg.return_value = MagicMock(spec=DriverProfile)
-            await process_submit_registration(callback, state)
+            await process_submit_registration(callback, state, session=AsyncMock())
 
             mock_reg.assert_awaited_once()
             state.clear.assert_awaited_once()
@@ -230,7 +230,7 @@ class TestCheckApprovalStatus:
             new_callable=AsyncMock,
             return_value=profile,
         ):
-            await check_approval_status(message)
+            await check_approval_status(message, session=AsyncMock())
 
         message.answer.assert_awaited_once()
 
@@ -244,7 +244,7 @@ class TestCheckApprovalStatus:
             new_callable=AsyncMock,
             return_value=profile,
         ):
-            await check_approval_status(message)
+            await check_approval_status(message, session=AsyncMock())
 
         message.answer.assert_awaited_once()
 
@@ -267,7 +267,7 @@ class TestToggleAvailabilityHandler:
                 return_value=profile,
             ) as mock_set:
                 profile.availability = DriverAvailability.AVAILABLE
-                await toggle_availability_handler(message)
+                await toggle_availability_handler(message, session=AsyncMock())
 
                 mock_set.assert_awaited_once()
                 message.answer.assert_awaited_once()
@@ -283,6 +283,6 @@ class TestToggleAvailabilityHandler:
             new_callable=AsyncMock,
             return_value=profile,
         ):
-            await toggle_availability_handler(message)
+            await toggle_availability_handler(message, session=AsyncMock())
 
         message.answer.assert_awaited_once()

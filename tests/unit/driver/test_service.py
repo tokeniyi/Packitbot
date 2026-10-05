@@ -79,6 +79,7 @@ class TestRegisterDriver:
 
             existing_dp = MagicMock(spec=DriverProfile)
             existing_dp.status = DriverStatus.PENDING_APPROVAL
+            existing_dp.id = 1
 
             user_row = MagicMock()
             user_row.scalar_one_or_none.return_value = existing_user
@@ -91,11 +92,12 @@ class TestRegisterDriver:
                 return dp_row
 
             session.execute.side_effect = execute_side_effect
+            session.get.return_value = existing_dp
             session.flush.return_value = None
 
             result = await register_driver(VALID_DTO, session=session)
 
-            assert isinstance(result, DriverProfile)
+            assert result is existing_dp
             assert existing_dp.status == DriverStatus.PENDING_APPROVAL
 
     async def test_raises_when_already_approved(self):
@@ -172,17 +174,24 @@ class TestRegisterDriver:
             ctx = _AsyncSessionCtx(session)
             mock_session_factory.return_value = ctx
 
+            # session.begin() must return a real async context manager,
+            # not a coroutine (AsyncMock.begin() returns a coroutine).
+            begin_cm = MagicMock()
+            begin_cm.__aenter__ = AsyncMock(return_value=session)
+            begin_cm.__aexit__ = AsyncMock(return_value=False)
+            session.begin = MagicMock(return_value=begin_cm)
+
             result_mock = MagicMock()
             result_mock.scalar_one_or_none.return_value = None
             session.execute.side_effect = lambda stmt: result_mock
             session.flush.return_value = None
             session.add.return_value = None
-            session.commit = AsyncMock(return_value=None)
 
             result = await register_driver(VALID_DTO)
 
             assert isinstance(result, DriverProfile)
-            session.commit.assert_awaited_once()
+            assert session.add.call_count == 2
+            mock_session_factory.assert_called_once()
 
 
 class TestGetDriverProfileByTelegramId:

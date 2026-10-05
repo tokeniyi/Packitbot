@@ -101,7 +101,7 @@ class RequestRepository(BaseRepository[DeliveryRequest]):
         **Called by:** ``bot/driver/handler.py`` (driver active delivery lookup).
 
         Args:
-            driver_id: Telegram user ID of the driver.
+            driver_id: Internal user ID (FK to ``users.id``) of the driver.
 
         Returns:
             The most recent active ``DeliveryRequest`` for the driver, or

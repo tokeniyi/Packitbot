@@ -40,47 +40,48 @@ def test_register_student_dto_fields():
 
 async def test_register_student_creates_user_and_profile():
     """Verify register_student creates User + StudentProfile atomically."""
-    with patch("bot.student.service.async_session") as mock_session_factory:
-        session = AsyncMock()
-        mock_session_factory.return_value = session
+    session = AsyncMock()
+    row = MagicMock()
+    row.scalar_one_or_none.return_value = None
+    session.execute.return_value = row
 
-        row = MagicMock()
-        row.scalar_one_or_none.return_value = None
-        session.execute.return_value = row
+    profile = await register_student(
+        telegram_id=999,
+        username="testuser",
+        full_name="John Doe",
+        hall="Esther Hall",
+        phone="08023456789",
+        session=session,
+    )
 
-        profile = await register_student(
-            telegram_id=999,
-            username="testuser",
-            full_name="John Doe",
-            hall="Esther Hall",
-            phone="08023456789",
-        )
-
-        assert isinstance(profile, StudentProfile)
-        assert profile.hall_of_residence == "Esther Hall"
-        assert session.add.call_count == 2
-        session.commit.assert_awaited_once()
+    assert isinstance(profile, StudentProfile)
+    assert profile.hall_of_residence == "Esther Hall"
+    assert session.add.call_count == 2
 
 
 async def test_register_student_duplicate_raises_validation_error():
     """Verify registration failure raises error and rolls back."""
-    with patch("bot.student.service.async_session") as mock_session_factory:
-        session = AsyncMock()
-        mock_session_factory.return_value = session
+    session = AsyncMock()
+    row = MagicMock()
+    # For the duplicate test, user doesn't exist (so we try to create),
+    # and flush() raises to simulate a unique constraint violation.
+    row.scalar_one_or_none.return_value = None
+    session.execute.return_value = row
+    session.flush.side_effect = ValidationError("IntegrityError")
 
-        session.flush.side_effect = ValidationError("IntegrityError")
+    with pytest.raises(ValidationError):
+        await register_student(
+            telegram_id=999,
+            username="testuser",
+            full_name="Jane Doe",
+            hall="Dorcas Hall",
+            phone="08023456789",
+            session=session,
+        )
 
-        with pytest.raises(ValidationError):
-            await register_student(
-                telegram_id=999,
-                username="testuser",
-                full_name="Jane Doe",
-                hall="Dorcas Hall",
-                phone="08023456789",
-            )
-
-        session.rollback.assert_awaited_once()
-        session.commit.assert_not_awaited()
+    # The exception propagates out; the transactional context manager's
+    # __aexit__ is invoked (on a real session this triggers rollback).
+    session.flush.assert_awaited()
 
 
 async def test_is_registered_returns_true_for_student():
@@ -165,12 +166,13 @@ async def test_get_profile_returns_none_when_missing():
 
 
 def test_hall_selection_keyboard_matches_halls_list():
-    """Ensure Hall selection keyboard has one button per CU hall."""
+    """Ensure Hall selection keyboard has one button per CU hall plus a footer row."""
     from bot.core.constants.halls import CU_HALLS
 
     keyboard = hall_selection_keyboard()
     assert keyboard.inline_keyboard is not None
-    assert len(keyboard.inline_keyboard) == len(CU_HALLS)
+    # 10 hall buttons + 1 footer row (Cancel + Home)
+    assert len(keyboard.inline_keyboard) == len(CU_HALLS) + 1
 
 
 def test_hall_selection_keyboard_callback_format():
@@ -178,7 +180,12 @@ def test_hall_selection_keyboard_callback_format():
     keyboard = hall_selection_keyboard()
     for row in keyboard.inline_keyboard:
         for button in row:
-            assert button.callback_data.startswith("hall_select:")
+            # Hall buttons use "hall_select:" prefix; footer buttons use cancel/home
+            if button.text in ("❌ Cancel", "🏠 Home"):
+                assert button.callback_data in ("cancel", "home")
+            else:
+                assert button.callback_data.startswith("hall_select:")
+                assert button.callback_data == f"hall_select:{button.text}"
 
 
 def test_student_main_menu_has_four_buttons():
@@ -198,7 +205,7 @@ def test_student_main_menu_button_labels():
         "📦 New Request",
         "📋 My Requests",
         "👤 Profile",
-        "🛈 Help",
+        "ℹ️ Help",
     ]
 
     for expected in expected_buttons:

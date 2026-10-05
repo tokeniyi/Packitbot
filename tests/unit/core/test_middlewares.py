@@ -352,11 +352,10 @@ async def test_fallback_handler_replies_with_home():
     """Verify that unrecognized input triggers the catch-all fallback with a Home button."""
     from bot.common.fallback import catch_all_message
 
-    message = MagicMock()
+    message = MagicMock(spec=Message)
     message.answer = AsyncMock()
     message.chat = MagicMock()
     message.chat.id = 1
     message.chat.type = "private"
-
     await catch_all_message(message)
     message.answer.assert_awaited_once()

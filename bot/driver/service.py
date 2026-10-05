@@ -31,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from bot.core.constants.enums import AccountStatus, DriverAvailability, DriverStatus, UserRole
+from bot.core.db.session import async_session
 from bot.core.exceptions import DuplicateResourceError, PackitbotError, ValidationError
 from bot.core.models.driver_profile import DriverProfile
 from bot.core.models.authorized_driver import AuthorizedDriver
@@ -47,8 +48,8 @@ from bot.driver.schemas import RegisterDriverDTO
 
 
 async def register_driver(
-    session: AsyncSession,
     dto: RegisterDriverDTO,
+    session: Optional[AsyncSession] = None,
 ) -> DriverProfile:
     """Register a new driver or resubmit an existing pending application.
 
@@ -62,80 +63,92 @@ async def register_driver(
     ``async_session`` is opened, committed, and rolled back on failure.
 
     Args:
-        dto:        Validated registration payload (see :class:`RegisterDriverDTO`).
-        session:    Optional injected ``AsyncSession``. If ``None``, a new
-                    session scope is created via ``async_session()``.
+        dto:    Validated registration payload (see :class:`RegisterDriverDTO`).
+        session: Optional injected ``AsyncSession``. If ``None``, a new
+                session scope is created via ``async_session()``.
 
     Returns:
         The persisted (or updated) :class:`DriverProfile`.
 
     Raises:
-        PackitbotError:            If an approved profile already exists for the user.
-        DuplicateResourceError:    If the plate or license number is already taken
+        ValidationError:            If an approved profile already exists for the user.
+        DuplicateResourceError:     If the plate or license number is already taken
                                    (unique constraint violation on flush).
-        ValidationError:           If any field fails validation (raised by validators).
+        ValidationError:             If any field fails validation (raised by validators).
 
     Called by:
         ``bot/driver/handler.py`` -> ``process_submit_registration``.
     """
-    validated_name = validate_full_name(dto.full_name)
-    validated_phone = dto.phone_number
-    validated_vehicle = validate_vehicle_type(dto.vehicle_type)
-    validated_plate = validate_plate_number(dto.plate_number)
-    validated_license = validate_license_number(dto.license_number)
 
-    user_repo = UserRepository(session)
-    driver_repo = DriverRepository(session)
+    async def _execute(session: AsyncSession) -> DriverProfile:
+        user_repo = UserRepository(session)
+        driver_repo = DriverRepository(session)
 
-    # Pre-emptively check for unique constraints
-    if await driver_repo.get_by_plate_number(validated_plate):
-        raise DuplicateResourceError("A driver profile with this plate number already exists.")
-    if await driver_repo.get_by_license_number(validated_license):
-        raise DuplicateResourceError("A driver profile with this license number already exists.")
+        validated_name = validate_full_name(dto.full_name)
+        user = await user_repo.get_by_telegram_id(dto.telegram_id)
 
-    user = await user_repo.get_by_telegram_id(dto.telegram_id)
+        if user is None:
+            try:
+                user = await user_repo.create(
+                    telegram_id=dto.telegram_id,
+                    username=dto.username,
+                    full_name=validated_name,
+                    phone_number=dto.phone_number,
+                    role=None,
+                    account_status=AccountStatus.ACTIVE,
+                )
+            except IntegrityError:
+                raise DuplicateResourceError("A user with this Telegram ID already exists.")
+        else:
+            await user_repo.update(
+                user.id,
+                full_name=validated_name,
+                phone_number=dto.phone_number,
+            )
 
-    if user is None:
-        user = await user_repo.create(
-            telegram_id=dto.telegram_id,
-            username=dto.username,
-            full_name=validated_name,
-            phone_number=validated_phone,
-            role=None,
-            account_status=AccountStatus.ACTIVE,
-        )
-    else:
-        await user_repo.update(
-            user.id,
-            full_name=validated_name,
-            phone_number=validated_phone,
-        )
+        # Check existing driver profile
+        dp = await driver_repo.get_by_user_id(user.id)
 
-    # Check existing driver profile
-    dp = await driver_repo.get_by_user_id(user.id)
+        if dp is not None:
+            if dp.status == DriverStatus.APPROVED:
+                raise ValidationError("Driver profile is already approved.")
+            # Update pending profile details
+            try:
+                dp = await driver_repo.update(
+                    dp.id,
+                    vehicle_type=validate_vehicle_type(dto.vehicle_type),
+                    plate_number=validate_plate_number(dto.plate_number),
+                    license_number=validate_license_number(dto.license_number),
+                    status=DriverStatus.PENDING_APPROVAL,
+                )
+            except IntegrityError:
+                raise DuplicateResourceError(
+                    "A driver profile with this plate or license number already exists."
+                )
+        else:
+            try:
+                dp = await driver_repo.create(
+                    user_id=user.id,
+                    vehicle_type=validate_vehicle_type(dto.vehicle_type),
+                    plate_number=validate_plate_number(dto.plate_number),
+                    license_number=validate_license_number(dto.license_number),
+                    status=DriverStatus.PENDING_APPROVAL,
+                    availability=DriverAvailability.OFFLINE,
+                )
+            except IntegrityError:
+                raise DuplicateResourceError(
+                    "A driver profile with this plate or license number already exists."
+                )
 
-    if dp is not None:
-        if dp.status == DriverStatus.APPROVED:
-            raise PackitbotError("Driver profile is already approved.")
-        # Update pending profile details
-        await driver_repo.update(
-            dp.id,
-            vehicle_type=validated_vehicle,
-            plate_number=validated_plate,
-            license_number=validated_license,
-            status=DriverStatus.PENDING_APPROVAL,
-        )
-    else:
-        dp = await driver_repo.create(
-            user_id=user.id,
-            vehicle_type=validated_vehicle,
-            plate_number=validated_plate,
-            license_number=validated_license,
-            status=DriverStatus.PENDING_APPROVAL,
-            availability=DriverAvailability.OFFLINE,
-        )
+        return dp
 
-    return dp
+    if session is not None:
+        return await _execute(session)
+
+    # No session supplied — create and manage our own transactional scope.
+    async with async_session() as session:
+        async with session.begin():
+            return await _execute(session)
 
 
 async def get_driver_profile_by_telegram_id(
