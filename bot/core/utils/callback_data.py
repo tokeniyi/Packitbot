@@ -120,6 +120,6 @@ class ReviewFieldEdit(CallbackData, prefix="review_edit"):
     field: str
 
 
-class NavHome(CallbackData, prefix="nav"):
+class NavHome(CallbackData, prefix="nav_home"):
     """Callback data for navigating to the home screen."""
     action: str
