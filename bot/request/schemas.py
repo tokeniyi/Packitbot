@@ -95,8 +95,10 @@ class AssignDriverDTO:
 
     Attributes:
         request_id: Primary key of the ``DeliveryRequest``.
-        driver_id: Telegram user ID of the driver being assigned.
-        admin_id: Telegram user ID of the admin performing the assignment.
+        driver_id: Primary key of the driver's ``users`` row
+            (``DriverProfile.user_id``).
+        admin_id: Primary key of the admin ``users`` row performing the
+            assignment.
     """
     request_id: int
     driver_id: int
@@ -120,11 +122,23 @@ class TransitionDTO:
         new_status: Target ``RequestStatus`` to transition to.
         actor_id: Telegram user ID of the driver or admin triggering the transition.
         note: Optional free-text note explaining the transition reason.
+        require_assigned_driver: When ``True`` (default), actor must be the
+            currently assigned driver.
     """
     request_id: int
     new_status: RequestStatus
     actor_id: int
     note: str | None = None
+    require_assigned_driver: bool = True
+
+
+@dataclass(frozen=True)
+class RejectAssignmentDTO:
+    """Schema for a driver handing an assigned request back to the pool."""
+
+    request_id: int
+    driver_id: int
+    reason: str | None = None
 
 
 @dataclass(frozen=True)

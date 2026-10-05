@@ -9,6 +9,7 @@ from bot.admin.handler import (
     cmd_verify_drivers,
     handle_approve_driver,
     handle_back_to_pending_list,
+    handle_confirm_driver_assignment,
     handle_reject_driver,
     handle_view_driver_detail,
 )
@@ -262,6 +263,58 @@ class TestHandleRejectDriver:
         await handle_reject_driver(callback, MagicMock(), user=student)
 
         callback.answer.assert_awaited_once()
+
+
+class TestHandleConfirmDriverAssignment:
+    async def test_uses_driver_user_id_for_assignment(self):
+        callback = _make_callback()
+        user = _make_admin_user()
+        callback_data = MagicMock(request_id=5, driver_id=7)
+        driver_profile = MagicMock(id=7, user_id=42, user=None)
+
+        captured = {}
+
+        class _FakeRequestService:
+            def __init__(self, session):
+                pass
+
+            async def assign_driver(self, dto, profile):
+                captured["dto"] = dto
+                req = MagicMock()
+                req.id = 5
+                return req, MagicMock()
+
+        class _FakeDriverRepository:
+            def __init__(self, session):
+                pass
+
+            async def get_by_id(self, entity_id):
+                assert entity_id == 7
+                return driver_profile
+
+        class _FakeSession:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+            async def commit(self):
+                return None
+
+            async def rollback(self):
+                return None
+
+        with (
+            patch("bot.admin.handler.async_session", return_value=_FakeSession()),
+            patch("bot.admin.handler.RequestService", _FakeRequestService),
+            patch("bot.admin.handler.DriverRepository", _FakeDriverRepository),
+        ):
+            await handle_confirm_driver_assignment(callback, callback_data, user=user)
+
+        assert captured["dto"].driver_id == 42
+        assert captured["dto"].request_id == 5
+        assert captured["dto"].admin_id == user.id
 
 
 class TestHandleBackToPendingList:

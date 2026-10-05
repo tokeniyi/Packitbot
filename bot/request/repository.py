@@ -23,12 +23,14 @@ from typing import Optional
 
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from bot.core.constants.enums import RequestStatus
 from bot.core.constants.limits import PAGE_SIZE
 from bot.core.models.delivery_request import DeliveryRequest
 from bot.core.models.feedback import Feedback
 from bot.core.models.status_log import RequestStatusLog
+from bot.core.models.user import User
 from bot.core.repositories.base_repository import BaseRepository
 
 
@@ -56,6 +58,22 @@ class RequestRepository(BaseRepository[DeliveryRequest]):
     async def get_by_id_for_update(self, request_id: int) -> DeliveryRequest | None:
         """Load a request with a row lock for an in-transaction mutation."""
         return await super().get_by_id_for_update(request_id)
+
+    async def get_by_id_with_driver(
+        self, request_id: int
+    ) -> DeliveryRequest | None:
+        """Load request with driver and driver profile eagerly loaded."""
+        stmt = (
+            select(DeliveryRequest)
+            .options(
+                selectinload(DeliveryRequest.driver).selectinload(
+                    User.driver_profile
+                )
+            )
+            .where(DeliveryRequest.id == request_id)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
 
     async def get_pending(self, page: int = 1) -> list[DeliveryRequest]:
         """Retrieve a paginated list of requests awaiting driver assignment.
