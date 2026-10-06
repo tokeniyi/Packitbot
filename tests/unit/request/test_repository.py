@@ -82,11 +82,16 @@ async def test_request_repository_get_history_for_student():
     result_mock.scalars.return_value.all.return_value = [req]
     session.execute.return_value = result_mock
 
-    repo = RequestRepository(session)
-    requests = await repo.get_history_for_student(student_id=42)
+    count_result = MagicMock()
+    count_result.scalar_one.return_value = 1
+    session.execute.side_effect = [result_mock, count_result]
 
-    assert len(requests) == 1
-    assert requests[0].student_id == 42
+    repo = RequestRepository(session)
+    page = await repo.get_history_for_student(student_id=42)
+
+    assert len(page.items) == 1
+    assert page.total == 1
+    assert page.items[0].student_id == 42
 
 
 async def test_request_repository_get_dropoff_address_history():

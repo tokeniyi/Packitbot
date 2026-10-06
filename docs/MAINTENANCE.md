@@ -311,8 +311,10 @@ it and `_ensure_admin_profile` (88-111). `main.py::_seed_admins` already does th
 **#13 Double pagination on the student request list** — `request/repository.py:147-154`
 applies `OFFSET/LIMIT`, then the handler re-paginates the slice
 (`requests.py:603-609, 637-644`). `total_pages` is always 1, Next never renders, and page ≥ 2
-returns fewer or no rows. Pick one strategy. **Verified again 2026-10-05** — still open;
-it is the natural next task.
+returns fewer or no rows. Pick one strategy. **FIXED 2026-10-06 (PR #14)** — moved
+pagination into `RequestRepository.get_history_for_student`, which now returns a `Page`
+with the correct `total` from `count()` and the sliced `items`; the handler consumes the
+`Page` directly and no longer re-slices the result.
 
 **#14 `IntegrityError` → `ValidationError` never reaches the user** —
 `request/service.py:139,179,243,298,362,415`. The `except` runs *inside* an open
@@ -492,8 +494,9 @@ gate here before adding more tests on top of a red suite.
 | 2026-10-03 | `fix/unawaited-set-my-commands` | P1 #8 un-awaited `set_my_commands` | #11 | **Fixed.** 4 new tests. Also **disproved P0 #6** — it was a documentation error, not a bug. |
 | 2026-10-04 | `fix/driver-reject-bypasses-fsm` | P1 #9 `process_driver_reject` bypassed the FSM and audit log | #12 | **Fixed.** 13 new/updated tests; 7 verified to fail when the fix is reverted. Full suite unchanged at 34 pre-existing failures. |
 | 2026-10-05 | `fix/dead-admin-pagination-buttons` | P1 #12 admin driver-list Prev/Next buttons were unroutable; + P1 #22 on 2 handlers | #13 | **Fixed.** 13 new tests; 8 verified to fail when the fix is reverted. Full suite unchanged at 34 pre-existing failures. |
+| 2026-10-06 | `fix/student-request-list-double-pagination` | P1 #13 double pagination on student request list | #14 | **Fixed.** 6 new tests. Full suite unchanged at 34 pre-existing failures. |
 
-**Remaining backlog:** 6 × P0 (all in open PRs #5–#10), 11 × P1 (#12 closed, #22 partially), 12 × P2, 7 × P3 = **36 open items**.
+**Remaining backlog:** 6 × P0 (all in open PRs #5–#10), 10 × P1 (#13 closed, #22 partially), 12 × P2, 7 × P3 = **35 open items**.
 
 ### 2026-10-05 run notes
 
