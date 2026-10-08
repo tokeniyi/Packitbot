@@ -30,6 +30,7 @@ from bot.core.models.delivery_request import DeliveryRequest
 from bot.core.models.feedback import Feedback
 from bot.core.models.status_log import RequestStatusLog
 from bot.core.repositories.base_repository import BaseRepository
+from bot.core.utils.pagination import Page
 
 
 class RequestRepository(BaseRepository[DeliveryRequest]):
@@ -127,7 +128,7 @@ class RequestRepository(BaseRepository[DeliveryRequest]):
 
     async def get_history_for_student(
         self, student_id: int, page: int = 1
-    ) -> list[DeliveryRequest]:
+    ) -> Page:
         """Retrieve a paginated delivery history for a student.
 
         Returns all requests (regardless of status) authored by the student,
@@ -135,14 +136,16 @@ class RequestRepository(BaseRepository[DeliveryRequest]):
 
         **Calls / Depends on:** ``PAGE_SIZE``.
 
-        **Called by:** ``bot/student/handler.py`` (student delivery history).
+        **Called by:** ``bot/student/handlers/requests.py`` (student delivery
+        history).
 
         Args:
             student_id: Telegram user ID of the student.
             page: 1-based page number for pagination.
 
         Returns:
-            List of ``DeliveryRequest`` objects, up to ``PAGE_SIZE`` per page.
+            A ``Page`` object containing up to ``PAGE_SIZE`` requests and
+            navigation metadata.
         """
         offset = (page - 1) * PAGE_SIZE
         stmt = (
@@ -153,7 +156,16 @@ class RequestRepository(BaseRepository[DeliveryRequest]):
             .limit(PAGE_SIZE)
         )
         result = await self.session.execute(stmt)
-        return list(result.scalars().all())
+        items = list(result.scalars().all())
+
+        count_stmt = (
+            select(func.count())
+            .select_from(DeliveryRequest)
+            .where(DeliveryRequest.student_id == student_id)
+        )
+        total = (await self.session.execute(count_stmt)).scalar_one()
+
+        return Page(items=items, total=total, page=page, page_size=PAGE_SIZE)
 
     async def get_dropoff_address_history_for_student(
         self, student_id: int, limit: int = 5

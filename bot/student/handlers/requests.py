@@ -40,7 +40,7 @@ from bot.core.exceptions import (
 )
 from bot.core.keyboards.common_kb import HomeButton
 from bot.core.utils.formatters import format_step_prompt
-from bot.core.utils.pagination import paginate
+from bot.core.utils.pagination import Page
 from bot.core.utils.validators import (
     validate_dropoff_address,
     validate_luggage_count,
@@ -602,12 +602,11 @@ async def show_my_requests_list(message: Message, session=None, page: int = 1) -
         return
     requests = await repo.get_history_for_student(student_id=user_id, page=page)
 
-    if not requests:
+    if not requests.items:
         await message.answer(MSG_EMPTY_STATE_REQUESTS, reply_markup=student_persistent_menu())
         return
 
-    paginated_page = paginate(requests, page=page)
-    kb = my_requests_list_keyboard(paginated_page.items, page=paginated_page.page, total_pages=paginated_page.total_pages)
+    kb = my_requests_list_keyboard(requests.items, page=requests.page, total_pages=requests.total_pages)
     await message.answer(RequestMessages.REQUESTS_LIST_TITLE, parse_mode="HTML", reply_markup=kb)
 
 
@@ -636,13 +635,12 @@ async def my_requests_page_callback(callback: CallbackQuery, session=None) -> No
         return
     requests = await repo.get_history_for_student(student_id=user_id, page=page)
 
-    if not requests:
+    if not requests.items:
         if callback.message:
             await callback.message.answer(MSG_EMPTY_STATE_REQUESTS, reply_markup=student_persistent_menu())
         return
 
-    paginated_page = paginate(requests, page=page)
-    kb = my_requests_list_keyboard(paginated_page.items, page=paginated_page.page, total_pages=paginated_page.total_pages)
+    kb = my_requests_list_keyboard(requests.items, page=requests.page, total_pages=requests.total_pages)
     if callback.message:
         await callback.message.edit_text(RequestMessages.REQUESTS_LIST_TITLE, parse_mode="HTML", reply_markup=kb)
 
