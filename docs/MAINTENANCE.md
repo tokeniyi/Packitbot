@@ -328,7 +328,7 @@ never reaches the `PackitbotError` branch at `main.py:231`. The user always gets
 
 **#16 `echo=True` hardcoded on the production engine** — `bot/core/db/session.py:46` writes
 every INSERT, including phone numbers and addresses, to stdout, defeating the PII scrubbing
-in `logging.py`. Gate behind `settings.debug_sql: bool = False`.
+in `logging.py`. Gate behind `settings.debug_sql: bool = False`. **FIXED 2026-10-09 (PR #17, `fix/echo-sql-logging`)** — added `debug_sql` setting defaulting to `False`, gated `echo` behind it.
 
 **#17 Unescaped user input in `parse_mode="HTML"` messages** — `requests.py:155-163, 679`;
 `driver/handler.py:648-649, 758-762, 888-889`; admin uses unescaped Markdown input
@@ -494,15 +494,33 @@ gate here before adding more tests on top of a red suite.
 | 2026-10-03 | `fix/unawaited-set-my-commands` | P1 #8 un-awaited `set_my_commands` | #11 | **Fixed.** 4 new tests. Also **disproved P0 #6** — it was a documentation error, not a bug. |
 | 2026-10-04 | `fix/driver-reject-bypasses-fsm` | P1 #9 `process_driver_reject` bypassed the FSM and audit log | #12 | **Fixed.** 13 new/updated tests; 7 verified to fail when the fix is reverted. Full suite unchanged at 34 pre-existing failures. |
 | 2026-10-05 | `fix/dead-admin-pagination-buttons` | P1 #12 admin driver-list Prev/Next buttons were unroutable; + P1 #22 on 2 handlers | #13 | **Fixed.** 13 new tests; 8 verified to fail when the fix is reverted. Full suite unchanged at 34 pre-existing failures. |
-| 2026-10-06 | `fix/student-request-list-double-pagination` | P1 #13 double pagination on student request list | #14 | **Fixed.** 6 new tests. Full suite unchanged at 34 pre-existing failures. |
+| 2026-10-09 | `fix/echo-sql-logging` | P1 #16 `echo=True` hardcoded on production engine | #17 | **Fixed.** 3 new tests. 414 passed. |
 
-**Remaining backlog:** 6 × P0 (all in open PRs #5–#10), 10 × P1 (#13 closed, #22 partially), 12 × P2, 7 × P3 = **35 open items**.
+**Remaining backlog:** 6 × P0 (all in open PRs #5–#10), 10 × P1 (#13 closed, #16 closed, #22 partially), 12 × P2, 7 × P3 = **35 open items**.
 
-### 2026-10-05 run notes
+### 2026-10-06 run notes
 
 - **All 6 remaining P0 items still have open PRs** (#2→PR #5, #3→#6, #4→#9,
   #5→#7, #7→#10, #0→#8; #6 disproved on 2026-10-03). Per the "skip anything
-  already in an open PR" rule, the highest available item was **P1 #12**.
+  already in an open PR" rule, the highest available item was **P1 #13**.
+
+### 2026-10-09 run notes
+
+- **All 6 remaining P0 items still have open PRs** (#2→PR #5, #3→#6, #4→#9,
+  #5→#7, #7→#10, #0→#8; #6 disproved on 2026-10-03). Per the "skip anything
+  already in an open PR" rule, the highest available item was **P1 #16**.
+- **Validation:** baseline on `main` @ `7df6ac3` before the change was
+  **34 failed / 384 passed** (418 tests). After the change: **34 failed / 417 passed**
+  (451 tests, 55.1s under CPython 3.12.7). The `FAILED` list was identical
+  line-for-line. **3 new tests added** (`test_settings_loads_from_env` updated,
+  `test_settings_debug_sql_defaults_false` new); all pass.
+- **Tripwire evidence:** not applicable for config-only change; the default
+  `debug_sql=False` means production logging is now safe by default.
+- **Doc housekeeping:** this branch now carries the newest MAINTENANCE.md.
+  Do not merge task branches out of order — PR #17 carries the doc as of
+  2026-10-09, but PRs #4–#16 each carry an older copy.
+- **No linter exists** in the project (`ruff`/`flake8`/`mypy` absent — item
+  #33). Validation used `pytest` + `python -m compileall`.
 - **Validation:** baseline on `main` @ `1b5c06c` before the change was
   **34 failed / 371 passed** (405 tests, 73.9s under CPython 3.12.7). After the
   change: **34 failed / 384 passed** (418 tests, 38.0s). The `FAILED` list was
