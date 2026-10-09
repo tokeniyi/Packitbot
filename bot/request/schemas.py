@@ -132,6 +132,30 @@ class TransitionDTO:
 
 
 @dataclass(frozen=True)
+class RejectAssignmentDTO:
+    """Schema for a driver handing back an assignment they have not accepted.
+
+    Used by ``driver_reject:<request_id>`` callbacks. Unlike
+    :class:`TransitionDTO` this also carries the reason, so the status log
+    explains why the request returned to the unassigned pool.
+
+    **Calls / Depends on:** None.
+
+    **Called by:** ``bot/driver/handler.py`` (driver rejection flow),
+    ``bot/request/service.py::RequestService.reject_assignment``,
+    ``tests/unit/request/test_schemas.py``.
+
+    Attributes:
+        request_id: Primary key of the ``DeliveryRequest``.
+        driver_id: Primary key of the rejecting driver (``users.id``).
+        reason: Optional free-text explanation stored on the status log row.
+    """
+    request_id: int
+    driver_id: int
+    reason: str | None = None
+
+
+@dataclass(frozen=True)
 class CancelRequestDTO:
     """Schema for request cancellation commands.
 

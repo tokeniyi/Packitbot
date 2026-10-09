@@ -15,6 +15,10 @@ ALL_STATUSES = list(RequestStatus)
         (RequestStatus.ASSIGNED, RequestStatus.ACCEPTED),
         (RequestStatus.ASSIGNED, RequestStatus.REJECTED_BY_DRIVER),
         (RequestStatus.ASSIGNED, RequestStatus.CANCELLED),
+        # P1 #9: a driver handing back an assignment before accepting it must
+        # return the request to the assignable pool (admin/service.py::
+        # get_pending_requests filters on PENDING, not REJECTED_BY_DRIVER).
+        (RequestStatus.ASSIGNED, RequestStatus.PENDING),
         (RequestStatus.ACCEPTED, RequestStatus.EN_ROUTE_TO_PICKUP),
         (RequestStatus.ACCEPTED, RequestStatus.CANCELLED),
         (RequestStatus.REJECTED_BY_DRIVER, RequestStatus.ASSIGNED),
