@@ -14,6 +14,7 @@ def test_settings_loads_from_env(monkeypatch):
     monkeypatch.setenv("MAX_REQUEST_LEAD_DAYS", "14")
     monkeypatch.setenv("DEFAULT_THROTTLE_RATE", "2")
     monkeypatch.setenv("LOG_LEVEL", "DEBUG")
+    monkeypatch.setenv("DEBUG_SQL", "true")
     monkeypatch.setenv("WEBHOOK_URL", "https://example.com/webhook")
 
     s = Settings()
@@ -24,7 +25,18 @@ def test_settings_loads_from_env(monkeypatch):
     assert s.max_request_lead_days == 14
     assert s.default_throttle_rate == 2.0
     assert s.log_level == "DEBUG"
+    assert s.debug_sql is True
     assert s.webhook_url == "https://example.com/webhook"
+
+
+def test_settings_debug_sql_defaults_false(monkeypatch):
+    monkeypatch.setenv("BOT_TOKEN", "123:ABC")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@h/db")
+    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
+    monkeypatch.delenv("DEBUG_SQL", raising=False)
+
+    s = Settings()
+    assert s.debug_sql is False
 
 
 def test_settings_defaults(monkeypatch):
@@ -41,6 +53,7 @@ def test_settings_defaults(monkeypatch):
     monkeypatch.delenv("DEFAULT_THROTTLE_RATE", raising=False)
     monkeypatch.delenv("LOG_LEVEL", raising=False)
     monkeypatch.delenv("WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("DEBUG_SQL", raising=False)
 
     try:
         with pytest.raises(Exception):
