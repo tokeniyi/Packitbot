@@ -663,7 +663,10 @@ async def show_request_detail(callback: CallbackQuery, session=None) -> None:
         return
 
     repo = RequestRepository(session)
-    req = await repo.get_by_id(req_id)
+    # Eager-load the driver chain: _format_request_detail below reads
+    # req.driver.driver_profile, which is a lazy relationship and would raise
+    # MissingGreenlet when touched outside the awaited context.
+    req = await repo.get_by_id_with_driver(req_id)
 
     user_id = await resolve_user_id(callback.from_user.id, session)
     if not req or req.student_id != user_id:
