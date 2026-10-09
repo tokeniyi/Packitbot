@@ -22,9 +22,48 @@ from bot.core.models import admin_action_log
 target_metadata = Base.metadata
 
 
+def _resolve_url() -> str:
+    """Resolve the database URL used by both offline and online mode.
+
+    ``alembic.ini`` intentionally ships with an empty ``sqlalchemy.url`` so
+    that no DSN is ever committed to the repository. The real value comes
+    from the application settings (``.env`` / ``DATABASE_URL``).
+
+    Returns:
+        The SQLAlchemy URL string to run migrations against.
+
+    Raises:
+        RuntimeError: If no URL can be resolved from the ini file or the
+            application settings.
+    """
+    url = config.get_main_option("sqlalchemy.url", None)
+    if url:
+        return url
+
+    try:
+        from bot.core.config import get_settings
+
+        url = get_settings().database_url
+    except Exception as exc:  # pragma: no cover - depends on local env
+            raise RuntimeError(
+                "No database URL configured. Set DATABASE_URL in the environment "
+                "or .env file, or set sqlalchemy.url in alembic.ini."
+            ) from exc
+
+    if not url:
+        raise RuntimeError(
+            "No database URL configured. Set DATABASE_URL in the environment "
+            "or .env file, or set sqlalchemy.url in alembic.ini."
+        )
+    return url
+
+
 def run_migrations_offline() -> None:
-    url = config.get_main_option("sqlalchemy.url")
-    context.configure(url=url, target_metadata=target_metadata)
+    """Emit SQL for the migrations without connecting to a database.
+
+    Used by ``alembic upgrade head --sql`` to render a reviewable script.
+    """
+    context.configure(url=_resolve_url(), target_metadata=target_metadata)
     with context.begin_transaction():
         context.run_migrations()
 
@@ -36,9 +75,7 @@ def do_run_migrations(connection: Connection) -> None:
 
 
 async def run_async_migrations() -> None:
-    from bot.core.config import get_settings
-    settings = get_settings()
-    connectable = create_async_engine(settings.database_url)
+    connectable = create_async_engine(_resolve_url())
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
     await connectable.dispose()

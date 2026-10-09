@@ -1,7 +1,7 @@
 """remove_matric_number
 
 Revision ID: 3f93513f5486
-Revises: 9f970db63a4f
+Revises: 8df7ae516946
 Create Date: 2026-07-24 16:58:47.309315
 
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 revision: str = '3f93513f5486'
-down_revision: Union[str, None] = '9f970db63a4f'
+down_revision: Union[str, None] = '8df7ae516946'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

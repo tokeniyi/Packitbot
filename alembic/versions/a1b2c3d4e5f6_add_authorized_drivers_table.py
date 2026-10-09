@@ -1,13 +1,17 @@
 ﻿"""Add authorized_drivers table for pre-approved driver registration.
 
 Revision ID: a1b2c3d4e5f6
-Revises: 9082dd8c65fd
+Revises: d773fd78af20
 Create Date: 2026-08-07
 
 Creates the ``authorized_drivers`` table which stores Telegram user IDs
 that an admin has pre-approved to begin the driver registration flow.
 Also adds the ``AUTHORIZE_DRIVER`` value to the existing PostgreSQL
 ``adminactiontype`` ENUM so that audit-log entries can be recorded.
+
+This revision was originally written against ``9082dd8c65fd``, which left
+the migration graph with two heads and made ``alembic upgrade head`` fail.
+It is now chained after ``d773fd78af20`` so the graph is linear.
 """
 
 from typing import Sequence, Union
@@ -17,7 +21,7 @@ import sqlalchemy as sa
 
 
 revision: str = "a1b2c3d4e5f6"
-down_revision: Union[str, None] = "9082dd8c65fd"
+down_revision: Union[str, None] = "d773fd78af20"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, None] = None
 
@@ -33,7 +37,9 @@ def upgrade() -> None:
         "authorized_drivers",
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("telegram_id", sa.BigInteger(), nullable=False),
-        sa.Column("added_by_admin_id", sa.Integer(), nullable=True),
+        # BigInteger matches ``users.id`` after d773fd78af20 widened it, and
+        # matches the ``AuthorizedDriver.added_by_admin_id`` column type.
+        sa.Column("added_by_admin_id", sa.BigInteger(), nullable=True),
         sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
         sa.ForeignKeyConstraint(["added_by_admin_id"], ["users.id"], ondelete="SET NULL"),

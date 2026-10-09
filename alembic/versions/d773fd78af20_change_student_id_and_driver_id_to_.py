@@ -1,7 +1,7 @@
 """change student_id and driver_id to bigint
 
 Revision ID: d773fd78af20
-Revises: 873b53f8741a
+Revises: 3f93513f5486
 Create Date: 2026-08-02 12:26:00.842554
 
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 revision: str = 'd773fd78af20'
-down_revision: Union[str, None] = '873b53f8741a'
+down_revision: Union[str, None] = '3f93513f5486'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
