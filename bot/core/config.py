@@ -45,6 +45,7 @@ class Settings(BaseSettings):
         default_throttle_rate (float): Default throttle rate (requests per
             second) applied to external API calls. Defaults to 1.0.
         log_level (str): Logging verbosity level. Defaults to "INFO".
+        debug_sql (bool): Enable SQL statement logging (echo). Defaults to False.
         webhook_url (str): Public HTTPS URL for receiving Telegram webhook
             updates. Defaults to an empty string (polling mode).
     """
@@ -55,6 +56,7 @@ class Settings(BaseSettings):
     max_request_lead_days: int = 7
     default_throttle_rate: float = 1.0
     log_level: str = "INFO"
+    debug_sql: bool = False
     webhook_url: str = ""
 
     # Configure Pydantic Settings behavior:

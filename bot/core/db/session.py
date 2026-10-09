@@ -41,9 +41,11 @@ settings = get_settings()
 #
 # - ``settings.database_url``: The async-capable database DSN (e.g.
 #   ``postgresql+asyncpg://user:pass@host/db``).
-# - ``echo=True``: Log all generated SQL statements to stdout. Useful during
-#   development; may be disabled in production.
-engine = create_async_engine(settings.database_url, echo=True)
+# - ``echo``: Log all generated SQL statements to stdout. Controlled by
+#   ``settings.debug_sql`` (defaults to False). Useful during development;
+#   must be disabled in production to avoid leaking PII (phone numbers,
+#   addresses) in SQL logs.
+engine = create_async_engine(settings.database_url, echo=settings.debug_sql)
 
 # ---------------------------------------------------------------------------
 # Session Factory
