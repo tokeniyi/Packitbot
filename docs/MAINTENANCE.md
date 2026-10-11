@@ -8,7 +8,6 @@
 - **Description:** Async Telegram logistics and delivery management bot (aiogram 3.x, SQLAlchemy 2.0)
 - **Default branch:** `main` (protected — never pushed to directly)
 - **Scale:** 130 Python files, ~14.7k LOC application code
-<<<<<<< HEAD
 - **Review baseline:** commit `1b5c06c` (`main`, as of 2026-10-05)
 - **Last reviewed:** 2026-10-05
 
@@ -155,11 +154,7 @@ with `DriverProfile.id`, and lookups treat it as a `DriverProfile` PK. Items **#
 - **Fix:** `.options(selectinload(DeliveryRequest.driver).selectinload(User.driver_profile))`.
   `expire_on_commit=False` does not help — the object was never loaded.
 
-<<<<<<< HEAD
 **#5 No ownership check on driver delivery callbacks** *(most severe)*
-=======
-**#5 No ownership check on driver delivery callbacks** *(most severe)* — ✅ **FIXED 2026-09-29**
->>>>>>> e8dc63e (fix: enforce driver ownership on delivery request callbacks (P0 #5))
 - `bot/driver/handler.py:567` (`process_driver_accept`), `:776` (`process_delivery_status_step`),
   `:927` (`process_driver_reject`); enabler at `bot/core/middlewares/rbac.py:171`
 - `RBACMiddleware._extract_command` returns `""` for non-slash-command messages and
@@ -168,7 +163,6 @@ with `DriverProfile.id`, and lookups treat it as a `DriverProfile` PK. Items **#
 - **Impact:** any Telegram user who guesses a sequential request ID can accept, advance,
   reject, or complete **any** delivery — and the two `send_message` calls at
   `driver/handler.py:660-672` hand them the student's name and phone number.
-<<<<<<< HEAD
 - **Fix:** in each handler assert `req.driver_id == driver_user.id` before mutating;
   add an `actor_must_be_assigned_driver` business rule enforced **inside**
   `RequestService.transition_status` so future callers cannot bypass it.
@@ -194,30 +188,6 @@ with `DriverProfile.id`, and lookups treat it as a `DriverProfile` PK. Items **#
 - **Still worth doing (cosmetic, folded into #35):** delete the
   `verification_status=None` argument at `bot/student/service.py:78` so the
   code stops implying a nullable column. No behaviour change.
-=======
-- **Fix applied:** added `can_driver_act_on_request(request, actor_id)` to
-  `bot/request/business_rules.py` (pure predicate, matching the module's existing style)
-  and enforced it **inside** `RequestService.transition_status`, so `process_driver_accept`
-  and `process_delivery_status_step` are covered by construction and future callers cannot
-  bypass it. `process_driver_reject` mutates through `RequestRepository` and does not call
-  the service, so it carries an explicit guard in the handler.
-  `TransitionDTO.require_assigned_driver` defaults to `True` (fail-closed); a caller with a
-  different authorisation basis (e.g. an admin override) may pass `False`.
-- **Verified empirically:** with the pre-fix code an attacker (`users.id=999`) accepting
-  request #7 (`ASSIGNED -> ACCEPTED`, a *legal* transition) succeeded and wrote the change;
-  with the fix the same call raises `PermissionDeniedError` with no write attempted, while
-  the legitimate assigned driver (`users.id=3`) still succeeds.
-- **Residual:** RBAC still never authorizes callbacks (#10). The service-level guard closes
-  the exploit for the three mutation handlers; other callbacks remain unclassified.
-
-**#6 First-time student registration violates a NOT NULL constraint**
-- `bot/student/service.py:78` — `verification_status=None` on a `nullable=False` column
-- A Python-side `default` applies only when the attribute is **not supplied**; passing
-  `None` explicitly sends SQL `NULL` → `IntegrityError`. This is the `else` branch of
-  `register_student`, i.e. **every new student**.
-- *(Reasoning from documented ORM semantics; not executed against a live DB — no 3.12 env.)*
-- **Fix:** delete the argument so the column default applies. Add a regression test.
->>>>>>> e8dc63e (fix: enforce driver ownership on delivery request callbacks (P0 #5))
 
 **#7 `_init_db` bypasses Alembic — migration chain unusable**
 - `bot/main.py:78-92`; `alembic/versions/`
@@ -228,7 +198,6 @@ with `DriverProfile.id`, and lookups treat it as a `DriverProfile` PK. Items **#
 
 ### P1 — Significant
 
-<<<<<<< HEAD
 **#8 ~~`main.py:339` un-awaited coroutine~~ — FIXED 2026-10-03 (PR #11, `fix/unawaited-set-my-commands`)**
 - `if bot.set_my_commands():` created a **second** coroutine object that was
   never awaited. The object is always truthy, so the `Failed` branch was
@@ -283,19 +252,6 @@ with `DriverProfile.id`, and lookups treat it as a `DriverProfile` PK. Items **#
   handler. That is P0 #5 and already in flight as PR #7 — adding it here
   would duplicate/conflict with an open PR.
 
-=======
-**#8 `main.py:339` un-awaited coroutine** — `if bot.set_my_commands():` creates a second
-coroutine that is never awaited; always truthy, so the `Failed` branch is unreachable and
-a `RuntimeWarning` is emitted per registered user at every boot. Delete the block.
-
-**#9 `process_driver_reject` bypasses the FSM and the audit log**
-- `bot/driver/handler.py:971-978` — `ASSIGNED → PENDING` is not in `ALLOWED_TRANSITIONS`
-  (`state_machine.py:26-61`); no `RequestStatusLog` row is written (so `get_stats` at
-  `admin/service.py:585-609` silently loses every rejection); driver `availability` is
-  never reset to `AVAILABLE`; the student is never notified.
-- **Fix:** add `PENDING` as a legal target of `ASSIGNED`, or add
-  `RequestService.reject_assignment()`. Never call the repository from a handler.
->>>>>>> e8dc63e (fix: enforce driver ownership on delivery request callbacks (P0 #5))
 
 **#10 RBAC never authorizes callbacks** — `rbac.py:171`. Add a per-router allowlist of
 callback prefixes mapped to roles. Defence-in-depth for #5.
@@ -304,7 +260,6 @@ callback prefixes mapped to roles. Defence-in-depth for #5.
 `int` against `str.split(",")`, which is always `False`. The block is unreachable; delete
 it and `_ensure_admin_profile` (88-111). `main.py::_seed_admins` already does this at boot.
 
-<<<<<<< HEAD
 **#12 ~~Admin list pagination buttons are dead~~ — FIXED 2026-10-05 (PR #13,
 `fix/dead-admin-pagination-buttons`)**
 - **Problem (confirmed by reading the code, and reproduced in a test):**
@@ -360,18 +315,6 @@ returns fewer or no rows. Pick one strategy. **FIXED 2026-10-06 (PR #14)** — m
 pagination into `RequestRepository.get_history_for_student`, which now returns a `Page`
 with the correct `total` from `count()` and the sliced `items`; the handler consumes the
 `Page` directly and no longer re-slices the result.
-=======
-**#12 Admin list pagination buttons are dead** — `admin/keyboards.py:132,139,199,206` emit
-`nav:…`; only `admin_req_page:` and `admin_drv_page:` handlers exist, so the ⬅️/➡️ buttons
-on `pending_drivers_list_keyboard` and `drivers_list_keyboard` fall through to
-`catch_all_callback` and show "Invalid input". Also rename `NavHome`'s prefix off `"nav"`
-(`callback_data.py:123`) — it declares a different required field, a latent filter collision.
-
-**#13 Double pagination on the student request list** — `request/repository.py:147-154`
-applies `OFFSET/LIMIT`, then the handler re-paginates the slice
-(`requests.py:609, 644`). `total_pages` is always 1, Next never renders, and page ≥ 2
-returns fewer or no rows. Pick one strategy.
->>>>>>> e8dc63e (fix: enforce driver ownership on delivery request callbacks (P0 #5))
 
 **#14 `IntegrityError` → `ValidationError` never reaches the user** —
 `request/service.py:139,179,243,298,362,415`. The `except` runs *inside* an open
@@ -385,11 +328,7 @@ never reaches the `PackitbotError` branch at `main.py:231`. The user always gets
 
 **#16 `echo=True` hardcoded on the production engine** — `bot/core/db/session.py:46` writes
 every INSERT, including phone numbers and addresses, to stdout, defeating the PII scrubbing
-<<<<<<< HEAD
 in `logging.py`. Gate behind `settings.debug_sql: bool = False`. **FIXED 2026-10-09 (PR #17, `fix/echo-sql-logging`)** — added `debug_sql` setting defaulting to `False`, gated `echo` behind it.
-=======
-in `logging.py`. Gate behind `settings.debug_sql: bool = False`.
->>>>>>> e8dc63e (fix: enforce driver ownership on delivery request callbacks (P0 #5))
 
 **#17 Unescaped user input in `parse_mode="HTML"` messages** — `requests.py:155-163, 679`;
 `driver/handler.py:648-649, 758-762, 888-889`; admin uses unescaped Markdown input
@@ -413,126 +352,12 @@ correct the docstring.
 
 **#22 `int()` on callback data without try/except** — `admin/handler.py:236, 262, 542, 827`.
 Copy the guard already used at `student/handlers/requests.py:655-660`.
-<<<<<<< HEAD
 **Partially fixed 2026-10-05 (PR #13):** the two pagination handlers
 (`handle_pending_requests_pagination`, `handle_drivers_pagination`) now use the
 `_parse_page_number()` helper, which returns `None` on a bad payload and makes
 the handler answer `ErrorMessages.INVALID_INPUT` instead of raising
 `ValueError` out of the handler. **The three remaining sites (`admin/handler.py:262, 236, 827`)
 are still unguarded.**
-=======
->>>>>>> e8dc63e (fix: enforce driver ownership on delivery request callbacks (P0 #5))
-
-### P2 — Improvement
-
-**#23 Consolidate the two `ValidationError` classes** — `core/exceptions.py:42` vs
-`core/utils/validators.py:71`. Make the latter subclass the former so `driver/handler.py:212`
-and `driver/service.py:213` catch the same type.
-
-**#24 Introduce a repository layer for `admin/` and `student/`** — all 15 admin functions
-issue `select()` directly; `StudentRepository` already exists and is unused. This satisfies
-`GEMINI.md:8` and makes the #2/#3 fix enforceable in one place.
-
-**#25 Adopt an explicit ID-naming convention** — `admin/schemas.py` (`driver_id` = profile
-id) vs `request/schemas.py:102` (`driver_id` = `users.id`) vs `request/repository.py:104`
-(docstring says Telegram ID). Rename to `driver_profile_id` / `driver_user_id`; add the rule
-to `GEMINI.md`.
-
-**#26 Implement or delete the domain event layer** — `bot/request/events.py` (5 events, all
-discarded; `requests.py:573` throws the event away) and `NotificationType` (12 values, zero
-code). Either build a minimal in-process dispatcher and move the inline
-`callback.bot.send_message` blocks (`driver/handler.py:660, 900, 998`) into listeners, or
-delete both. Half-implemented infrastructure is worse than none.
-
-**#27 `BaseRepository.update` silently ignores unknown fields** —
-`core/repositories/base_repository.py:47-49`. `UpdateRequestDTO.changed_fields` is a free-form
-dict fed by FSM data (`requests.py:853`), so a typo produces a silent no-op. Raise instead.
-
-**#28 Unique constraint for `license_number`** — `models/driver_profile.py:103` has no
-`unique=True`, yet `driver/service.py:93-94` and `admin/service.py:1176-1180` treat it as
-unique via `get_by_license_number` → `scalar_one_or_none`. Two drivers with the same licence
-crash the handler instead of raising `DuplicateResourceError`. Add the index (after #7) and
-catch `IntegrityError` in `register_driver` as its docstring promises (line 75).
-
-**#29 Bound the admin queries** — `admin/service.py:173-185` (driver ranking, unbounded,
-unindexed sort), `:998-1009`, `:604-612` (materialises every duration pair),
-`:956-963` (broadcast targets). Add `.limit(20)`, batching, a SQL `AVG`, and composite
-indexes on `(status, created_at)`.
-
-**#30 Broadcast should be bounded and concurrent** — `admin/handler.py:1200-1218`. Show the
-target count in the confirmation screen; dispatch with `asyncio.Semaphore(20)` + `gather`;
-handle `TelegramRetryAfter` explicitly (`notification_service.py:91` is a bare `except Exception`).
-
-**#31 Move feedback-rating recalculation into a domain service** — `feedback.py:26-42` does an
-aggregate query + `session.flush()` inside a handler. Move to `bot/request/service.py` and
-fix the `total_deliveries` semantics (#3) at the same time.
-
-**#32 Add `conftest.py` fixtures and one real-database test tier** — `tests/fixtures/__init__.py`
-is empty; no `conftest.py` exists. Add `session`, `user`, `driver_profile`, `request` fixtures.
-Then add at minimum one integration test per P0: assignment writes `users.id`, `register_student`
-creates a profile, the `session.get(DriverProfile, …)` path, and a callback-ownership test.
-
-**#33 Add a linter/formatter/type-checker** — no `[tool.ruff]`, `[tool.mypy]`, or coverage
-config. The untyped `session=None` handler signatures and unused imports
-(`admin/handler.py:3-5`, `driver/handler.py:31`) would be caught immediately.
-
-**#34 Remove the dead `bot/student/handler.py` facade** — 131 lines of re-exports. Update
-`tests/unit/student/test_handler.py` to import from `bot.student.handlers` and delete it.
-
-### P3 — Nice-to-have
-
-**#35** Delete 10 unused `CallbackData` classes (`callback_data.py:33-46, 84-125`), 3 unused
-validators (`validators.py:110-127, 378-419`), and the unused `role_filter.py` / `state_filter.py`
-— ~200 lines of speculative API. Also `config.py:98-132`.
-
-**#36** Delete unused constants — `constants/features.py:10-12`, `constants/limits.py:23-24`,
-`base_repository.py:53-64` (`delete`, `list`), `request/repository.py:56-58, 89-126`.
-
-**#37** Wire up or remove `total_deliveries` / `DriverAvailability.BUSY` / `VerificationStatus`
-— three model fields the code never sets. Either implement (set `BUSY` on assignment at
-`admin/handler.py:305`) or drop the columns.
-
-**#38** Fix three broken module docstrings — `driver/handler.py:1`, `admin/handler.py:1`,
-`core/services/notification_service.py:1` have the import above the docstring, so `__doc__` is empty.
-
-**#39** Correct `GEMINI.md` — remove the FastAPI mention (line 7), drop the pytest prohibition
-(line 11) and replace it with "run the suite before declaring done", fix the architecture rule
-to describe what `admin/` and `student/` actually do, and add rules for ID semantics, HTML
-escaping, and callback authorization.
-
-**#40** Add a `LICENSE` file (README links a MIT badge but no LICENSE exists); remove the
-"job claiming" and "Redis-backed rate limiting" claims from the README; add a `state_machine.md`
-rendering `ALLOWED_TRANSITIONS` — the FSM is the product's core and is currently understandable
-only by reading Python.
-
-<<<<<<< HEAD
-**#41 Add CI** — no `.github/` exists. A minimal workflow (`uv`-based Python 3.12 install,
-`ruff`, `mypy`, `pytest --cov`) would have caught #20, #8, and most of the P1 list automatically.
-
-**#42 `pyproject.toml` names a non-existent build backend** *(found 2026-10-03)* —
-`build-backend = "setuptools.backends.legacy:build"` (with no `[tool.setuptools]`
-section and no package discovery config). `uv pip install -e .` fails outright, so
-the project **cannot be installed as a package at all**; every environment must be
-hand-built. Change to `build-backend = "setuptools.build_meta"` plus an explicit
-`[tool.setuptools.packages.find] include = ["bot*"]`, and declare the real
-dependency set from `requirements.txt` in `[project.dependencies]` (closes #20 too).
-*Verified:* `uv pip install -e .` → backend resolution error.
-
-**#43 34 tests fail on `main` independent of any open PR** *(found 2026-10-03)* —
-the suite is red at the review baseline, so no run can claim a green build until
-this is addressed. Two distinct causes, both fixable without product changes:
-(a) 16 × `NOT NULL constraint failed: users.id` — the SQLite `BigInteger` PK
-problem of P0 #0 (PR #8), which is why `test_models.py` cannot round-trip a single
-row; (b) 6 × `bot.driver.service` has no attribute `async_session` — stale patch
-targets left over from the session-injection refactor, plus 4 × `session.begin()`
-returning a bare coroutine instead of an async context manager. Assign a green
-gate here before adding more tests on top of a red suite.
-
-=======
-**#41** Add CI — no `.github/` exists. A minimal workflow (`uv`-based Python 3.12 install,
-`ruff`, `mypy`, `pytest --cov`) would have caught #20, #8, and most of the P1 list automatically.
-
->>>>>>> e8dc63e (fix: enforce driver ownership on delivery request callbacks (P0 #5))
 ---
 
 ## 5. Testing
@@ -561,7 +386,6 @@ gate here before adding more tests on top of a red suite.
 | Date | Branch | Task | PR | Result |
 |---|---|---|---|---|
 | 2026-09-26 | `chore/maintenance-doc` | Initial review + this document | — | Baseline established, 0 P0–P3 items closed |
-<<<<<<< HEAD
 | 2026-10-03 | `fix/unawaited-set-my-commands` | P1 #8 un-awaited `set_my_commands` | #11 | **Fixed.** 4 new tests. Also **disproved P0 #6** — it was a documentation error, not a bug. |
 | 2026-10-04 | `fix/driver-reject-bypasses-fsm` | P1 #9 `process_driver_reject` bypassed the FSM and audit log | #12 | **Fixed.** 13 new/updated tests; 7 verified to fail when the fix is reverted. Full suite unchanged at 34 pre-existing failures. |
 | 2026-10-05 | `fix/dead-admin-pagination-buttons` | P1 #12 admin driver-list Prev/Next buttons were unroutable; + P1 #22 on 2 handlers | #13 | **Fixed.** 13 new tests; 8 verified to fail when the fix is reverted. Full suite unchanged at 34 pre-existing failures. |
@@ -672,58 +496,3 @@ gate here before adding more tests on top of a red suite.
 - `uv pip install -e .` **fails**: `pyproject.toml` declares
   `build-backend = "setuptools.backends.legacy:build"`, which does not exist.
   Install test dependencies directly instead. Filed as a new P1 item.
-=======
-| 2026-09-27 | `fix/assign-driver-wrong-fk` | P0 #2 — assignment writes the wrong FK | #5 | Open |
-| 2026-09-28 | `fix/driver-profile-lookup-by-user-id` | P0 #3 — `DriverProfile` looked up by `users.id` | #6 | Open |
-| 2026-09-29 | `fix/driver-callback-ownership-check` | P0 #5 — no ownership check on driver callbacks | #7 | Open; 34 pre-existing failures unchanged, +8 tests |
-
-## 8. Run notes — 2026-09-29
-
-**Corrections to this document (it was stale or wrong):**
-
-1. **`docs/MAINTENANCE.md` does not exist on `main`.** It was introduced in the still-open
-   PR #3 (`chore/maintenance-doc`) and was never merged. A run that trusts this document
-   without checking will find no file at all. The copy on this branch is carried forward from
-   PR #3; **PR #3 should be merged first** so subsequent runs have a single source of truth.
-2. **`main` is not green.** A baseline `pytest` run on `main` at commit `2e31ff9` gives
-   **34 failed, 367 passed**. The 34 failures are pre-existing and span
-   `tests/unit/core/test_models.py` (8), `tests/unit/student/*` (8),
-   `tests/unit/driver/test_service.py` (5), `tests/integration/db/test_alembic.py` (3),
-   `tests/unit/admin/test_service.py` (2), `tests/unit/request/test_repository.py` (2),
-   plus 6 singletons (`tests/integration/handlers/*` ×3, `tests/unit/admin/test_keyboards.py`,
-   `tests/unit/core/test_middlewares.py`, `tests/unit/driver/test_keyboards.py`).
-   The `test_models.py` failures are `sqlalchemy.exc` errors consistent with the broken
-   model import in item 4 below.
-   The section 5 claim of "342 tests, all passing" is **wrong**. Daily runs must diff their
-   failure set against this baseline rather than assuming a red run means a regression.
-3. **The 3.12 environment already exists** at `.venv` (Python 3.12.7, pytest 9.1.1) and is
-   usable directly — `uv venv` is not needed on subsequent runs.
-4. **Uncommitted model edits are sitting in the working tree** on this branch's base
-   (`bot/core/models/*.py`, 9 files — adding `autoincrement=True` to primary keys). These are
-   **not** part of any PR and were deliberately left uncommitted by this run.
-   **One of them is broken:** `bot/core/models/student_profile.py:67` uses `Integer` without
-   importing it, so `from bot.core.models.delivery_request import DeliveryRequest` raises
-   `NameError` and the models cannot be imported at all in a clean checkout. Fix or revert
-   these edits before relying on the model layer.
-
-**Newly discovered problems:**
-
-5. **Ownership must be enforced in the service, not the handler.** The backlog's suggested fix
-   for #5 ("in each handler assert `req.driver_id == driver_user.id`") is insufficient:
-   `process_driver_reject` calls `RequestRepository.update` directly, and the next caller
-   added will do the same. The rule now lives in `RequestService.transition_status` with
-   `TransitionDTO.require_assigned_driver=True` as the fail-closed default.
-6. **The state machine masks the ownership hole.** A request in `ASSIGNED` cannot jump to
-   `DELIVERED`, so a naive reproduction of #5 looks already-fixed. The exploit uses *legal*
-   transitions (`ASSIGNED -> ACCEPTED`, then `ACCEPTED -> ... -> DELIVERED`). Any future
-   regression test must use a legal transition or it will pass for the wrong reason.
-7. **`PermissionDeniedError` is a subclass of `PackitbotError`**, so the driver handlers'
-   existing `except PackitbotError` branch already renders it as a user-facing alert. No
-   changes were needed in `main.py`'s global handler.
-
-**Remaining backlog:** 6 × P0, 15 × P1, 12 × P2, 7 × P3 = **40 open items**.
-
-**Next highest-value item:** P0 #4 (`MissingGreenlet` on "view request detail",
-`bot/student/handlers/requests.py:668`) — still open, unblocked, and cheap to verify.
-#6 and #7 remain; #7 (Alembic) is still the structural blocker but is a large task.
->>>>>>> e8dc63e (fix: enforce driver ownership on delivery request callbacks (P0 #5))
