@@ -409,3 +409,312 @@ async def test_unknown_command_blocked_for_admin():
     assert result is None
     handler.assert_not_awaited()
     update.message.answer.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# 17. Public callback (home) allowed for unregistered user
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_public_callback_allowed_for_unregistered_user():
+    """A user with role=None can still invoke the 'home' callback."""
+    middleware = RBACMiddleware()
+    update = _make_mock_callback("home")
+    user = _make_user_mock(role=None)
+    session = _make_session_mock()
+
+    handler = AsyncMock(return_value="ok")
+
+    result = await middleware(handler, update, {"user": user, "session": session})
+
+    assert result == "ok"
+    handler.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# 18. Public callback (role:student) allowed for unregistered user
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_role_selection_callback_allowed_for_unregistered_user():
+    """A user with role=None can still invoke the role selection callback."""
+    middleware = RBACMiddleware()
+    update = _make_mock_callback("role:student")
+    user = _make_user_mock(role=None)
+    session = _make_session_mock()
+
+    handler = AsyncMock(return_value="ok")
+
+    result = await middleware(handler, update, {"user": user, "session": session})
+
+    assert result == "ok"
+    handler.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# 19. Driver callback blocked for unregistered user
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_driver_callback_blocked_for_unregistered_user():
+    """A user with role=None is blocked from driver_accept callback."""
+    middleware = RBACMiddleware()
+    update = _make_mock_callback("driver_accept:123")
+    user = _make_user_mock(role=None)
+    session = _make_session_mock()
+
+    handler = AsyncMock(return_value="ok")
+
+    result = await middleware(handler, update, {"user": user, "session": session})
+
+    assert result is None
+    handler.assert_not_awaited()
+    update.callback_query.answer.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# 20. Driver callback blocked for student
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_driver_callback_blocked_for_student():
+    """A STUDENT is blocked from driver_accept callback."""
+    middleware = RBACMiddleware()
+    update = _make_mock_callback("driver_accept:123")
+    user = _make_user_mock(role=UserRole.STUDENT)
+    session = _make_session_mock(profile_exists=True)
+
+    handler = AsyncMock(return_value="ok")
+
+    result = await middleware(handler, update, {"user": user, "session": session})
+
+    assert result is None
+    handler.assert_not_awaited()
+    update.callback_query.answer.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# 21. Driver callback allowed for driver
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_driver_callback_allowed_for_driver():
+    """A fully-registered DRIVER can invoke driver_accept callback."""
+    middleware = RBACMiddleware()
+    update = _make_mock_callback("driver_accept:123")
+    user = _make_user_mock(role=UserRole.DRIVER)
+    session = _make_session_mock(profile_exists=True)
+
+    handler = AsyncMock(return_value="ok")
+
+    result = await middleware(handler, update, {"user": user, "session": session})
+
+    assert result == "ok"
+    handler.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# 22. Admin callback blocked for driver
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_admin_callback_blocked_for_driver():
+    """A DRIVER is blocked from admin callback."""
+    middleware = RBACMiddleware()
+    update = _make_mock_callback("admin_req_page:1")
+    user = _make_user_mock(role=UserRole.DRIVER)
+    session = _make_session_mock(profile_exists=True)
+
+    handler = AsyncMock(return_value="ok")
+
+    result = await middleware(handler, update, {"user": user, "session": session})
+
+    assert result is None
+    handler.assert_not_awaited()
+    update.callback_query.answer.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# 23. Admin callback allowed for admin
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_admin_callback_allowed_for_admin():
+    """A fully-registered ADMIN can invoke admin callback."""
+    middleware = RBACMiddleware()
+    update = _make_mock_callback("admin_req_page:1")
+    user = _make_user_mock(role=UserRole.ADMIN)
+    session = _make_session_mock(profile_exists=True)
+
+    handler = AsyncMock(return_value="ok")
+
+    result = await middleware(handler, update, {"user": user, "session": session})
+
+    assert result == "ok"
+    handler.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# 24. Student callback blocked for driver
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_student_callback_blocked_for_driver():
+    """A DRIVER is blocked from student callback (my_req_detail)."""
+    middleware = RBACMiddleware()
+    update = _make_mock_callback("my_req_detail:123")
+    user = _make_user_mock(role=UserRole.DRIVER)
+    session = _make_session_mock(profile_exists=True)
+
+    handler = AsyncMock(return_value="ok")
+
+    result = await middleware(handler, update, {"user": user, "session": session})
+
+    assert result is None
+    handler.assert_not_awaited()
+    update.callback_query.answer.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# 25. Student callback allowed for student
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_student_callback_allowed_for_student():
+    """A fully-registered STUDENT can invoke my_req_detail callback."""
+    middleware = RBACMiddleware()
+    update = _make_mock_callback("my_req_detail:123")
+    user = _make_user_mock(role=UserRole.STUDENT)
+    session = _make_session_mock(profile_exists=True)
+
+    handler = AsyncMock(return_value="ok")
+
+    result = await middleware(handler, update, {"user": user, "session": session})
+
+    assert result == "ok"
+    handler.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# 26. Unknown callback blocked for registered user
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_unknown_callback_blocked():
+    """A registered user invoking an unknown callback receives 'unknown callback'."""
+    middleware = RBACMiddleware()
+    update = _make_mock_callback("unknown_action:123")
+    user = _make_user_mock(role=UserRole.STUDENT)
+    session = _make_session_mock(profile_exists=True)
+
+    handler = AsyncMock(return_value="ok")
+
+    result = await middleware(handler, update, {"user": user, "session": session})
+
+    assert result is None
+    handler.assert_not_awaited()
+    update.callback_query.answer.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# 27. Driver registration callback requires pre-authorization
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_driver_submit_reg_callback_requires_preauth():
+    """A user trying to submit driver registration must be pre-authorized."""
+    middleware = RBACMiddleware()
+    update = _make_mock_callback("driver_submit_reg")
+    user = _make_user_mock(role=None)
+    session = _make_session_mock(profile_exists=False)
+
+    handler = AsyncMock(return_value="ok")
+
+    with patch(
+        "bot.driver.service.is_authorized_driver",
+        new_callable=AsyncMock,
+        return_value=False,
+    ):
+        result = await middleware(handler, update, {"user": user, "session": session})
+
+    assert result is None
+    handler.assert_not_awaited()
+    update.callback_query.answer.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# 28. Driver registration callback allowed when pre-authorized
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_driver_submit_reg_callback_allowed_when_preauthorized():
+    """A pre-authorized user can submit driver registration."""
+    middleware = RBACMiddleware()
+    update = _make_mock_callback("driver_submit_reg")
+    user = _make_user_mock(role=None)
+    session = _make_session_mock(profile_exists=False)
+
+    handler = AsyncMock(return_value="ok")
+
+    with patch(
+        "bot.driver.service.is_authorized_driver",
+        new_callable=AsyncMock,
+        return_value=True,
+    ):
+        result = await middleware(handler, update, {"user": user, "session": session})
+
+    assert result == "ok"
+    handler.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# 29. Driver callback blocked for driver without approved profile
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_driver_callback_blocked_for_driver_without_profile():
+    """A user with DRIVER role but no approved profile is blocked from driver callbacks."""
+    middleware = RBACMiddleware()
+    update = _make_mock_callback("driver_accept:123")
+    user = _make_user_mock(role=UserRole.DRIVER)
+    session = _make_session_mock(profile_exists=False)
+
+    handler = AsyncMock(return_value="ok")
+
+    result = await middleware(handler, update, {"user": user, "session": session})
+
+    assert result is None
+    handler.assert_not_awaited()
+    update.callback_query.answer.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# 30. Student callback blocked for student without profile
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_student_callback_blocked_for_student_without_profile():
+    """A user with STUDENT role but no profile is blocked from student callbacks."""
+    middleware = RBACMiddleware()
+    update = _make_mock_callback("my_req_detail:123")
+    user = _make_user_mock(role=UserRole.STUDENT)
+    session = _make_session_mock(profile_exists=False)
+
+    handler = AsyncMock(return_value="ok")
+
+    result = await middleware(handler, update, {"user": user, "session": session})
+
+    assert result is None
+    handler.assert_not_awaited()
+    update.callback_query.answer.assert_awaited_once()
+
+
+def _make_mock_callback(callback_data: str) -> MagicMock:
+    """Build a mock Update with a callback query containing *callback_data*."""
+    mock_user = MagicMock()
+    mock_user.id = 123
+    mock_user.is_bot = False
+
+    mock_callback_query = MagicMock()
+    mock_callback_query.from_user = mock_user
+    mock_callback_query.data = callback_data
+    mock_callback_query.answer = AsyncMock()
+
+    mock_update = MagicMock()
+    mock_update.message = None
+    mock_update.callback_query = mock_callback_query
+    mock_update.inline_query = None
+    mock_update.poll_answer = None
+    mock_update.poll = None
+    mock_update.shipping_query = None
+    mock_update.pre_checkout_query = None
+    mock_update.my_chat_member = None
+    mock_update.chat_member = None
+    mock_update.chosen_inline_result = None
+    return mock_update
