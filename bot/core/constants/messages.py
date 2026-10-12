@@ -122,6 +122,7 @@ class ErrorMessages:
     SLOW_DOWN: Final[str] = "⏳ **Slow down!** You're tapping buttons too fast."
     BANNED: Final[str] = "🔒 **Account Restricted.** Your account has been restricted. Contact an admin for assistance."
     UNKNOWN_COMMAND: Final[str] = "❓ Unknown command. Use /help to see available commands."
+    UNKNOWN_CALLBACK: Final[str] = "❓ Unknown callback. This action is not recognized."
     USER_NOT_FOUND: Final[str] = "⚠️ User profile not found."
     INVALID_REQUEST_ID: Final[str] = "⚠️ Invalid request ID."
     REQUEST_NOT_FOUND: Final[str] = "⚠️ Request not found or permission denied."
@@ -252,6 +253,7 @@ MSG_ACCESS_DENIED_UNREGISTERED = ErrorMessages.ACCESS_DENIED_UNREGISTERED
 MSG_ACCESS_DENIED_NOT_FULLY_REGISTERED = ErrorMessages.ACCESS_DENIED_NOT_FULLY_REGISTERED
 MSG_DRIVER_NOT_AUTHORIZED = ErrorMessages.DRIVER_NOT_AUTHORIZED
 MSG_UNKNOWN_COMMAND = ErrorMessages.UNKNOWN_COMMAND
+MSG_UNKNOWN_CALLBACK = ErrorMessages.UNKNOWN_CALLBACK
 
 MSG_ACTION_CONFIRMED = SuccessMessages.ACTION_CONFIRMED
 MSG_ACTION_CANCELLED = SuccessMessages.ACTION_CANCELLED

@@ -254,7 +254,13 @@ with `DriverProfile.id`, and lookups treat it as a `DriverProfile` PK. Items **#
 
 
 **#10 RBAC never authorizes callbacks** — `rbac.py:171`. Add a per-router allowlist of
-callback prefixes mapped to roles. Defence-in-depth for #5.
+callback prefixes mapped to roles. Defence-in-depth for #5. **FIXED 2026-10-11 (PR #18,
+`fix/rbac-callback-authorization`)** — Extended `RBACMiddleware` to authorize callback
+queries in addition to slash commands. Added `CALLBACK_PREFIX_ROLES` mapping 37 callback
+prefixes to required roles, `PUBLIC_CALLBACK_PREFIXES` for always-allowed callbacks,
+`_extract_callback_prefix()` method, and `MSG_UNKNOWN_CALLBACK` message. Driver
+registration callbacks allow pre-authorized users without DRIVER role. 14 new tests
+added. Defence-in-depth for P0 #5.
 
 **#11 Dead admin-promotion block** — `bot/core/middlewares/auth.py:177-181` compares an
 `int` against `str.split(",")`, which is always `False`. The block is unreachable; delete
@@ -311,10 +317,8 @@ it and `_ensure_admin_profile` (88-111). `main.py::_seed_admins` already does th
 **#13 Double pagination on the student request list** — `request/repository.py:147-154`
 applies `OFFSET/LIMIT`, then the handler re-paginates the slice
 (`requests.py:603-609, 637-644`). `total_pages` is always 1, Next never renders, and page ≥ 2
-returns fewer or no rows. Pick one strategy. **FIXED 2026-10-06 (PR #14)** — moved
-pagination into `RequestRepository.get_history_for_student`, which now returns a `Page`
-with the correct `total` from `count()` and the sliced `items`; the handler consumes the
-`Page` directly and no longer re-slices the result.
+returns fewer or no rows. Pick one strategy. **Verified again 2026-10-05** — still open;
+it is the natural next task.
 
 **#14 `IntegrityError` → `ValidationError` never reaches the user** —
 `request/service.py:139,179,243,298,362,415`. The `except` runs *inside* an open
@@ -328,7 +332,7 @@ never reaches the `PackitbotError` branch at `main.py:231`. The user always gets
 
 **#16 `echo=True` hardcoded on the production engine** — `bot/core/db/session.py:46` writes
 every INSERT, including phone numbers and addresses, to stdout, defeating the PII scrubbing
-in `logging.py`. Gate behind `settings.debug_sql: bool = False`. **FIXED 2026-10-09 (PR #17, `fix/echo-sql-logging`)** — added `debug_sql` setting defaulting to `False`, gated `echo` behind it.
+in `logging.py`. Gate behind `settings.debug_sql: bool = False`.
 
 **#17 Unescaped user input in `parse_mode="HTML"` messages** — `requests.py:155-163, 679`;
 `driver/handler.py:648-649, 758-762, 888-889`; admin uses unescaped Markdown input
@@ -506,30 +510,16 @@ gate here before adding more tests on top of a red suite.
 - **Validation:** 412 unit tests pass (was 402). New test `test_auth_middleware_does_not_promote_seed_admins` added and passing. The 7 pre-existing integration test failures (alembic + driver/request lifecycle) are unchanged — they are tracked under P0 #7 and open PRs and are not regressions from this change.
 - **Tripwire evidence:** The new test asserts the middleware does NOT promote the user's role; it would have failed with the old code (which silently did nothing due to the type mismatch).
 - **Doc housekeeping:** This branch carries the updated MAINTENANCE.md. Do not merge task branches out of order.
+|| 2026-10-05 | `fix/dead-admin-pagination-buttons` | P1 #12 admin driver-list Prev/Next buttons were unroutable; + P1 #22 on 2 handlers | #13 | **Fixed.** 13 new tests; 8 verified to fail when the fix is reverted. Full suite unchanged at 34 pre-existing failures. ||
+|| 2026-10-11 | `fix/rbac-callback-authorization` | P1 #10 RBAC never authorizes callbacks | #18 | **Fixed.** Extended RBACMiddleware to authorize callback queries (37 prefixes mapped to roles). 14 new tests. Defence-in-depth for P0 #5. Suite: 474 passed, 7 failed (pre-existing). ||
 
-### 2026-10-06 run notes
+**Remaining backlog:** 6 × P0 (all in open PRs #5–#10), 10 × P1 (#10, #12 closed, #22 partially), 12 × P2, 7 × P3 = **35 open items**.
 
-- **All 6 remaining P0 items still have open PRs** (#2→PR #5, #3→#6, #4→#9,
-  #5→#7, #7→#10, #0→#8; #6 disproved on 2026-10-03). Per the "skip anything
-  already in an open PR" rule, the highest available item was **P1 #13**.
-
-### 2026-10-09 run notes
+### 2026-10-05 run notes
 
 - **All 6 remaining P0 items still have open PRs** (#2→PR #5, #3→#6, #4→#9,
   #5→#7, #7→#10, #0→#8; #6 disproved on 2026-10-03). Per the "skip anything
-  already in an open PR" rule, the highest available item was **P1 #16**.
-- **Validation:** baseline on `main` @ `7df6ac3` before the change was
-  **34 failed / 384 passed** (418 tests). After the change: **34 failed / 417 passed**
-  (451 tests, 55.1s under CPython 3.12.7). The `FAILED` list was identical
-  line-for-line. **3 new tests added** (`test_settings_loads_from_env` updated,
-  `test_settings_debug_sql_defaults_false` new); all pass.
-- **Tripwire evidence:** not applicable for config-only change; the default
-  `debug_sql=False` means production logging is now safe by default.
-- **Doc housekeeping:** this branch now carries the newest MAINTENANCE.md.
-  Do not merge task branches out of order — PR #17 carries the doc as of
-  2026-10-09, but PRs #4–#16 each carry an older copy.
-- **No linter exists** in the project (`ruff`/`flake8`/`mypy` absent — item
-  #33). Validation used `pytest` + `python -m compileall`.
+  already in an open PR" rule, the highest available item was **P1 #12**.
 - **Validation:** baseline on `main` @ `1b5c06c` before the change was
   **34 failed / 371 passed** (405 tests, 73.9s under CPython 3.12.7). After the
   change: **34 failed / 384 passed** (418 tests, 38.0s). The `FAILED` list was
