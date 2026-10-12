@@ -42,12 +42,15 @@ class AuthMiddleware(BaseMiddleware):
 
     On each update, resolves the Telegram user to an internal User
     record, creates the record if it does not exist, blocks banned
-    users, promotes seed-admin Telegram IDs to the Admin role, and
-    ensures an AdminProfile exists for admin users. The resolved
-    user is injected into ``data["user"]`` for downstream handlers.
+    users, and injects the user object into the handler data dict
+    for downstream access.
+
+    Admin promotion and AdminProfile creation are handled at startup
+    by ``bot.main._seed_admins()`` — this middleware does NOT promote
+    users on every update (that was a dead, unreachable block).
 
     Attributes:
-        settings: Application settings containing seed admin Telegram IDs.
+        settings: Application settings (used only for other config).
         home: HomeButton keyboard markup used in user-facing error messages.
     """
 
@@ -55,8 +58,7 @@ class AuthMiddleware(BaseMiddleware):
         """Initialize the AuthMiddleware with application settings.
 
         Args:
-            settings: The application Settings object providing
-                seed_admin_telegram_ids for admin promotion.
+            settings: The application Settings object.
         """
         self.settings = settings
         self.home = HomeButton()
@@ -85,31 +87,6 @@ class AuthMiddleware(BaseMiddleware):
 
         return user
 
-    async def _ensure_admin_profile(self, session, user_id: int):
-        """Ensure an AdminProfile record exists for the given user.
-
-        Creates a new AdminProfile if one does not already exist.
-
-        Args:
-            session: The active async SQLAlchemy session.
-            user_id: The internal user ID.
-
-        Returns:
-            The AdminProfile record.
-        """
-        from bot.core.models.admin_profile import AdminProfile
-
-        stmt = select(AdminProfile).where(AdminProfile.user_id == user_id)
-        result = await session.execute(stmt)
-        admin = result.scalar_one_or_none()
-
-        if admin is None:
-            admin = AdminProfile(user_id=user_id)
-            session.add(admin)
-            logger.info(f"Created admin profile for user_id={user_id}")
-
-        return admin
-
     async def __call__(
         self,
         handler: Callable[[types.Update, dict[str, Any]], Any],
@@ -119,8 +96,8 @@ class AuthMiddleware(BaseMiddleware):
         """Process the incoming update, resolve the user, and enforce access rules.
 
         Extracts the Telegram user ID from the update, resolves or
-        creates the internal User record, blocks banned users, promotes
-        seed-admin IDs, and injects the user into handler data.
+        creates the internal User record, blocks banned users, and
+        injects the user into handler data.
 
         Args:
             handler: The next handler in the middleware chain.
@@ -173,11 +150,5 @@ class AuthMiddleware(BaseMiddleware):
             return
 
         data["user"] = user
-
-        if user_telegram_id in str(self.settings.seed_admin_telegram_ids).split(","):
-            if user.role != UserRole.ADMIN:
-                user.role = UserRole.ADMIN
-                logger.info(f"Promoted user {user.id} to admin via seed")
-            await self._ensure_admin_profile(session, user.id)
 
         return await handler(event, data)
