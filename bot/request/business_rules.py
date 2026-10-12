@@ -98,6 +98,37 @@ def can_assign_driver(driver: DriverProfile) -> bool:
     )
 
 
+def can_driver_act_on_request(request: DeliveryRequest, actor_id: int) -> bool:
+    """Check whether the driver assigned to a request may act on it.
+
+    Only the driver currently assigned to a request may accept it, progress
+    its status, or reject the assignment. A request with no driver assigned
+    has no legitimate driver actor.
+
+    This is an *ownership* rule, distinct from the state machine: the state
+    machine rejects illegal status *transitions*, never illegal *actors*. The
+    two must be checked together, otherwise any user can drive any request
+    through the pipeline by guessing a sequential request ID.
+
+    **Calls / Depends on:** None — pure comparison of loaded column values.
+
+    **Called by:** ``bot/request/service.py::RequestService.transition_status``,
+    ``bot/driver/handler.py::process_driver_reject``,
+    ``tests/unit/request/test_business_rules.py``.
+
+    Args:
+        request: The ``DeliveryRequest`` instance under evaluation. Its
+            ``driver_id`` column is a FK to ``users.id`` (see
+            ``bot.core.models.delivery_request``).
+        actor_id: The internal ``users.id`` of the driver attempting the action.
+
+    Returns:
+        ``True`` if the request is assigned to the actor; ``False`` if it is
+        unassigned or assigned to a different driver.
+    """
+    return request.driver_id is not None and request.driver_id == actor_id
+
+
 def can_rate_delivery(request: DeliveryRequest, existing_feedback: Any = None) -> bool:
     """Check whether a delivered request is eligible to receive feedback.
 
