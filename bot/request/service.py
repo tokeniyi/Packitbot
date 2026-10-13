@@ -260,6 +260,7 @@ class RequestService:
         except IntegrityError as exc:
             raise ValidationError("Failed to assign driver due to integrity constraint.") from exc
 
+
     async def transition_status(
         self, dto: TransitionDTO
     ) -> tuple[DeliveryRequest, RequestStatusChangedEvent]:
@@ -375,6 +376,11 @@ class RequestService:
         if request is None:
             raise NotFoundError(f"DeliveryRequest with id={dto.request_id} not found")
 
+        if not can_driver_act_on_request(request, dto.driver_id):
+            raise PermissionDeniedError(
+                f"User {dto.driver_id} is not the driver assigned to request {dto.request_id}"
+            )
+
         old_status = request.status
         if not can_transition(old_status, RequestStatus.PENDING):
             raise InvalidStatusTransitionError(
@@ -408,6 +414,7 @@ class RequestService:
                 return updated_request, event
         except IntegrityError as exc:
             raise ValidationError("Failed to reject assignment.") from exc
+
 
     async def cancel_request(
         self, dto: CancelRequestDTO

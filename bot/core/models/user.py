@@ -96,7 +96,7 @@ class User(Base, TimestampMixin):
 
     __tablename__ = "users"
 
-    # ``BigInteger`` renders as ``BIGSERIAL`` on PostgreSQL (the production
+# ``BigInteger`` renders as ``BIGSERIAL`` on PostgreSQL (the production
     # target, where autoincrement works). SQLite only treats a column as an
     # auto-incrementing rowid alias when it is declared exactly ``INTEGER``, so
     # a bare ``BigInteger`` primary key makes every INSERT omit the id and fail
@@ -104,7 +104,8 @@ class User(Base, TimestampMixin):
     # production DDL identical while letting the SQLite-backed test tier
     # actually persist rows.
     id: Mapped[int] = mapped_column(
-        BigInteger().with_variant(Integer, "sqlite"), primary_key=True
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
     )
     telegram_id: Mapped[int] = mapped_column(
         BigInteger, unique=True, index=True, nullable=False

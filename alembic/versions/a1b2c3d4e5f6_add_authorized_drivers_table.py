@@ -34,12 +34,12 @@ def upgrade() -> None:
     op.execute(sa.text("ALTER TYPE adminactiontype ADD VALUE 'AUTHORIZE_DRIVER'"))
 
     op.create_table(
-        "authorized_drivers",
-        sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("telegram_id", sa.BigInteger(), nullable=False),
-        # BigInteger matches ``users.id`` after d773fd78af20 widened it, and
-        # matches the ``AuthorizedDriver.added_by_admin_id`` column type.
-        sa.Column("added_by_admin_id", sa.BigInteger(), nullable=True),
+            "authorized_drivers",
+            sa.Column("id", sa.Integer(), nullable=False),
+            sa.Column("telegram_id", sa.BigInteger(), nullable=False),
+            # BigInteger matches ``users.id`` after d773fd78af20 widened it, and
+            # matches the ``AuthorizedDriver.added_by_admin_id`` column type.
+            sa.Column("added_by_admin_id", sa.BigInteger(), nullable=True),
         sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
         sa.ForeignKeyConstraint(["added_by_admin_id"], ["users.id"], ondelete="SET NULL"),

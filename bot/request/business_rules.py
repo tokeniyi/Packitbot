@@ -99,6 +99,7 @@ def can_assign_driver(driver: DriverProfile) -> bool:
 
 
 def can_driver_act_on_request(request: DeliveryRequest, actor_id: int) -> bool:
+    """Check whether the actor is the currently assigned driver for a request."""
     """Check whether the driver assigned to a request may act on it.
 
     Only the driver currently assigned to a request may accept it, progress
