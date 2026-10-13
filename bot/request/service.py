@@ -112,34 +112,35 @@ class RequestService:
                 (e.g., invalid ``student_id`` foreign key).
         """
         try:
-            request = await self.request_repo.create(
-                student_id=dto.student_id,
-                pickup_detail=dto.pickup_detail,
-                dropoff_address=dto.dropoff_address,
-                dropoff_landmark=dto.dropoff_landmark,
-                hall_of_residence=dto.hall_of_residence,
-                recipient_name=dto.recipient_name,
-                recipient_phone=dto.recipient_phone,
-                luggage_size=dto.luggage_size,
-                luggage_count=dto.luggage_count,
-                special_instructions=dto.special_instructions,
-                preferred_date=dto.preferred_date,
-                preferred_time_window=dto.preferred_time_window,
-                status=RequestStatus.PENDING,
-            )
-            # Record the initial PENDING status so the audit trail starts here.
-            await self.status_log_repo.create(
-                request_id=request.id,
-                old_status=None,
-                new_status=RequestStatus.PENDING,
-                changed_by_user_id=dto.student_id,
-                note="Request created by student",
-            )
-            event = RequestCreatedEvent(
-                request_id=request.id,
-                student_id=dto.student_id,
-            )
-            return request, event
+            async with self.session.begin_nested():
+                request = await self.request_repo.create(
+                    student_id=dto.student_id,
+                    pickup_detail=dto.pickup_detail,
+                    dropoff_address=dto.dropoff_address,
+                    dropoff_landmark=dto.dropoff_landmark,
+                    hall_of_residence=dto.hall_of_residence,
+                    recipient_name=dto.recipient_name,
+                    recipient_phone=dto.recipient_phone,
+                    luggage_size=dto.luggage_size,
+                    luggage_count=dto.luggage_count,
+                    special_instructions=dto.special_instructions,
+                    preferred_date=dto.preferred_date,
+                    preferred_time_window=dto.preferred_time_window,
+                    status=RequestStatus.PENDING,
+                )
+                # Record the initial PENDING status so the audit trail starts here.
+                await self.status_log_repo.create(
+                    request_id=request.id,
+                    old_status=None,
+                    new_status=RequestStatus.PENDING,
+                    changed_by_user_id=dto.student_id,
+                    note="Request created by student",
+                )
+                event = RequestCreatedEvent(
+                    request_id=request.id,
+                    student_id=dto.student_id,
+                )
+                return request, event
         except IntegrityError as exc:
             # Translate low-level DB constraint errors into domain-level ValidationError.
             raise ValidationError("Failed to create request due to invalid foreign key reference.") from exc
@@ -174,12 +175,13 @@ class RequestService:
             raise PermissionDeniedError("Request cannot be edited in its current status or by this user.")
 
         try:
-            updated_request = await self.request_repo.update(
-                dto.request_id, **dto.changed_fields
-            )
-            if updated_request is None:
-                raise NotFoundError(f"DeliveryRequest with id={dto.request_id} not found")
-            return updated_request
+            async with self.session.begin_nested():
+                updated_request = await self.request_repo.update(
+                    dto.request_id, **dto.changed_fields
+                )
+                if updated_request is None:
+                    raise NotFoundError(f"DeliveryRequest with id={dto.request_id} not found")
+                return updated_request
         except IntegrityError as exc:
             raise ValidationError("Failed to update request details.") from exc
 
@@ -235,25 +237,26 @@ class RequestService:
 
         old_status = request.status
         try:
-            updated_request = await self.request_repo.update(
-                dto.request_id,
-                driver_id=dto.driver_id,
-                status=RequestStatus.ASSIGNED,
-            )
-            # Log the status transition for audit and driver-side visibility.
-            await self.status_log_repo.create(
-                request_id=request.id,
-                old_status=old_status,
-                new_status=RequestStatus.ASSIGNED,
-                changed_by_user_id=dto.admin_id,
-                note=f"Assigned to driver {dto.driver_id}",
-            )
-            event = RequestAssignedEvent(
-                request_id=request.id,
-                driver_id=dto.driver_id,
-                admin_id=dto.admin_id,
-            )
-            return updated_request, event
+            async with self.session.begin_nested():
+                updated_request = await self.request_repo.update(
+                    dto.request_id,
+                    driver_id=dto.driver_id,
+                    status=RequestStatus.ASSIGNED,
+                )
+                # Log the status transition for audit and driver-side visibility.
+                await self.status_log_repo.create(
+                    request_id=request.id,
+                    old_status=old_status,
+                    new_status=RequestStatus.ASSIGNED,
+                    changed_by_user_id=dto.admin_id,
+                    note=f"Assigned to driver {dto.driver_id}",
+                )
+                event = RequestAssignedEvent(
+                    request_id=request.id,
+                    driver_id=dto.driver_id,
+                    admin_id=dto.admin_id,
+                )
+                return updated_request, event
         except IntegrityError as exc:
             raise ValidationError("Failed to assign driver due to integrity constraint.") from exc
 
@@ -309,24 +312,25 @@ class RequestService:
             )
 
         try:
-            updated_request = await self.request_repo.update(
-                dto.request_id,
-                status=dto.new_status,
-            )
-            await self.status_log_repo.create(
-                request_id=request.id,
-                old_status=old_status,
-                new_status=dto.new_status,
-                changed_by_user_id=dto.actor_id,
-                note=dto.note,
-            )
-            event = RequestStatusChangedEvent(
-                request_id=request.id,
-                old_status=old_status,
-                new_status=dto.new_status,
-                actor_id=dto.actor_id,
-            )
-            return updated_request, event
+            async with self.session.begin_nested():
+                updated_request = await self.request_repo.update(
+                    dto.request_id,
+                    status=dto.new_status,
+                )
+                await self.status_log_repo.create(
+                    request_id=request.id,
+                    old_status=old_status,
+                    new_status=dto.new_status,
+                    changed_by_user_id=dto.actor_id,
+                    note=dto.note,
+                )
+                event = RequestStatusChangedEvent(
+                    request_id=request.id,
+                    old_status=old_status,
+                    new_status=dto.new_status,
+                    actor_id=dto.actor_id,
+                )
+                return updated_request, event
         except IntegrityError as exc:
             raise ValidationError("Failed to transition status.") from exc
 
@@ -378,29 +382,30 @@ class RequestService:
             )
 
         try:
-            updated_request = await self.request_repo.update(
-                dto.request_id,
-                status=RequestStatus.PENDING,
-                driver_id=None,
-            )
-            await self.status_log_repo.create(
-                request_id=request.id,
-                old_status=old_status,
-                new_status=RequestStatus.PENDING,
-                changed_by_user_id=dto.driver_id,
-                note=dto.reason or f"Assignment declined by driver {dto.driver_id}",
-            )
-            # Returning the request to the pool frees the driver to take another.
-            driver_profile = await self.driver_repo.get_by_user_id(dto.driver_id)
-            if driver_profile is not None:
-                driver_profile.availability = DriverAvailability.AVAILABLE
-            event = RequestStatusChangedEvent(
-                request_id=request.id,
-                old_status=old_status,
-                new_status=RequestStatus.PENDING,
-                actor_id=dto.driver_id,
-            )
-            return updated_request, event
+            async with self.session.begin_nested():
+                updated_request = await self.request_repo.update(
+                    dto.request_id,
+                    status=RequestStatus.PENDING,
+                    driver_id=None,
+                )
+                await self.status_log_repo.create(
+                    request_id=request.id,
+                    old_status=old_status,
+                    new_status=RequestStatus.PENDING,
+                    changed_by_user_id=dto.driver_id,
+                    note=dto.reason or f"Assignment declined by driver {dto.driver_id}",
+                )
+                # Returning the request to the pool frees the driver to take another.
+                driver_profile = await self.driver_repo.get_by_user_id(dto.driver_id)
+                if driver_profile is not None:
+                    driver_profile.availability = DriverAvailability.AVAILABLE
+                event = RequestStatusChangedEvent(
+                    request_id=request.id,
+                    old_status=old_status,
+                    new_status=RequestStatus.PENDING,
+                    actor_id=dto.driver_id,
+                )
+                return updated_request, event
         except IntegrityError as exc:
             raise ValidationError("Failed to reject assignment.") from exc
 
@@ -445,26 +450,27 @@ class RequestService:
             )
 
         try:
-            updated_request = await self.request_repo.update(
-                dto.request_id,
-                status=RequestStatus.CANCELLED,
-                cancelled_by=dto.cancelled_by,
-                cancellation_reason=dto.cancellation_reason,
-            )
-            await self.status_log_repo.create(
-                request_id=request.id,
-                old_status=old_status,
-                new_status=RequestStatus.CANCELLED,
-                changed_by_user_id=dto.actor_id,
-                note=dto.cancellation_reason or f"Cancelled by {dto.cancelled_by}",
-            )
-            event = RequestCancelledEvent(
-                request_id=request.id,
-                cancelled_by=dto.cancelled_by,
-                actor_id=dto.actor_id,
-                reason=dto.cancellation_reason,
-            )
-            return updated_request, event
+            async with self.session.begin_nested():
+                updated_request = await self.request_repo.update(
+                    dto.request_id,
+                    status=RequestStatus.CANCELLED,
+                    cancelled_by=dto.cancelled_by,
+                    cancellation_reason=dto.cancellation_reason,
+                )
+                await self.status_log_repo.create(
+                    request_id=request.id,
+                    old_status=old_status,
+                    new_status=RequestStatus.CANCELLED,
+                    changed_by_user_id=dto.actor_id,
+                    note=dto.cancellation_reason or f"Cancelled by {dto.cancelled_by}",
+                )
+                event = RequestCancelledEvent(
+                    request_id=request.id,
+                    cancelled_by=dto.cancelled_by,
+                    actor_id=dto.actor_id,
+                    reason=dto.cancellation_reason,
+                )
+                return updated_request, event
         except IntegrityError as exc:
             raise ValidationError("Failed to cancel request.") from exc
 
@@ -505,19 +511,20 @@ class RequestService:
             raise ValidationError("Rating must be an integer between 1 and 5.")
 
         try:
-            feedback = await self.feedback_repo.create(
-                request_id=dto.request_id,
-                student_id=dto.student_id,
-                rating=dto.rating,
-                comment=dto.comment,
-            )
-            event = FeedbackSubmittedEvent(
-                feedback_id=feedback.id,
-                request_id=dto.request_id,
-                student_id=dto.student_id,
-                rating=dto.rating,
-            )
-            return feedback, event
+            async with self.session.begin_nested():
+                feedback = await self.feedback_repo.create(
+                    request_id=dto.request_id,
+                    student_id=dto.student_id,
+                    rating=dto.rating,
+                    comment=dto.comment,
+                )
+                event = FeedbackSubmittedEvent(
+                    feedback_id=feedback.id,
+                    request_id=dto.request_id,
+                    student_id=dto.student_id,
+                    rating=dto.rating,
+                )
+                return feedback, event
         except IntegrityError as exc:
             # Raised when feedback already exists or FK constraints fail.
             raise ValidationError("Feedback already submitted or invalid foreign key.") from exc
