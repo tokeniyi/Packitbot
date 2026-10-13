@@ -215,7 +215,7 @@ async def test_auth_middleware_creates_user_on_first_update(monkeypatch):
 # ---------------------------------------------------------------------------
 # 3. AuthMiddleware short-circuits banned users before any handler executes
 # ---------------------------------------------------------------------------
-@pytest.mark.asyncio
+@ pytest.mark.asyncio
 async def test_auth_middleware_short_circuits_banned_user(monkeypatch):
     """Verify that AuthMiddleware rejects banned users without invoking downstream handlers."""
     settings = MagicMock()
@@ -256,7 +256,58 @@ async def test_auth_middleware_short_circuits_banned_user(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# 4. ThrottlingMiddleware drops rapid-fire updates beyond configured rate
+# 4. AuthMiddleware does NOT promote seed admins (P1 #11 - dead block removed)
+# ---------------------------------------------------------------------------
+@ pytest.mark.asyncio
+async def test_auth_middleware_does_not_promote_seed_admins(monkeypatch):
+    """Verify that AuthMiddleware no longer promotes users on every update.
+
+    The old code compared an int telegram_id against str.split(",") which
+    always returns strings, so the check was always False. The dead block
+    has been removed; admin promotion is now done at startup by _seed_admins().
+    """
+    settings = MagicMock()
+    # Seed admin telegram_ids (as strings, like in .env)
+    settings.seed_admin_telegram_ids = "42,100"
+
+    fake_user = MagicMock()
+    fake_user.id = 1
+    fake_user.telegram_id = 42  # This IS a seed admin
+    fake_user.account_status = AccountStatus.ACTIVE
+    fake_user.role = UserRole.STUDENT  # Not admin yet
+
+    fake_session = _make_fake_session()
+    fake_session.execute = AsyncMock(
+        return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=fake_user))
+    )
+
+    async def fake_get_or_create(self, session, telegram_id):
+        return fake_user
+
+    def fake_async_session():
+        return fake_session
+
+    monkeypatch.setattr("bot.core.middlewares.auth.async_session", fake_async_session)
+    monkeypatch.setattr(AuthMiddleware, "_get_or_create_user", fake_get_or_create)
+
+    middleware = AuthMiddleware(settings)
+
+    async def fake_handler(event, data):
+        return "handled"
+
+    mock_update = _make_mock_update(user_id=42, mock_answer=True)
+    mock_update.message.from_user.id = 42
+
+    result = await middleware(fake_handler, mock_update, {"session": fake_session})
+
+    assert result == "handled"
+    # The middleware should NOT change the user's role - that's now done at startup
+    # Verify role was NOT promoted by this middleware
+    assert fake_user.role == UserRole.STUDENT, "Middleware must not promote seed admins on every update"
+
+
+# ---------------------------------------------------------------------------
+# 5. ThrottlingMiddleware drops rapid-fire updates beyond configured rate
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_throttling_middleware_denies_rapid_updates():

@@ -40,8 +40,28 @@ from bot.request.service import RequestService
 from bot.request.state_machine import can_transition
 
 
+class _AsyncSessionCtx:
+    """Helper to mock session.begin_nested() as an async context manager."""
+
+    def __init__(self, session):
+        self._session = session
+
+    async def __aenter__(self):
+        return self._session
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
 def _make_session():
-    return AsyncMock()
+    session = AsyncMock()
+    # session.begin_nested() must return a real async context manager,
+    # not a coroutine (AsyncMock.begin_nested() returns a coroutine).
+    begin_nested_cm = MagicMock()
+    begin_nested_cm.__aenter__ = AsyncMock(return_value=session)
+    begin_nested_cm.__aexit__ = AsyncMock(return_value=False)
+    session.begin_nested = MagicMock(return_value=begin_nested_cm)
+    return session
 
 
 @pytest.fixture(autouse=True)
@@ -371,6 +391,105 @@ class TestRequestServiceTransitionStatus:
             1, status=RequestStatus.ACCEPTED
         )
 
+    async def test_transition_status_rejects_non_assigned_driver(self):
+        """A user who is not the assigned driver must not drive the request."""
+        session = _make_session()
+        repo = RequestRepository(session)
+        req = _make_request(id=1, status=RequestStatus.ASSIGNED, driver_id=3)
+        session.get.return_value = req
+        session.execute.return_value = req
+
+        repo.update = AsyncMock()
+
+        service = RequestService(session)
+        service.request_repo = repo
+
+        dto = TransitionDTO(
+            request_id=1,
+            new_status=RequestStatus.ACCEPTED,
+            actor_id=999,
+            note="Guessed request id",
+        )
+        with pytest.raises(PermissionDeniedError):
+            await service.transition_status(dto)
+
+        # No write may have been attempted.
+        repo.update.assert_not_called()
+
+    async def test_transition_status_rejects_unassigned_request(self):
+        """An unassigned request has no legitimate driver actor."""
+        session = _make_session()
+        repo = RequestRepository(session)
+        req = _make_request(id=1, status=RequestStatus.ASSIGNED, driver_id=None)
+        session.get.return_value = req
+        session.execute.return_value = req
+
+        repo.update = AsyncMock()
+
+        service = RequestService(session)
+        service.request_repo = repo
+
+        dto = TransitionDTO(
+            request_id=1,
+            new_status=RequestStatus.ACCEPTED,
+            actor_id=3,
+        )
+        with pytest.raises(PermissionDeniedError):
+            await service.transition_status(dto)
+
+        repo.update.assert_not_called()
+
+    async def test_transition_status_ownership_checked_before_transition(self):
+        """Ownership is rejected before the state machine, so a non-owner
+        cannot distinguish a legal from an illegal transition."""
+        session = _make_session()
+        repo = RequestRepository(session)
+        req = _make_request(id=1, status=RequestStatus.PENDING, driver_id=3)
+        session.get.return_value = req
+        session.execute.return_value = req
+
+        repo.update = AsyncMock()
+
+        service = RequestService(session)
+        service.request_repo = repo
+
+        dto = TransitionDTO(
+            request_id=1,
+            new_status=RequestStatus.DELIVERED,
+            actor_id=999,
+        )
+        with pytest.raises(PermissionDeniedError):
+            await service.transition_status(dto)
+
+        repo.update.assert_not_called()
+
+    async def test_transition_status_opt_out_allows_admin_override(self):
+        """A caller with a different authorisation basis may opt out."""
+        session = _make_session()
+        repo = RequestRepository(session)
+        status_log_repo = StatusLogRepository(session)
+        req = _make_request(id=1, status=RequestStatus.ASSIGNED, driver_id=3)
+        session.get.return_value = req
+        session.execute.return_value = req
+
+        repo.update = AsyncMock(return_value=req)
+        status_log_repo.create = AsyncMock(return_value=MagicMock(spec=RequestStatusLog))
+
+        service = RequestService(session)
+        service.request_repo = repo
+        service.status_log_repo = status_log_repo
+
+        dto = TransitionDTO(
+            request_id=1,
+            new_status=RequestStatus.ACCEPTED,
+            actor_id=999,
+            require_assigned_driver=False,
+        )
+        result_req, _event = await service.transition_status(dto)
+
+        assert result_req.id == 1
+        repo.update.assert_called_once_with(1, status=RequestStatus.ACCEPTED)
+
     async def test_transition_status_not_found(self):
         session = _make_session()
         repo = RequestRepository(session)
@@ -388,6 +507,8 @@ class TestRequestServiceTransitionStatus:
     async def test_transition_status_invalid_transition(self):
         session = _make_session()
         repo = RequestRepository(session)
+        # driver_id matches actor_id so the ownership guard passes and this
+        # test isolates the state-machine rule.
         req = _make_request(id=1, status=RequestStatus.PENDING, driver_id=3)
         session.get.return_value = req
         session.execute.return_value = req

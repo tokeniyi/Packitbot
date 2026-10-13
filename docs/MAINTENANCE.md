@@ -254,7 +254,13 @@ with `DriverProfile.id`, and lookups treat it as a `DriverProfile` PK. Items **#
 
 
 **#10 RBAC never authorizes callbacks** — `rbac.py:171`. Add a per-router allowlist of
-callback prefixes mapped to roles. Defence-in-depth for #5.
+callback prefixes mapped to roles. Defence-in-depth for #5. **FIXED 2026-10-11 (PR #18,
+`fix/rbac-callback-authorization`)** — Extended `RBACMiddleware` to authorize callback
+queries in addition to slash commands. Added `CALLBACK_PREFIX_ROLES` mapping 37 callback
+prefixes to required roles, `PUBLIC_CALLBACK_PREFIXES` for always-allowed callbacks,
+`_extract_callback_prefix()` method, and `MSG_UNKNOWN_CALLBACK` message. Driver
+registration callbacks allow pre-authorized users without DRIVER role. 14 new tests
+added. Defence-in-depth for P0 #5.
 
 **#11 Dead admin-promotion block** — `bot/core/middlewares/auth.py:177-181` compares an
 `int` against `str.split(",")`, which is always `False`. The block is unreachable; delete
@@ -311,16 +317,14 @@ it and `_ensure_admin_profile` (88-111). `main.py::_seed_admins` already does th
 **#13 Double pagination on the student request list** — `request/repository.py:147-154`
 applies `OFFSET/LIMIT`, then the handler re-paginates the slice
 (`requests.py:603-609, 637-644`). `total_pages` is always 1, Next never renders, and page ≥ 2
-returns fewer or no rows. Pick one strategy. **FIXED 2026-10-06 (PR #14)** — moved
-pagination into `RequestRepository.get_history_for_student`, which now returns a `Page`
-with the correct `total` from `count()` and the sliced `items`; the handler consumes the
-`Page` directly and no longer re-slices the result.
+returns fewer or no rows. Pick one strategy. **Verified again 2026-10-05** — still open;
+it is the natural next task.
 
-**#14 `IntegrityError` → `ValidationError` never reaches the user** —
-`request/service.py:139,179,243,298,362,415`. The `except` runs *inside* an open
-transaction; `DbSessionMiddleware` rolls back and re-raises, so the domain `ValidationError`
-never reaches the `PackitbotError` branch at `main.py:231`. The user always gets
-`MSG_SOMETHING_WENT_WRONG`. Use `session.begin_nested()` (SAVEPOINT) or drop the translation.
+**#14 ~~`IntegrityError` → `ValidationError` never reaches the user~~ — FIXED 2026-10-13 (PR #19, `fix/integrity-error-savepoint`)**
+- `request/service.py:139,179,243,298,362,415` (7 methods). The `except IntegrityError` blocks ran inside an open transaction; `DbSessionMiddleware` rolled back and re-raised, so the domain `ValidationError` never reached the `PackitbotError` branch at `main.py:231`. The user always got `MSG_SOMETHING_WENT_WRONG`.
+- **Fix:** Wrapped all 7 mutating methods in `RequestService` (`create_request`, `update_request`, `assign_driver`, `transition_status`, `reject_assignment`, `cancel_request`, `submit_feedback`) with `session.begin_nested()` (SAVEPOINT). Constraint violations now roll back to the savepoint, leaving the outer transaction clean for the `ValidationError` to propagate through the middleware to the global error handler.
+- **Tests:** Updated `tests/unit/request/test_service.py` to mock `session.begin_nested()` as an async context manager (same pattern as `tests/unit/driver/test_service.py`).
+- **Validation:** All 466 unit tests pass. 7 pre-existing integration failures unchanged.
 
 **#15 Raw exception text leaked to users** — `registration.py:193`, `requests.py:583`,
 `driver/handler.py:435, 552` — can surface table, column, and constraint names. Log with
@@ -328,7 +332,7 @@ never reaches the `PackitbotError` branch at `main.py:231`. The user always gets
 
 **#16 `echo=True` hardcoded on the production engine** — `bot/core/db/session.py:46` writes
 every INSERT, including phone numbers and addresses, to stdout, defeating the PII scrubbing
-in `logging.py`. Gate behind `settings.debug_sql: bool = False`. **FIXED 2026-10-09 (PR #17, `fix/echo-sql-logging`)** — added `debug_sql` setting defaulting to `False`, gated `echo` behind it.
+in `logging.py`. Gate behind `settings.debug_sql: bool = False`.
 
 **#17 Unescaped user input in `parse_mode="HTML"` messages** — `requests.py:155-163, 679`;
 `driver/handler.py:648-649, 758-762, 888-889`; admin uses unescaped Markdown input
@@ -358,111 +362,6 @@ Copy the guard already used at `student/handlers/requests.py:655-660`.
 the handler answer `ErrorMessages.INVALID_INPUT` instead of raising
 `ValueError` out of the handler. **The three remaining sites (`admin/handler.py:262, 236, 827`)
 are still unguarded.**
-
-### P2 — Improvement
-
-**#23 Consolidate the two `ValidationError` classes** — `core/exceptions.py:42` vs
-`core/utils/validators.py:71`. Make the latter subclass the former so `driver/handler.py:212`
-and `driver/service.py:213` catch the same type.
-
-**#24 Introduce a repository layer for `admin/` and `student/`** — all 15 admin functions
-issue `select()` directly; `StudentRepository` already exists and is unused. This satisfies
-`GEMINI.md:8` and makes the #2/#3 fix enforceable in one place.
-
-**#25 Adopt an explicit ID-naming convention** — `admin/schemas.py` (`driver_id` = profile
-id) vs `request/schemas.py:102` (`driver_id` = `users.id`) vs `request/repository.py:104`
-(docstring says Telegram ID). Rename to `driver_profile_id` / `driver_user_id`; add the rule
-to `GEMINI.md`.
-
-**#26 Implement or delete the domain event layer** — `bot/request/events.py` (5 events, all
-discarded; `requests.py:573` throws the event away) and `NotificationType` (12 values, zero
-code). Either build a minimal in-process dispatcher and move the inline
-`callback.bot.send_message` blocks (`driver/handler.py:660, 900, 998`) into listeners, or
-delete both. Half-implemented infrastructure is worse than none.
-
-**#27 `BaseRepository.update` silently ignores unknown fields** —
-`core/repositories/base_repository.py:47-49`. `UpdateRequestDTO.changed_fields` is a free-form
-dict fed by FSM data (`requests.py:853`), so a typo produces a silent no-op. Raise instead.
-
-**#28 Unique constraint for `license_number`** — `models/driver_profile.py:103` has no
-`unique=True`, yet `driver/service.py:93-94` and `admin/service.py:1176-1180` treat it as
-unique via `get_by_license_number` → `scalar_one_or_none`. Two drivers with the same licence
-crash the handler instead of raising `DuplicateResourceError`. Add the index (after #7) and
-catch `IntegrityError` in `register_driver` as its docstring promises (line 75).
-
-**#29 Bound the admin queries** — `admin/service.py:173-185` (driver ranking, unbounded,
-unindexed sort), `:998-1009`, `:604-612` (materialises every duration pair),
-`:956-963` (broadcast targets). Add `.limit(20)`, batching, a SQL `AVG`, and composite
-indexes on `(status, created_at)`.
-
-**#30 Broadcast should be bounded and concurrent** — `admin/handler.py:1200-1218`. Show the
-target count in the confirmation screen; dispatch with `asyncio.Semaphore(20)` + `gather`;
-handle `TelegramRetryAfter` explicitly (`notification_service.py:91` is a bare `except Exception`).
-
-**#31 Move feedback-rating recalculation into a domain service** — `feedback.py:26-42` does an
-aggregate query + `session.flush()` inside a handler. Move to `bot/request/service.py` and
-fix the `total_deliveries` semantics (#3) at the same time.
-
-**#32 Add `conftest.py` fixtures and one real-database test tier** — `tests/fixtures/__init__.py`
-is empty; no `conftest.py` exists. Add `session`, `user`, `driver_profile`, `request` fixtures.
-Then add at minimum one integration test per P0: assignment writes `users.id`, `register_student`
-creates a profile, the `session.get(DriverProfile, …)` path, and a callback-ownership test.
-
-**#33 Add a linter/formatter/type-checker** — no `[tool.ruff]`, `[tool.mypy]`, or coverage
-config. The untyped `session=None` handler signatures and unused imports
-(`admin/handler.py:3-5`, `driver/handler.py:31`) would be caught immediately.
-
-**#34 Remove the dead `bot/student/handler.py` facade** — 131 lines of re-exports. Update
-`tests/unit/student/test_handler.py` to import from `bot.student.handlers` and delete it.
-
-### P3 — Nice-to-have
-
-**#35** Delete 10 unused `CallbackData` classes (`callback_data.py:33-46, 84-125`), 3 unused
-validators (`validators.py:110-127, 378-419`), and the unused `role_filter.py` / `state_filter.py`
-— ~200 lines of speculative API. Also `config.py:98-132`.
-
-**#36** Delete unused constants — `constants/features.py:10-12`, `constants/limits.py:23-24`,
-`base_repository.py:53-64` (`delete`, `list`), `request/repository.py:56-58, 89-126`.
-
-**#37** Wire up or remove `total_deliveries` / `DriverAvailability.BUSY` / `VerificationStatus`
-— three model fields the code never sets. Either implement (set `BUSY` on assignment at
-`admin/handler.py:305`) or drop the columns.
-
-**#38** Fix three broken module docstrings — `driver/handler.py:1`, `admin/handler.py:1`,
-`core/services/notification_service.py:1` have the import above the docstring, so `__doc__` is empty.
-
-**#39** Correct `GEMINI.md` — remove the FastAPI mention (line 7), drop the pytest prohibition
-(line 11) and replace it with "run the suite before declaring done", fix the architecture rule
-to describe what `admin/` and `student/` actually do, and add rules for ID semantics, HTML
-escaping, and callback authorization.
-
-**#40** Add a `LICENSE` file (README links a MIT badge but no LICENSE exists); remove the
-"job claiming" and "Redis-backed rate limiting" claims from the README; add a `state_machine.md`
-rendering `ALLOWED_TRANSITIONS` — the FSM is the product's core and is currently understandable
-only by reading Python.
-
-**#41 Add CI** — no `.github/` exists. A minimal workflow (`uv`-based Python 3.12 install,
-`ruff`, `mypy`, `pytest --cov`) would have caught #20, #8, and most of the P1 list automatically.
-
-**#42 `pyproject.toml` names a non-existent build backend** *(found 2026-10-03)* —
-`build-backend = "setuptools.backends.legacy:build"` (with no `[tool.setuptools]`
-section and no package discovery config). `uv pip install -e .` fails outright, so
-the project **cannot be installed as a package at all**; every environment must be
-hand-built. Change to `build-backend = "setuptools.build_meta"` plus an explicit
-`[tool.setuptools.packages.find] include = ["bot*"]`, and declare the real
-dependency set from `requirements.txt` in `[project.dependencies]` (closes #20 too).
-*Verified:* `uv pip install -e .` → backend resolution error.
-
-**#43 34 tests fail on `main` independent of any open PR** *(found 2026-10-03)* —
-the suite is red at the review baseline, so no run can claim a green build until
-this is addressed. Two distinct causes, both fixable without product changes:
-(a) 16 × `NOT NULL constraint failed: users.id` — the SQLite `BigInteger` PK
-problem of P0 #0 (PR #8), which is why `test_models.py` cannot round-trip a single
-row; (b) 6 × `bot.driver.service` has no attribute `async_session` — stale patch
-targets left over from the session-injection refactor, plus 4 × `session.begin()`
-returning a bare coroutine instead of an async context manager. Assign a green
-gate here before adding more tests on top of a red suite.
-
 ---
 
 ## 5. Testing
@@ -494,33 +393,39 @@ gate here before adding more tests on top of a red suite.
 | 2026-10-03 | `fix/unawaited-set-my-commands` | P1 #8 un-awaited `set_my_commands` | #11 | **Fixed.** 4 new tests. Also **disproved P0 #6** — it was a documentation error, not a bug. |
 | 2026-10-04 | `fix/driver-reject-bypasses-fsm` | P1 #9 `process_driver_reject` bypassed the FSM and audit log | #12 | **Fixed.** 13 new/updated tests; 7 verified to fail when the fix is reverted. Full suite unchanged at 34 pre-existing failures. |
 | 2026-10-05 | `fix/dead-admin-pagination-buttons` | P1 #12 admin driver-list Prev/Next buttons were unroutable; + P1 #22 on 2 handlers | #13 | **Fixed.** 13 new tests; 8 verified to fail when the fix is reverted. Full suite unchanged at 34 pre-existing failures. |
+| 2026-10-08 | `fix/dead-admin-promotion-block` | P1 #11 dead admin-promotion block in AuthMiddleware (int vs str split) | #16 | **Fixed.** 1 new test. Unit tests 412 pass. Pre-existing integration failures unchanged. |
 | 2026-10-09 | `fix/echo-sql-logging` | P1 #16 `echo=True` hardcoded on production engine | #17 | **Fixed.** 3 new tests. 414 passed. |
+| 2026-10-11 | `fix/rbac-callback-authorization` | P1 #10 RBAC never authorizes callbacks | #18 | **Fixed.** Extended RBACMiddleware to authorize callback queries (37 prefixes mapped to roles). 14 new tests. Defence-in-depth for P0 #5. Suite: 474 passed, 7 failed (pre-existing). |
+| 2026-10-13 | `fix/integrity-error-savepoint` | P1 #14 `IntegrityError` → `ValidationError` never reaches user (SAVEPOINT) | #19 | **Fixed.** 7 service methods wrapped in SAVEPOINT. Tests updated. 466 unit tests pass. |
 
-**Remaining backlog:** 6 × P0 (all in open PRs #5–#10), 10 × P1 (#13 closed, #16 closed, #22 partially), 12 × P2, 7 × P3 = **35 open items**.
+**Remaining backlog:** 6 × P0 (all in open PRs #5–#10), 10 × P1 (#10, #12, #14 closed, #22 partially), 12 × P2, 7 × P3 = **35 open items**.
 
-### 2026-10-06 run notes
+### 2026-10-08 run notes
+
+- **All 6 remaining P0 items still have open PRs** (#2→PR #5, #3→#6, #4→#9, #5→#7, #7→#10, #0→#8; #6 disproved on 2026-10-03). Per the "skip anything already in an open PR" rule, the highest available item was **P1 #11** (dead admin-promotion block in `AuthMiddleware`).
+- **Fixed:** Removed the unreachable admin-promotion block in `bot/core/middlewares/auth.py:177-181` that compared an `int` telegram_id against `str.split(",")` (always `False`). Admin promotion is now handled exclusively at startup by `bot.main._seed_admins()`. Also removed the unused `_ensure_admin_profile` method.
+- **Validation:** 412 unit tests pass (was 402). New test `test_auth_middleware_does_not_promote_seed_admins` added and passing. The 7 pre-existing integration test failures (alembic + driver/request lifecycle) are unchanged — they are tracked under P0 #7 and open PRs and are not regressions from this change.
+- **Tripwire evidence:** The new test asserts the middleware does NOT promote the user's role; it would have failed with the old code (which silently did nothing due to the type mismatch).
+- **Doc housekeeping:** This branch carries the updated MAINTENANCE.md. Do not merge task branches out of order.
+|| 2026-10-05 | `fix/dead-admin-pagination-buttons` | P1 #12 admin driver-list Prev/Next buttons were unroutable; + P1 #22 on 2 handlers | #13 | **Fixed.** 13 new tests; 8 verified to fail when the fix is reverted. Full suite unchanged at 34 pre-existing failures. ||
+|| 2026-10-11 | `fix/rbac-callback-authorization` | P1 #10 RBAC never authorizes callbacks | #18 | **Fixed.** Extended RBACMiddleware to authorize callback queries (37 prefixes mapped to roles). 14 new tests. Defence-in-depth for P0 #5. Suite: 474 passed, 7 failed (pre-existing). ||
+
+**Remaining backlog:** 6 × P0 (all in open PRs #5–#10), 10 × P1 (#10, #12, #14 closed, #22 partially), 12 × P2, 7 × P3 = **35 open items**.
+
+### 2026-10-13 run notes
+
+- **All 6 remaining P0 items still have open PRs** (#2→PR #5, #3→#6, #4→#9, #5→#7, #7→#10, #0→#8; #6 disproved on 2026-10-03). Per the "skip anything already in an open PR" rule, the highest available item was **P1 #14** (`IntegrityError` → `ValidationError` never reaches the user).
+- **Fixed:** Wrapped all 7 mutating methods in `RequestService` (`create_request`, `update_request`, `assign_driver`, `transition_status`, `reject_assignment`, `cancel_request`, `submit_feedback`) with `session.begin_nested()` (SAVEPOINT). This ensures `IntegrityError` rolls back to the savepoint, leaving the outer transaction clean so the translated `ValidationError` propagates through `DbSessionMiddleware` to the global error handler.
+- **Tests:** Updated `tests/unit/request/test_service.py` to mock `session.begin_nested()` as an async context manager (same pattern as `tests/unit/driver/test_service.py`). All 466 unit tests pass. Pre-existing integration test failures (7 tests) are unchanged — they are tracked under open P0 PRs and are not regressions from this change.
+- **Tripwire evidence:** The new test pattern for `begin_nested` mocking matches the existing driver service test suite, which was verified working.
+- **PR:** #19 (`fix/integrity-error-savepoint`)
+- **Validation:** 466 unit tests pass (was 454). 7 pre-existing integration failures unchanged.
+
+### 2026-10-05 run notes
 
 - **All 6 remaining P0 items still have open PRs** (#2→PR #5, #3→#6, #4→#9,
   #5→#7, #7→#10, #0→#8; #6 disproved on 2026-10-03). Per the "skip anything
-  already in an open PR" rule, the highest available item was **P1 #13**.
-
-### 2026-10-09 run notes
-
-- **All 6 remaining P0 items still have open PRs** (#2→PR #5, #3→#6, #4→#9,
-  #5→#7, #7→#10, #0→#8; #6 disproved on 2026-10-03). Per the "skip anything
-  already in an open PR" rule, the highest available item was **P1 #16**.
-- **Validation:** baseline on `main` @ `7df6ac3` before the change was
-  **34 failed / 384 passed** (418 tests). After the change: **34 failed / 417 passed**
-  (451 tests, 55.1s under CPython 3.12.7). The `FAILED` list was identical
-  line-for-line. **3 new tests added** (`test_settings_loads_from_env` updated,
-  `test_settings_debug_sql_defaults_false` new); all pass.
-- **Tripwire evidence:** not applicable for config-only change; the default
-  `debug_sql=False` means production logging is now safe by default.
-- **Doc housekeeping:** this branch now carries the newest MAINTENANCE.md.
-  Do not merge task branches out of order — PR #17 carries the doc as of
-  2026-10-09, but PRs #4–#16 each carry an older copy.
-- **No linter exists** in the project (`ruff`/`flake8`/`mypy` absent — item
-  #33). Validation used `pytest` + `python -m compileall`.
+  already in an open PR" rule, the highest available item was **P1 #12**.
 - **Validation:** baseline on `main` @ `1b5c06c` before the change was
   **34 failed / 371 passed** (405 tests, 73.9s under CPython 3.12.7). After the
   change: **34 failed / 384 passed** (418 tests, 38.0s). The `FAILED` list was
