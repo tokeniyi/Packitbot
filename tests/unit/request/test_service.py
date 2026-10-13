@@ -40,8 +40,28 @@ from bot.request.service import RequestService
 from bot.request.state_machine import can_transition
 
 
+class _AsyncSessionCtx:
+    """Helper to mock session.begin_nested() as an async context manager."""
+
+    def __init__(self, session):
+        self._session = session
+
+    async def __aenter__(self):
+        return self._session
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
 def _make_session():
-    return AsyncMock()
+    session = AsyncMock()
+    # session.begin_nested() must return a real async context manager,
+    # not a coroutine (AsyncMock.begin_nested() returns a coroutine).
+    begin_nested_cm = MagicMock()
+    begin_nested_cm.__aenter__ = AsyncMock(return_value=session)
+    begin_nested_cm.__aexit__ = AsyncMock(return_value=False)
+    session.begin_nested = MagicMock(return_value=begin_nested_cm)
+    return session
 
 
 @pytest.fixture(autouse=True)
