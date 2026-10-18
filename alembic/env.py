@@ -44,16 +44,14 @@ def _resolve_url() -> str:
         from bot.core.config import get_settings
 
         url = get_settings().database_url
-    except Exception as exc:  # pragma: no cover - depends on local env
-            raise RuntimeError(
-                "No database URL configured. Set DATABASE_URL in the environment "
-                "or .env file, or set sqlalchemy.url in alembic.ini."
-            ) from exc
+    except Exception as exc:
+        raise RuntimeError(
+            "No database URL configured. Set DATABASE_URL/.env or sqlalchemy.url in alembic.ini."
+        ) from exc
 
     if not url:
         raise RuntimeError(
-            "No database URL configured. Set DATABASE_URL in the environment "
-            "or .env file, or set sqlalchemy.url in alembic.ini."
+            "No database URL configured. Set DATABASE_URL/.env or sqlalchemy.url in alembic.ini."
         )
     return url
 

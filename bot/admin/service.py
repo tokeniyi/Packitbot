@@ -1299,8 +1299,7 @@ async def add_authorized_driver(
 
     Args:
         telegram_id:        The Telegram user ID to authorize.
-        admin_user_id:      The internal ``users.id`` of the admin performing
-                            the action (as passed by ``cmd_add_driver``).
+        admin_user_id:  The internal ``users.id`` of the admin performing the action.
         session:            Optional injected ``AsyncSession``.
 
     Returns:

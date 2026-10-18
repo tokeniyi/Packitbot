@@ -61,40 +61,40 @@ class RequestRepository(BaseRepository[DeliveryRequest]):
         return await super().get_by_id_for_update(request_id)
 
     async def get_by_id_with_driver(
-        self, request_id: int
-    ) -> DeliveryRequest | None:
-        """Load a request with its driver and driver profile eagerly loaded.
+            self, request_id: int
+        ) -> DeliveryRequest | None:
+            """Load a request with its driver and driver profile eagerly loaded.
 
-        ``_format_request_detail`` reads ``request.driver`` and then
-        ``request.driver.driver_profile``.  With a plain ``get_by_id`` those
-        are lazy relationships: touching them after the statement has
-        executed triggers IO outside an awaited greenlet context and raises
-        ``MissingGreenlet``.  ``expire_on_commit=False`` does not help,
-        because the related rows were never loaded in the first place.
+            ``_format_request_detail`` reads ``request.driver`` and then
+            ``request.driver.driver_profile``.  With a plain ``get_by_id`` those
+            are lazy relationships: touching them after the statement has
+            executed triggers IO outside an awaited greenlet context and raises
+            ``MissingGreenlet``.  ``expire_on_commit=False`` does not help,
+            because the related rows were never loaded in the first place.
 
-        **Calls / Depends on:** ``selectinload`` for both relationship hops.
+            **Calls / Depends on:** ``selectinload`` for both relationship hops.
 
-        **Called by:** ``bot/student/handlers/requests.py``
-        (``show_request_detail``).
+            **Called by:** ``bot/student/handlers/requests.py``
+            (``show_request_detail``).
 
-        Args:
-            request_id: Internal ``delivery_requests.id``.
+            Args:
+                request_id: Internal ``delivery_requests.id``.
 
-        Returns:
-            The ``DeliveryRequest`` with ``driver`` and
-            ``driver.driver_profile`` populated, or ``None`` if not found.
-        """
-        stmt = (
-            select(DeliveryRequest)
-            .options(
-                selectinload(DeliveryRequest.driver).selectinload(
-                    User.driver_profile
+            Returns:
+                The ``DeliveryRequest`` with ``driver`` and
+                ``driver.driver_profile`` populated, or ``None`` if not found.
+            """
+            stmt = (
+                select(DeliveryRequest)
+                .options(
+                    selectinload(DeliveryRequest.driver).selectinload(
+                        User.driver_profile
+                    )
                 )
+                .where(DeliveryRequest.id == request_id)
             )
-            .where(DeliveryRequest.id == request_id)
-        )
-        result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
+            result = await self.session.execute(stmt)
+            return result.scalar_one_or_none()
 
     async def get_pending(self, page: int = 1) -> list[DeliveryRequest]:
         """Retrieve a paginated list of requests awaiting driver assignment.

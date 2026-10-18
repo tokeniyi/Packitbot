@@ -14,6 +14,7 @@ ALL_STATUSES = list(RequestStatus)
         (RequestStatus.PENDING, RequestStatus.CANCELLED),
         (RequestStatus.ASSIGNED, RequestStatus.ACCEPTED),
         (RequestStatus.ASSIGNED, RequestStatus.REJECTED_BY_DRIVER),
+        (RequestStatus.ASSIGNED, RequestStatus.PENDING),
         (RequestStatus.ASSIGNED, RequestStatus.CANCELLED),
         # P1 #9: a driver handing back an assignment before accepting it must
         # return the request to the assignable pool (admin/service.py::
