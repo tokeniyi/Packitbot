@@ -102,7 +102,7 @@ class TestLinearRevisionGraph:
                 if parent not in known:
                     dangling.append(f"{rev.revision} -> {parent}")
 
-        assert not dangling, f"dangling down_revision references: {dangging}"
+        assert not dangling, f"dangling down_revision references: {dangling}"
 
 
 class TestNoOpStubsRemoved:

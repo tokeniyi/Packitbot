@@ -54,8 +54,10 @@ Telegram update
 - `bot/main.py:78-79` runs `Base.metadata.create_all(engine)` on every startup
 - `main.py:81-92` hand-patches ENUMs with raw `ALTER TYPE … ADD VALUE` in bare `except: pass`
 - Of 24 migration files, **20 are no-op stubs** (`*_test_rev.py`, `def upgrade(): pass`)
-- **The revision graph has two heads** — `a1b2c3d4e5f6` and `d773fd78af20`.
-  `alembic upgrade head` **fails outright**; only an explicit revision works
+- ~~**The revision graph has two heads**~~ — **stale, re-verified 2026-10-26:** the chain is
+  now linear (`9082dd8c65fd` → `8df7ae516946` → `3f93513f5486` → `d773fd78af20` →
+  `a1b2c3d4e5f6`), with a single head. Whether `alembic upgrade head` succeeds at runtime
+  was not verified (dependencies could not be installed in the review sandbox).
 - `alembic.ini:2` retains the placeholder `sqlalchemy.url = driver://user:pass@localhost/dbname`
 
 Schema is therefore whatever `create_all` produces, ENUMs are patched by hand, and

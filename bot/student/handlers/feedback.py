@@ -106,8 +106,13 @@ async def process_rating_selection(callback: CallbackQuery, state: FSMContext) -
     """Record the star rating selection and prompt for an optional comment."""
     await callback.answer()
     parts = callback.data.split(":")
-    req_id = int(parts[1])
-    rating = int(parts[2])
+    try:
+        req_id = int(parts[1])
+        rating = int(parts[2])
+    except (IndexError, ValueError):
+        if callback.message:
+            await callback.message.answer(ErrorMessages.INVALID_INPUT)
+        return
 
     await state.update_data(request_id=req_id, rating=rating)
     await state.set_state(FeedbackFSM.entering_comment)

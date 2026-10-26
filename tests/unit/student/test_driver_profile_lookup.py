@@ -108,6 +108,7 @@ async def test_cancel_restores_availability_of_the_correct_driver():
     """
     from bot.core.constants.enums import DriverAvailability
     from bot.core.models.delivery_request import DeliveryRequest
+    from bot.core.models.driver_profile import DriverProfile
     from bot.student.handlers.requests import confirm_cancel_request
 
     session = _make_session()

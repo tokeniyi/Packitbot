@@ -20,10 +20,10 @@
 
 - 👤 **Role-Based Workflows (Student, Driver, Admin):** Dynamic Telegram bot menus and command scopes tailored to each authenticated role.
 - 📦 **Student Request Management:** Multi-step Finite State Machine (FSM) forms for scheduling delivery requests with lead-time validation, tracking order history, and cancellation support.
-- 🚗 **Driver Logistics & Duty Control:** Driver registration, duty toggle (online/offline), job discovery, order claiming, state transitions (pickup, transit, delivered), and earnings tracking.
+- 🚗 **Driver Logistics & Duty Control:** Driver registration, duty toggle (online/offline), job discovery, order accepting, state transitions (pickup, transit, delivered), and earnings tracking.
 - 🔒 **Admin Portal & Driver Verification:** System statistics, driver verification review queue, broadcast notifications, user lookup, and manual order overrides.
 - ⚡ **Domain-Driven Architecture:** Clean separation of concerns with domain state machines, repositories, business rules, schemas, and events.
-- 🔄 **Production Infrastructure:** Asynchronous DB access (SQLAlchemy 2.0 + asyncpg), Redis-backed FSM storage & rate limiting, Alembic database migrations, and Docker containerization.
+- 🔄 **Production Infrastructure:** Asynchronous DB access (SQLAlchemy 2.0 + asyncpg), Redis-backed FSM storage, in-memory per-user throttling, Alembic database migrations, and Docker containerization.
 
 ---
 
@@ -200,7 +200,7 @@ docker-compose up --build -d
 
 ## 🧪 Testing & Linting
 
-Unit and integration tests are located under the `tests/` directory.
+Unit and integration tests are located under the `tests/` directory. No linter (ruff, flake8, mypy) is currently configured for this repository.
 
 ### Run Test Suite
 
