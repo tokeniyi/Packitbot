@@ -285,7 +285,14 @@ async def handle_select_request_for_assignment(
         await callback.answer(ErrorMessages.ADMIN_ACCESS_REQUIRED, show_alert=True)
         return
 
-    request_id = int(callback.data.split(":")[1])
+    try:
+        request_id = int(callback.data.split(":")[1])
+    except (IndexError, ValueError):
+        # Callback data is client-controlled; a malformed payload must not
+        # escape the handler as an unhandled exception.
+        await callback.answer(ErrorMessages.INVALID_INPUT, show_alert=True)
+        return
+
     drivers = await get_available_drivers_ranked(session=session)
     if not drivers:
         await callback.answer("⚠️ No active/available approved drivers found.", show_alert=True)

@@ -610,7 +610,11 @@ async def process_driver_accept(callback: CallbackQuery, session=None) -> None:
     ``driver_accept:``.
     """
     # Extract request ID from the "driver_accept:<request_id>" callback payload.
-    request_id = int(callback.data.split(":")[1])
+    try:
+        request_id = int(callback.data.split(":")[1])
+    except (IndexError, ValueError):
+        await callback.answer("Invalid callback data.", show_alert=True)
+        return
 
     if session is None:
         await callback.answer("Session unavailable.", show_alert=True)
@@ -828,7 +832,11 @@ async def process_delivery_status_step(callback: CallbackQuery, session=None) ->
         return
 
     action, request_id_str = parts[1], parts[2]
-    request_id = int(request_id_str)
+    try:
+        request_id = int(request_id_str)
+    except ValueError:
+        await callback.answer("Invalid callback data.", show_alert=True)
+        return
 
     if session is None:
         await callback.answer("Session unavailable.", show_alert=True)
@@ -972,7 +980,11 @@ async def process_driver_reject(callback: CallbackQuery, session=None) -> None:
     ``driver_reject:``.
     """
     # Extract request ID from the "driver_reject:<request_id>" callback payload.
-    request_id = int(callback.data.split(":")[1])
+    try:
+        request_id = int(callback.data.split(":")[1])
+    except (IndexError, ValueError):
+        await callback.answer("Invalid callback data.", show_alert=True)
+        return
 
     if session is None:
         await callback.answer("Session unavailable.", show_alert=True)
