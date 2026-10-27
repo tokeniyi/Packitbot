@@ -116,7 +116,7 @@ with `DriverProfile.id`, and lookups treat it as a `DriverProfile` PK. Items **#
 
 ### P0 — Critical bugs (fix before any feature work)
 
-**#1 `/add_driver` never works — admin ID compared against the wrong column**
+**#1 ~~`/add_driver` never works — admin ID compared against the wrong column~~ — FIXED in `dbf4ba8` (2026-09-26; test in `tests/unit/admin/test_service.py`); re-verified in code 2026-10-27**
 - `bot/admin/service.py:1317` vs `bot/admin/handler.py:1272`
 - `select(User).where(User.telegram_id == admin_user_id)` receives `user.id`.
   `users.id` and `users.telegram_id` never match, so every call raises
@@ -128,7 +128,7 @@ with `DriverProfile.id`, and lookups treat it as a `DriverProfile` PK. Items **#
   "Telegram ID of the admin" while the signature says `admin_user_id` — every other
   admin function uses `User.id`). Add a test.
 
-**#2 Driver assignment writes `DriverProfile.id` into a `users.id` column**
+**#2 Driver assignment writes `DriverProfile.id` into a `users.id` column** — *handler fix present on `main` (`bot/admin/handler.py:337` persists `driver_profile.user_id`, verified 2026-10-27); no regression test confirmed yet — `AvailableDriverDTO.driver_id=dp.id` still exists in `admin/service.py`, check it is never persisted*
 - `bot/admin/keyboards.py:433` → `bot/admin/handler.py:294-304` → `bot/request/service.py:226`;
   model at `bot/core/models/delivery_request.py:111`
 - `AvailableDriverDTO` carries **both** `driver_id=dp.id` and `user_id=user.id`
@@ -399,6 +399,7 @@ are still unguarded.**
 | 2026-10-09 | `fix/echo-sql-logging` | P1 #16 `echo=True` hardcoded on production engine | #17 | **Fixed.** 3 new tests. 414 passed. |
 | 2026-10-11 | `fix/rbac-callback-authorization` | P1 #10 RBAC never authorizes callbacks | #18 | **Fixed.** Extended RBACMiddleware to authorize callback queries (37 prefixes mapped to roles). 14 new tests. Defence-in-depth for P0 #5. Suite: 474 passed, 7 failed (pre-existing). |
 | 2026-10-13 | `fix/integrity-error-savepoint` | P1 #14 `IntegrityError` → `ValidationError` never reaches user (SAVEPOINT) | #19 | **Fixed.** 7 service methods wrapped in SAVEPOINT. Tests updated. 466 unit tests pass. |
+| 2026-10-27 | `claude/daily-review-2026-10-27` | Stale-status audit: P0 #1 confirmed fixed (`dbf4ba8`), P0 #2 handler fix confirmed; no code changed (test suite could not be run: PyPI returned 403 through the agent proxy) | see `docs/AUTOMATION_PROGRESS.md` | **Docs only.** |
 
 **Remaining backlog:** 6 × P0 (all in open PRs #5–#10), 10 × P1 (#10, #12, #14 closed, #22 partially), 12 × P2, 7 × P3 = **35 open items**.
 
