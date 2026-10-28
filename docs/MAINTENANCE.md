@@ -139,7 +139,7 @@ with `DriverProfile.id`, and lookups treat it as a `DriverProfile` PK. Items **#
 - **Fix:** `AssignDriverDTO(driver_id=driver_profile.user_id, …)`; add an assertion in
   `RequestService.assign_driver` that `dto.driver_id == driver_profile.user_id`.
 
-**#3 Cancellation / feedback re-query `DriverProfile` with a `users.id`**
+**#3 Cancellation / feedback re-query `DriverProfile` with a `users.id`** — *partly fixed, re-verified in code 2026-10-28:* cancellation availability restore (`bot/student/handlers/requests.py:1012`) and feedback rating recalculation (`bot/student/handlers/feedback.py:~36-50`, `_recalculate_driver_rating`) now resolve the profile via `DriverRepository.get_by_user_id`. **Still open:** `total_deliveries` is still `func.count(Feedback.id)` (feedback.py ~line 42), so it counts feedback rows, not DELIVERED requests. The fix in the second bullet below is still needed.
 - `bot/student/handlers/requests.py:1012`; `bot/student/handlers/feedback.py:28, 35, 189`
 - **Impact:** driver availability never restored on cancellation; `rating_avg` and
   `total_deliveries` never updated → driver ranking and the `/drivers` leaderboard are
@@ -148,7 +148,7 @@ with `DriverProfile.id`, and lookups treat it as a `DriverProfile` PK. Items **#
   `user_id`. Separately, `total_deliveries` counts `Feedback` rows (feedback.py:33-41) —
   it must count `DeliveryRequest` where `status == DELIVERED`.
 
-**#4 `MissingGreenlet` on "view request detail"**
+**#4 `MissingGreenlet` on "view request detail"** — *FIXED on `main`, re-verified 2026-10-28:* the handler loads via `RequestRepository.get_by_id_with_driver` (`bot/request/repository.py:63`), which uses `selectinload` for both hops. Regression test not confirmed (tests could not be run in the sandbox).
 - `bot/student/handlers/requests.py:668` (load) and `:141-147` (lazy access)
 - `req.driver` / `req.driver.driver_profile` lazy-load outside an awaited context →
   `MissingGreenlet` (a subclass of `InvalidRequestError`, **not** `PackitbotError`),
@@ -156,7 +156,7 @@ with `DriverProfile.id`, and lookups treat it as a `DriverProfile` PK. Items **#
 - **Fix:** `.options(selectinload(DeliveryRequest.driver).selectinload(User.driver_profile))`.
   `expire_on_commit=False` does not help — the object was never loaded.
 
-**#5 No ownership check on driver delivery callbacks** *(most severe)*
+**#5 No ownership check on driver delivery callbacks** *(most severe)* — *largely FIXED at the service layer, re-verified 2026-10-28:* `TransitionDTO` and the reject path default to `require_assigned_driver=True` (`bot/request/schemas.py:140`), and `RequestService.transition_status` / `reject_assignment` reject any actor who is not the assigned driver (`bot/request/service.py:304, 379`, rule in `bot/request/business_rules.py:101`). The driver delivery-status handler also filters on `DeliveryRequest.driver_id == driver_user.id` (`bot/driver/handler.py:765`). **Still open:** no explicit handler-level assertion, and no regression test confirmed that an unassigned user is rejected on each of the three callbacks. Next step: add those tests.
 - `bot/driver/handler.py:567` (`process_driver_accept`), `:776` (`process_delivery_status_step`),
   `:927` (`process_driver_reject`); enabler at `bot/core/middlewares/rbac.py:171`
 - `RBACMiddleware._extract_command` returns `""` for non-slash-command messages and
@@ -399,6 +399,7 @@ are still unguarded.**
 | 2026-10-09 | `fix/echo-sql-logging` | P1 #16 `echo=True` hardcoded on production engine | #17 | **Fixed.** 3 new tests. 414 passed. |
 | 2026-10-11 | `fix/rbac-callback-authorization` | P1 #10 RBAC never authorizes callbacks | #18 | **Fixed.** Extended RBACMiddleware to authorize callback queries (37 prefixes mapped to roles). 14 new tests. Defence-in-depth for P0 #5. Suite: 474 passed, 7 failed (pre-existing). |
 | 2026-10-13 | `fix/integrity-error-savepoint` | P1 #14 `IntegrityError` → `ValidationError` never reaches user (SAVEPOINT) | #19 | **Fixed.** 7 service methods wrapped in SAVEPOINT. Tests updated. 466 unit tests pass. |
+| 2026-10-28 | `claude/daily-review-2026-10-28` | Re-verified P0 #3, #4, #5 against current code; statuses updated; progress log added. Test suite still could not run (no PyPI, no deps installed). | see `docs/AUTOMATION_PROGRESS.md` | **Docs only.** |
 | 2026-10-27 | `claude/daily-review-2026-10-27` | Stale-status audit: P0 #1 confirmed fixed (`dbf4ba8`), P0 #2 handler fix confirmed; no code changed (test suite could not be run: PyPI returned 403 through the agent proxy) | see `docs/AUTOMATION_PROGRESS.md` | **Docs only.** |
 
 **Remaining backlog:** 6 × P0 (all in open PRs #5–#10), 10 × P1 (#10, #12, #14 closed, #22 partially), 12 × P2, 7 × P3 = **35 open items**.
