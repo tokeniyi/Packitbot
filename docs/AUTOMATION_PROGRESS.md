@@ -5,6 +5,54 @@ Backlog source of truth: `docs/MAINTENANCE.md` (section 4). This file tracks wha
 
 ---
 
+## Run 2026-10-29 05:40 WAT (Africa/Lagos)
+
+**Branch:** `claude/daily-review-2026-10-29`
+**PR:** opened against `main` at the end of this run (link in PR list)
+
+### Starting state
+- No open PRs on `tokeniyi/Packitbot` at start. PR #22 (the 2026-10-28 run) is merged, so there was no open `claude/daily-review` work to continue. This run starts a new branch from `origin/main` (`105c044`).
+- No `CLAUDE.md` in the repo. Conventions from `README.md`, `docs/MAINTENANCE.md` and `pyproject.toml`: `pytest` (asyncio auto mode), Python `>=3.12,<3.13`, no linter configured.
+- No owner comments to act on (no open PRs).
+
+### Test environment check (still blocked)
+- `pypi.org`, `files.pythonhosted.org` and `registry.npmjs.org` do not resolve in the sandbox (`Could not resolve host`), including when routed through `HTTPS_PROXY`. Nothing is in the uv cache, so an offline install of `requirements.txt` also fails.
+- Only Python 3.12.3 (`/usr/bin/python3.12`) and 3.13 exist, with no project dependencies (no `aiogram`, `sqlalchemy`, `pytest-asyncio`, etc.).
+- Consequence: the suite cannot be run, so **no code was changed this run**. Per the run rules, a behaviour change needs a passing suite. This run is documentation only.
+
+### Done this run
+- **Re-verified outstanding items by reading code** (no execution):
+  - P0 #3 remainder: `bot/student/handlers/feedback.py` `_recalculate_driver_rating` (lines ~28-46) still computes `total_deliveries = count(Feedback.id)`. Still open. The profile lookup already uses `DriverRepository.get_by_user_id`.
+  - P0 #3 cancellation path: `bot/student/handlers/requests.py:1012-1017` already uses `get_by_user_id`. Done.
+  - P0 #5: `bot/driver/handler.py:765` filters on `DeliveryRequest.driver_id == driver_user.id`. Service-layer guard unchanged. Handler-level assertions for `process_driver_accept` (line 592), `process_delivery_status_step` (805) and `process_driver_reject` (960) are still not verified or tested.
+  - Existing test files that the next run should look at first: `tests/unit/student/test_driver_profile_lookup.py` (P0 #3), `tests/unit/request/test_request_detail_eager_load.py` (P0 #4), `tests/unit/driver/test_handler.py` (P0 #5).
+- **Files touched:** `docs/AUTOMATION_PROGRESS.md` (this entry), `docs/MAINTENANCE.md` (run-log row for 2026-10-29).
+
+### Owner requests received this run
+- None.
+
+### Multi-run task status
+- P0 backlog: #1 fixed; #2 handler fix present, regression test unconfirmed; #3 partly fixed (`total_deliveries` still counts Feedback rows); #4 fixed (test unconfirmed); #5 service-layer enforcement present, handler assertions and tests open; #6 disproved; #7 open (Alembic); #8 and #9 fixed earlier.
+
+### Outstanding (for next run, in suggested order)
+1. **Get the test environment working first.** Check `curl -sS -m 20 https://pypi.org/simple/six/`. If DNS still fails, record it again and keep the run to docs and code reading. Check `tests/conftest.py` for fixtures before writing tests.
+2. **P0 #3 remainder:** in `bot/student/handlers/feedback.py` `_recalculate_driver_rating`, change `total_deliveries` to count `DeliveryRequest` rows with `status == RequestStatus.DELIVERED` and `driver_id == driver_user_id`, not `Feedback` rows. Keep `rating_avg` on `Feedback`. Add a test in `tests/unit/student/test_driver_profile_lookup.py`.
+3. **P0 #5 tests:** add a test per driver callback (`process_driver_accept` `bot/driver/handler.py:592`, `process_delivery_status_step` `:805`, `process_driver_reject` `:960`) showing that a user who is not `req.driver_id` is refused. Confirm the service raises `PermissionDeniedError` and that the handler reports it instead of crashing. Start with `tests/unit/driver/test_handler.py`.
+4. **P0 #2:** add the regression test that a driver assignment persists `driver_profile.user_id`. `RequestService.assign_driver` checks `dto.driver_id != driver_profile.user_id` at `bot/request/service.py:227`, so the test can target that guard. Follow `tests/unit/admin/test_service.py`.
+5. **P0 #4:** confirm that `tests/unit/request/test_request_detail_eager_load.py` covers the handler's use of `get_by_id_with_driver` and, if it does not, add that test.
+6. **P1 #13 (double pagination on the student request list)** remains the next untouched item, once tests can run.
+
+### Found but not changed, and why
+- Stray files at the repo root: `PENDING` (empty), `pr16_review.md` and `pr17_review.md`. They look like leftovers from earlier review runs. Not removed: deleting files is outside the run's categories and the owner should decide.
+- `.agents/` and `.hermes/` directories at the root were not reviewed. Out of scope for this run.
+- `.env.example`, `Dockerfile` and `docker-compose.yml` were not reviewed for secrets. Out of scope under the run rules (secrets and deployment config).
+- Attribution conflict: the stored task prompt names session `session_01BhvGjTBnhBeh2ZstJXiYE8` for commit trailers, but the session's attribution guidance names `session_01VLAbn6U2cxdRHHScNrVuK2`. This run used the attribution guidance given in the session, as the previous runs did. The owner should confirm which one to use.
+
+### Major dependency upgrades available
+- None checked this run (no network access to PyPI, so resolution against the lock state was not possible).
+
+---
+
 ## Run 2026-10-28 05:40 WAT (Africa/Lagos)
 
 **Branch:** `claude/daily-review-2026-10-28`
