@@ -5,6 +5,48 @@ Backlog source of truth: `docs/MAINTENANCE.md` (section 4). This file tracks wha
 
 ---
 
+## Run 2026-10-30 (cron, scheduled)
+
+**Branch:** `fix/driver-callback-error-message`
+**PR:** #26 — `fix(driver): use ErrorMessages.INVALID_INPUT in callback parsing guards (P1 #22)`
+
+### Starting state
+- `main` is at `90525e4` (merged PR #25). The P0 #3 fix (`e928594`) is already on `main` with regression tests.
+- The `.venv` has Python 3.12.7 with all deps installed (from a prior session). The test suite **can** run.
+- `docs/MAINTENANCE.md` is present on `main` (merged via PRs #22/#23/#25).
+
+### Test environment check (working)
+- `.venv/Scripts/python -m pytest -q` runs successfully: **502 passed, 10 failed**.
+- The 10 failures are pre-existing: 3 PostgreSQL-dependent (alembic), 7 AsyncMock integration
+  (`session.begin_nested()` not supported by AsyncMock).
+- Before this run's change: 497 passed, 15 failed. The 2026-10-30 Claude run reported the suite
+  could not run at all (DNS for pypi.org); the venv was provisioned in an earlier session.
+
+### Done this run
+- **Completed P1 #22:** The `int()` parsing guards added by `de263bb` (PR #20) returned a hardcoded
+  `"Invalid callback data."` string instead of `ErrorMessages.INVALID_INPUT`, causing 4
+  `test_callback_int_parsing.py` tests to fail. Replaced all 4 sites in `bot/driver/handler.py`
+  (lines 616, 831, 838, 986) with `ErrorMessages.INVALID_INPUT`, matching the admin handler's
+  behaviour.
+- **Fixed `test_routes_rejection_through_service`:** `RequestService` was imported locally inside
+  3 handler functions, so `patch("bot.driver.handler.RequestService")` in the test silently
+  no-opped. Moved the import to module level (no circular import — `bot.request.service` only
+  imports from `bot.core.*`).
+- **Verified:** P0 #3 fix is already on `main` (commit `e928594`); the 2 regression tests pass.
+- **Files touched:** `bot/driver/handler.py` (4 error message replacements + 1 module-level import, 3 local import removals), `docs/MAINTENANCE.md` (P1 #22 completed, Testing section updated, run log row + run notes added, P0 #4–#7/P1 #13/#16/#20 marked FIXED, duplicate rows cleaned up).
+
+### Not done, and why
+- P0 #7 (Alembic): `test_alembic.py` still fails — requires a real PostgreSQL instance, not available.
+- P1 #18 (`student/service.py` opens own sessions), P1 #19 (throttling), P1 #21 (callback.message None guards), P1 #15 (raw exception text), P1 #17 (unescaped HTML): all still open, not touched this run.
+
+### Found but not changed
+- `bot/driver/handler.py:620, 842, 990` returns a hardcoded `"Session unavailable."` string instead of
+  `ErrorMessages.SESSION_UNAVAILABLE` — same class of inconsistency as the P1 #22 error message fix.
+  The admin handler uses `ErrorMessages.SESSION_UNAVAILABLE`. A follow-up PR should normalize these.
+- `.env.example`, `Dockerfile`, `docker-compose.yml` not reviewed for secrets. Out of scope.
+
+---
+
 ## Run 2026-10-30 05:40 WAT (Africa/Lagos)
 
 **Branch:** `claude/daily-review-2026-10-30`
