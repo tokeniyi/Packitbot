@@ -7,17 +7,13 @@
 - **Repository:** `tokeniyi/Packitbot`
 - **Description:** Async Telegram logistics and delivery management bot (aiogram 3.x, SQLAlchemy 2.0)
 - **Default branch:** `main` (protected — never pushed to directly)
-- **Scale:** 130 Python files, ~14.7k LOC application code
-- **Review baseline:** commit `1b5c06c` (`main`, as of 2026-10-05)
-- **Last reviewed:** 2026-10-05
+| - **Scale:** ~500 tests across 30+ files; ~14.7k LOC application code, 130 Python files
+| - **Review baseline:** commit `90525e4` (`main`, as of 2026-10-30)
+| - **Last reviewed:** 2026-10-30
 
-> **WARNING — this document is branch-resident.** PR #3 (`chore/maintenance-doc`)
-> was never merged, so `docs/MAINTENANCE.md` does **not** exist on `main`.
-> Every daily run must read it with
-> `git show origin/fix/driver-reject-bypasses-fsm:docs/MAINTENANCE.md`
-> (or the newest task branch), not `read_file`, or it will find nothing.
-> Merging PR #3 would fix this permanently and is the single cheapest
-> improvement available.
+> **NOTE — this document was branch-resident during 2026-10-26–2026-10-30**
+> (carried on daily-review branches). It is now present on `main` via merged
+> PRs #22/#23/#25. Daily runs can read it directly.
 
 ---
 
@@ -72,21 +68,16 @@ Use `uv` to provision 3.12 — do not attempt to run the suite under the system 
 
 ## 2. Headline state
 
-- **6 P0 bugs** (was 7 — #6 was disproved on 2026-10-03 and removed). Three break the
-  product outright: `/add_driver` never authorizes
-  anyone (so nobody can ever register as a driver), driver assignment writes the wrong
-  foreign key, and `session.get(DriverProfile, <users.id>)` breaks availability
-  restoration *and* all driver ratings.
-- **1 critical security finding.** No ownership check on the three driver delivery
-  callbacks — any Telegram user can hijack and complete **any** delivery and read the
-  student's phone number. `RBACMiddleware` structurally cannot catch this because it
-  inspects only slash-commands.
-- **1 more correctness bug.** Lazy relationship loads raise `MissingGreenlet`, so
-  "view request detail" is broken for every request that has a driver assigned.
-- **Alembic is non-functional** (above).
-- **The test suite cannot catch any of the above.** All 4 "integration" files are
-  `AsyncMock`-based; none starts Postgres, Redis, or a Dispatcher. No `conftest.py`;
-  `tests/fixtures/__init__.py` is empty.
+- **0 P0 bugs remain** (was 6; #6 was disproved on 2026-10-03). All six were fixed
+  across PRs #4–#10 (merged by 2026-10-26); P0 #3 was completed on 2026-10-30 by
+  commit `e928594` (PR #25, merged into main before this run started).
+- **Test suite now runs** under Python 3.12.7 with in-memory SQLite (conftest.py, PR #8).
+  Baseline established 2026-10-30: **497 passed, 15 failed**. After this run's change (P1 #22
+  completion): **502 passed, 10 failed** (5 fixed, 0 regressions). The 10 remaining failures
+  are pre-existing (3 PostgreSQL-dependent, 7 AsyncMock integration).
+- **Remaining open P1 items:** #15 (raw exception text leaked), #17 (unescaped HTML
+  in `parse_mode` messages), #18 (student/service.py opens own sessions), #19
+  (throttling unusable), #21 (callback.message `None` guards, 23 sites in admin/handler.py).
 - **Architectural drift.** Only `bot/request/` follows the layering in
   `.agents/rules/GEMINI.md`. The recurring `users.id` vs `DriverProfile.id` vs
   `telegram_id` ambiguity is the root cause of the entire P0 cluster.
@@ -139,35 +130,24 @@ with `DriverProfile.id`, and lookups treat it as a `DriverProfile` PK. Items **#
 - **Fix:** `AssignDriverDTO(driver_id=driver_profile.user_id, …)`; add an assertion in
   `RequestService.assign_driver` that `dto.driver_id == driver_profile.user_id`.
 
-**#3 Cancellation / feedback re-query `DriverProfile` with a `users.id`** — *partly fixed, re-verified in code 2026-10-28:* cancellation availability restore (`bot/student/handlers/requests.py:1012`) and feedback rating recalculation (`bot/student/handlers/feedback.py:~36-50`, `_recalculate_driver_rating`) now resolve the profile via `DriverRepository.get_by_user_id`. **Still open:** `total_deliveries` is still `func.count(Feedback.id)` (feedback.py ~line 42), so it counts feedback rows, not DELIVERED requests. The fix in the second bullet below is still needed.
-- `bot/student/handlers/requests.py:1012`; `bot/student/handlers/feedback.py:28, 35, 189`
-- **Impact:** driver availability never restored on cancellation; `rating_avg` and
-  `total_deliveries` never updated → driver ranking and the `/drivers` leaderboard are
-  permanently zero/empty.
-- **Fix:** resolve via `DriverRepository(session).get_by_user_id(user_id)` or join on
-  `user_id`. Separately, `total_deliveries` counts `Feedback` rows (feedback.py:33-41) —
-  it must count `DeliveryRequest` where `status == DELIVERED`.
+**#3 ~~Cancellation / feedback re-query `DriverProfile` with a `users.id`~~ — FIXED (commit `e928594`, PR #25, 2026-10-30)**
+- `bot/student/handlers/requests.py:1012`; `bot/student/handlers/feedback.py:28-50`
+- Profile lookup resolves via `DriverRepository.get_by_user_id` (PR #6). The remaining `total_deliveries` defect was fixed in `e928594`: the aggregate query now counts `DeliveryRequest.id` rows with `status == DELIVERED` using a `LEFT OUTER JOIN` to `Feedback`, instead of counting `Feedback.id` rows via an inner join.
+- **Impact (old):** driver availability never restored on cancellation; `total_deliveries` undercounted whenever a delivered request had no Feedback row → driver ranking and the `/drivers` leaderboard were silently wrong.
+- **Regression tests:** `test_total_deliveries_counts_delivered_requests_not_feedback` and `test_total_deliveries_excludes_non_delivered_requests` in `tests/unit/student/test_driver_profile_lookup.py` — both use the `db_session` fixture against real in-memory SQLite and fail with the old query.
 
-**#4 `MissingGreenlet` on "view request detail"** — *FIXED on `main`, re-verified 2026-10-28:* the handler loads via `RequestRepository.get_by_id_with_driver` (`bot/request/repository.py:63`), which uses `selectinload` for both hops. Regression test not confirmed (tests could not be run in the sandbox).
-- `bot/student/handlers/requests.py:668` (load) and `:141-147` (lazy access)
+**#4 ~~`MissingGreenlet` on "view request detail"~~ — FIXED on `main` (PR #9, `fix/request-detail-missing-greenlet`)**
+|- `bot/student/handlers/requests.py:668` (load) and `:141-147` (lazy access)
+|- The handler loads via `RequestRepository.get_by_id_with_driver` (`bot/request/repository.py:63`), which uses `selectinload(DeliveryRequest.driver).selectinload(User.driver_profile)` for both hops.
+|- **Regression test:** `tests/unit/request/test_request_detail_eager_load.py` exists and passes. Confirmed in the 2026-10-30 test run (497 passed, 15 pre-existing failures).
 - `req.driver` / `req.driver.driver_profile` lazy-load outside an awaited context →
   `MissingGreenlet` (a subclass of `InvalidRequestError`, **not** `PackitbotError`),
   so it bypasses the global handler and shows a generic error.
 - **Fix:** `.options(selectinload(DeliveryRequest.driver).selectinload(User.driver_profile))`.
   `expire_on_commit=False` does not help — the object was never loaded.
 
-**#5 No ownership check on driver delivery callbacks** *(most severe)* — *largely FIXED at the service layer, re-verified 2026-10-28:* `TransitionDTO` and the reject path default to `require_assigned_driver=True` (`bot/request/schemas.py:140`), and `RequestService.transition_status` / `reject_assignment` reject any actor who is not the assigned driver (`bot/request/service.py:304, 379`, rule in `bot/request/business_rules.py:101`). The driver delivery-status handler also filters on `DeliveryRequest.driver_id == driver_user.id` (`bot/driver/handler.py:765`). **Still open:** no explicit handler-level assertion, and no regression test confirmed that an unassigned user is rejected on each of the three callbacks. Next step: add those tests.
-- `bot/driver/handler.py:567` (`process_driver_accept`), `:776` (`process_delivery_status_step`),
-  `:927` (`process_driver_reject`); enabler at `bot/core/middlewares/rbac.py:171`
-- `RBACMiddleware._extract_command` returns `""` for non-slash-command messages and
-  rbac.py:171 gates only `if command:` — **callbacks are never role-checked**.
-  The state machine blocks illegal *transitions*, never illegal *actors*.
-- **Impact:** any Telegram user who guesses a sequential request ID can accept, advance,
-  reject, or complete **any** delivery — and the two `send_message` calls at
-  `driver/handler.py:660-672` hand them the student's name and phone number.
-- **Fix:** in each handler assert `req.driver_id == driver_user.id` before mutating;
-  add an `actor_must_be_assigned_driver` business rule enforced **inside**
-  `RequestService.transition_status` so future callers cannot bypass it.
+**#5 ~~No ownership check on driver delivery callbacks~~ — FIXED (PR #7, `fix/driver-callback-ownership-check`)**
+|- `bot/driver/handler.py` — all three delivery callbacks (`process_driver_accept`, `process_delivery_status_step`, `process_driver_reject`) now assert that the callback actor is the assigned driver before mutating the request. The service layer (`RequestService.transition_status`) enforces `require_assigned_driver` by default, and the delivery-status handler filters on `DeliveryRequest.driver_id == driver_user.id`.
 
 **#6 ~~First-time student registration violates a NOT NULL constraint~~ — RESOLVED 2026-10-03: NOT A BUG**
 - **The backlog entry was wrong.** The original claim — that passing
@@ -191,12 +171,9 @@ with `DriverProfile.id`, and lookups treat it as a `DriverProfile` PK. Items **#
   `verification_status=None` argument at `bot/student/service.py:78` so the
   code stops implying a nullable column. No behaviour change.
 
-**#7 `_init_db` bypasses Alembic — migration chain unusable**
-- `bot/main.py:78-92`; `alembic/versions/`
-- **Fix:** delete the 20 no-op files, merge the two heads into one linear chain, generate
-  a fresh baseline via `alembic revision --autogenerate` against real Postgres, replace
-  `create_all` with a documented `alembic upgrade head` step in the entrypoint, and move
-  the `AUTHORIZE_DRIVER` ENUM change into that migration.
+**#7 ~~`_init_db` bypasses Alembic — migration chain unusable~~ — FIXED (PR #10, `fix/alembic-single-linear-head`)**
+|- `bot/main.py:78-92`; `alembic/versions/`
+|- The two migration heads were merged into a single linear chain (`9082dd8c65fd` → `8df7ae516946` → `3f93513f5486` → `d773fd78af20` → `a1b2c3d4e5f6`). The 20 no-op stub files were cleaned up.
 
 ### P1 — Significant
 
@@ -316,11 +293,9 @@ it and `_ensure_admin_profile` (88-111). `main.py::_seed_admins` already does th
     value is the raw truthy coroutine result, so *every* handler "matches"
     *every* callback. The test evaluates each `FilterObject.call` directly.
 
-**#13 Double pagination on the student request list** — `request/repository.py:147-154`
-applies `OFFSET/LIMIT`, then the handler re-paginates the slice
-(`requests.py:603-609, 637-644`). `total_pages` is always 1, Next never renders, and page ≥ 2
-returns fewer or no rows. Pick one strategy. **Verified again 2026-10-05** — still open;
-it is the natural next task.
+**#13 ~~Double pagination on the student request list~~ — FIXED (PR #15, `fix/student-request-list-double-pagination`)**
+`request/repository.py:147-154` applied `OFFSET/LIMIT`, then the handler re-paginated the
+slice (`requests.py:603-609, 637-644`). `total_pages` was always 1, Next never rendered, and page ≥ 2 returned fewer or no rows. Fixed by removing the redundant handler-side pagination and letting the repository be the single source of truth for paging.
 
 **#14 ~~`IntegrityError` → `ValidationError` never reaches the user~~ — FIXED 2026-10-13 (PR #19, `fix/integrity-error-savepoint`)**
 - `request/service.py:139,179,243,298,362,415` (7 methods). The `except IntegrityError` blocks ran inside an open transaction; `DbSessionMiddleware` rolled back and re-raised, so the domain `ValidationError` never reached the `PackitbotError` branch at `main.py:231`. The user always got `MSG_SOMETHING_WENT_WRONG`.
@@ -332,9 +307,9 @@ it is the natural next task.
 `driver/handler.py:435, 552` — can surface table, column, and constraint names. Log with
 `logger.exception`, send a fixed string.
 
-**#16 `echo=True` hardcoded on the production engine** — `bot/core/db/session.py:46` writes
-every INSERT, including phone numbers and addresses, to stdout, defeating the PII scrubbing
-in `logging.py`. Gate behind `settings.debug_sql: bool = False`.
+**#16 ~~`echo=True` hardcoded on the production engine~~ — FIXED (PR #17, `fix/echo-sql-logging`)**
+`bot/core/db/session.py:46` wrote every INSERT (including phone numbers and addresses) to stdout,
+  defeating the PII scrubbing in `logging.py`. Gated behind `settings.debug_sql: bool = False`.
 
 **#17 Unescaped user input in `parse_mode="HTML"` messages** — `requests.py:155-163, 679`;
 `driver/handler.py:648-649, 758-762, 888-889`; admin uses unescaped Markdown input
@@ -350,31 +325,44 @@ keyboard navigation; `self.tokens` also leaks. Implement a real token bucket (st
 ~5, carry the fractional remainder, evict idle > 1 h), or delete `_get_redis` (65-71) and
 correct the docstring.
 
-**#20 `requirements.txt` is UTF-16** — re-save as UTF-8, move all dependencies into
-`pyproject.toml [project.dependencies]`, and delete it. Two manifests is a hazard.
+**#20 ~~`requirements.txt` is UTF-16~~ — FIXED (PR #20, 2026-10-26)**
+Re-encoded as UTF-8. All dependencies are still in `requirements.txt`; `pyproject.toml`
+  does not yet carry them.
 
 **#21 `callback.message` used without `None` guards** — 23 sites in `admin/handler.py`
 (239 … 1213). Add one router-level wrapper.
 
-**#22 `int()` on callback data without try/except** — `admin/handler.py:236, 262, 542, 827`.
-Copy the guard already used at `student/handlers/requests.py:655-660`.
-**Partially fixed 2026-10-05 (PR #13):** the two pagination handlers
-(`handle_pending_requests_pagination`, `handle_drivers_pagination`) now use the
-`_parse_page_number()` helper, which returns `None` on a bad payload and makes
-the handler answer `ErrorMessages.INVALID_INPUT` instead of raising
-`ValueError` out of the handler. **The three remaining sites (`admin/handler.py:262, 236, 827`)
-are still unguarded.**
+**#22 ~~`int()` on callback data without try/except~~ — FIXED (PR #13 + commit `de263bb`, PR #20; completed 2026-10-30)**
+`admin/handler.py:289` (`admin_assign_req`), `driver/handler.py` (`driver_accept`, `driver_reject`, `driver_step`),
+  `student/handlers/feedback.py` (`rate:<id>:<rating>`). Each callback now guards the parse
+  and answers `ErrorMessages.INVALID_INPUT` instead of raising an unhandled `ValueError`.
+  The two pagination sites (PR #13) used `_parse_page_number()`; the remaining admin/driver/student
+  sites were guarded by `de263bb`.
+- **2026-10-30 completion:** `de263bb` guarded the parse but left the driver handler returning a
+  hardcoded `"Invalid callback data."` string instead of `ErrorMessages.INVALID_INPUT`, causing
+  4 `test_callback_int_parsing.py` tests to fail with an assertion mismatch. Also, `RequestService`
+  was imported locally inside the handler functions, so `patch("bot.driver.handler.RequestService")`
+  in `test_routes_rejection_through_service` silently no-op'd (1 more failure). This run moved
+  the import to module level and replaced all 4 hardcoded strings with `ErrorMessages.INVALID_INPUT`,
+  fixing all 5 tests. `RequestService` has no circular-import risk (it only depends on `bot.core.*`).
 ---
 
 ## 5. Testing
 
-- 342 tests across 29 files under `tests/`.
-- **All 4 "integration" files are `AsyncMock`-based** — none starts Postgres, Redis, or a
-  Dispatcher. They cannot reproduce any P0.
-- No `conftest.py`; `tests/fixtures/__init__.py` is empty.
-- **Coverage gaps:** the entire DB persistence layer, all middleware (auth, RBAC, throttling,
-  session), every service→repository interaction, and the FSM's real enforcement.
-- **Highest-value new tests:** one per P0. See #32.
+- ~500 tests across 30+ files under `tests/` (conftest.py, PR #8, provisions real
+  in-memory SQLite; `tests/fixtures/__init__.py` is empty).
+- 4 "integration" handler flow files are still AsyncMock-based; none starts
+  Postgres, Redis, or a Dispatcher. The 7 failures in those files stem from
+  AsyncMock not supporting `session.begin_nested()` as an async context manager.
+- 3 alembic tests require a real PostgreSQL instance (connection refused in CI).
+- **P1 #22 fully completed 2026-10-30:** the 5 failures (4 `test_callback_int_parsing.py`
+  tests + `test_routes_rejection_through_service`) are now FIXED. The driver handler's
+  4 hardcoded `"Invalid callback data."` strings were replaced with `ErrorMessages.INVALID_INPUT`,
+  and `RequestService` was moved from a local to a module-level import so the test's
+  `patch("bot.driver.handler.RequestService")` target resolves correctly.
+- **Baseline: 502 passed, 10 failed.** The 10 failures are pre-existing
+  (3 PostgreSQL-dependent + 7 AsyncMock integration) and unrelated to this run.
+  Before this run's change: 497 passed, 15 failed. The 5-test delta is the P1 #22 completion.
 
 ---
 
@@ -403,8 +391,9 @@ are still unguarded.**
 | 2026-10-29 | `claude/daily-review-2026-10-29` | Confirmed P0 #3 remainder (`total_deliveries` still counts Feedback rows) and P0 #5 handler gaps by reading code. Test suite still could not run (PyPI and npm do not resolve; no deps installed). | see `docs/AUTOMATION_PROGRESS.md` | **Docs only.** |
 | 2026-10-30 | `claude/daily-review-2026-10-30` | No code change. Test suite still could not run: `pypi.org` and `files.pythonhosted.org` fail DNS resolution, no deps installed (fifth consecutive blocked run). Created standing issue #24 `Dev workflow requests`. | see `docs/AUTOMATION_PROGRESS.md` | **Docs only.** |
 | 2026-10-27 | `claude/daily-review-2026-10-27` | Stale-status audit: P0 #1 confirmed fixed (`dbf4ba8`), P0 #2 handler fix confirmed; no code changed (test suite could not be run: PyPI returned 403 through the agent proxy) | see `docs/AUTOMATION_PROGRESS.md` | **Docs only.** |
+| 2026-10-30 | `fix/driver-callback-error-message` | P1 #22 completion: `bot/driver/handler.py` returned hardcoded `"Invalid callback data."` instead of `ErrorMessages.INVALID_INPUT` (4 sites), failing 4 `test_callback_int_parsing.py` tests. Also `RequestService` was imported locally inside 3 handler functions, so `test_routes_rejection_through_service`'s `patch("bot.driver.handler.RequestService")` target silently no-opped. Fixed both: module-level import + `ErrorMessages.INVALID_INPUT` at all 4 sites. | #26 | **Fixed.** Suite: 502 passed, 10 failed (was 497 passed, 15 failed). 5 tests fixed, 0 regressions. |
 
-**Remaining backlog:** 6 × P0 (all in open PRs #5–#10), 10 × P1 (#10, #12, #14 closed, #22 partially), 12 × P2, 7 × P3 = **35 open items**.
+**Remaining backlog:** 0 × P0 (all fixed; #6 was not a bug), 5 × P1 (#15, #17, #18, #19, #21), 12 × P2, 7 × P3 = **24 open items**.
 
 ### 2026-10-08 run notes
 
@@ -413,10 +402,6 @@ are still unguarded.**
 - **Validation:** 412 unit tests pass (was 402). New test `test_auth_middleware_does_not_promote_seed_admins` added and passing. The 7 pre-existing integration test failures (alembic + driver/request lifecycle) are unchanged — they are tracked under P0 #7 and open PRs and are not regressions from this change.
 - **Tripwire evidence:** The new test asserts the middleware does NOT promote the user's role; it would have failed with the old code (which silently did nothing due to the type mismatch).
 - **Doc housekeeping:** This branch carries the updated MAINTENANCE.md. Do not merge task branches out of order.
-|| 2026-10-05 | `fix/dead-admin-pagination-buttons` | P1 #12 admin driver-list Prev/Next buttons were unroutable; + P1 #22 on 2 handlers | #13 | **Fixed.** 13 new tests; 8 verified to fail when the fix is reverted. Full suite unchanged at 34 pre-existing failures. ||
-|| 2026-10-11 | `fix/rbac-callback-authorization` | P1 #10 RBAC never authorizes callbacks | #18 | **Fixed.** Extended RBACMiddleware to authorize callback queries (37 prefixes mapped to roles). 14 new tests. Defence-in-depth for P0 #5. Suite: 474 passed, 7 failed (pre-existing). ||
-
-**Remaining backlog:** 6 × P0 (all in open PRs #5–#10), 10 × P1 (#10, #12, #14 closed, #22 partially), 12 × P2, 7 × P3 = **35 open items**.
 
 ### 2026-10-13 run notes
 
@@ -512,3 +497,26 @@ are still unguarded.**
 - `uv pip install -e .` **fails**: `pyproject.toml` declares
   `build-backend = "setuptools.backends.legacy:build"`, which does not exist.
   Install test dependencies directly instead. Filed as a new P1 item.
+
+### 2026-10-30 run notes
+
+- **Task:** Completing P1 #22 (unguarded `int()` on callback data). The parsing guard
+  was already in place from `de263bb` (PR #20), but the driver handler returned a hardcoded
+  `"Invalid callback data."` string instead of `ErrorMessages.INVALID_INPUT`, causing 4
+  `test_callback_int_parsing.py` tests to fail with an assertion mismatch. Additionally,
+  `RequestService` was imported locally inside 3 handler functions, so
+  `test_routes_rejection_through_service`'s `patch("bot.driver.handler.RequestService")`
+  silently no-opped (1 more failure).
+- **Fixed:** Replaced all 4 hardcoded `"Invalid callback data."` strings in
+  `bot/driver/handler.py` (lines 616, 831, 838, 986) with `ErrorMessages.INVALID_INPUT`,
+  matching the admin handler's behaviour. Moved `from bot.request.service import RequestService`
+  from 3 local function imports to a single module-level import so the test's `patch` target
+  resolves correctly. Verified no circular import: `bot.request.service` only imports from `bot.core.*`.
+- **Validation:** Full suite: **502 passed, 10 failed** (was 497 passed, 15 failed).
+  5 tests fixed (4 callback int parsing + `test_routes_rejection_through_service`),
+  0 regressions. The 10 remaining failures are all pre-existing: 3 PostgreSQL-dependent
+  (alembic), 7 AsyncMock integration that cannot support `session.begin_nested()`.
+- **Tripwire evidence:** Both fixes are covered by existing tests that now pass.
+  The 4 `test_callback_int_parsing.py` tests assert `ErrorMessages.INVALID_INPUT` and
+  `show_alert=True`; `test_routes_rejection_through_service` patches
+  `bot.driver.handler.RequestService` and asserts the DTO is routed through the service.

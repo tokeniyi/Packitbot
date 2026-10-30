@@ -58,6 +58,7 @@ from bot.core.constants.messages import (
     SuccessMessages,
 )
 from bot.core.utils.formatters import format_step_prompt, render_progress_bar
+from bot.request.service import RequestService
 from bot.driver.keyboards import (
     delivery_status_update_keyboard,
     driver_pending_menu,
@@ -613,7 +614,7 @@ async def process_driver_accept(callback: CallbackQuery, session=None) -> None:
     try:
         request_id = int(callback.data.split(":")[1])
     except (IndexError, ValueError):
-        await callback.answer("Invalid callback data.", show_alert=True)
+        await callback.answer(ErrorMessages.INVALID_INPUT, show_alert=True)
         return
 
     if session is None:
@@ -628,7 +629,6 @@ async def process_driver_accept(callback: CallbackQuery, session=None) -> None:
     from bot.core.models.delivery_request import DeliveryRequest
     from bot.core.models.user import User
     from bot.request.schemas import TransitionDTO
-    from bot.request.service import RequestService
 
     try:
         # Fetch driver user
@@ -828,14 +828,14 @@ async def process_delivery_status_step(callback: CallbackQuery, session=None) ->
     # Split "driver_step:<action>:<request_id>" into exactly 3 parts.
     parts = callback.data.split(":")
     if len(parts) != 3:
-        await callback.answer("Invalid callback data.", show_alert=True)
+        await callback.answer(ErrorMessages.INVALID_INPUT, show_alert=True)
         return
 
     action, request_id_str = parts[1], parts[2]
     try:
         request_id = int(request_id_str)
     except ValueError:
-        await callback.answer("Invalid callback data.", show_alert=True)
+        await callback.answer(ErrorMessages.INVALID_INPUT, show_alert=True)
         return
 
     if session is None:
@@ -850,7 +850,6 @@ async def process_delivery_status_step(callback: CallbackQuery, session=None) ->
     from bot.core.models.driver_profile import DriverProfile
     from bot.core.models.user import User
     from bot.request.schemas import TransitionDTO
-    from bot.request.service import RequestService
 
     action_to_status = {
         "en_route": RequestStatus.EN_ROUTE_TO_PICKUP,
@@ -983,7 +982,7 @@ async def process_driver_reject(callback: CallbackQuery, session=None) -> None:
     try:
         request_id = int(callback.data.split(":")[1])
     except (IndexError, ValueError):
-        await callback.answer("Invalid callback data.", show_alert=True)
+        await callback.answer(ErrorMessages.INVALID_INPUT, show_alert=True)
         return
 
     if session is None:
@@ -995,7 +994,6 @@ async def process_driver_reject(callback: CallbackQuery, session=None) -> None:
     from bot.core.exceptions import PackitbotError
     from bot.core.models.user import User
     from bot.request.schemas import RejectAssignmentDTO
-    from bot.request.service import RequestService
 
     try:
         # Fetch driver user
