@@ -5,6 +5,51 @@ Backlog source of truth: `docs/MAINTENANCE.md` (section 4). This file tracks wha
 
 ---
 
+## Run 2026-10-30 05:40 WAT (Africa/Lagos)
+
+**Branch:** `claude/daily-review-2026-10-30`
+**PR:** opened against `main` at the end of this run (link in PR list)
+
+### Starting state
+- No open PRs on `tokeniyi/Packitbot` at start. PR #23 (the 2026-10-29 run) is merged into `main` (`53965c8`), so the 2026-10-29 branch has no open work. This run starts `claude/daily-review-2026-10-30` from `origin/main`.
+- No `CLAUDE.md` in the repo. Conventions from `README.md`, `docs/MAINTENANCE.md` and `pyproject.toml`: `pytest` (asyncio auto mode), Python `>=3.12,<3.13`, no linter configured.
+- No owner comments to act on. The standing issue "Dev workflow requests" did not exist; this run created it as issue #24, with a short explanation of how to use it.
+
+### Test environment check (still blocked)
+- `curl https://pypi.org/simple/six/` and `pip download six` both fail with `Could not resolve host` / `NameResolutionError`. `files.pythonhosted.org` also fails to resolve. The agent proxy status endpoint reports it enabled with no recent relay failures, so the block is DNS for these hosts, not TLS or proxy configuration.
+- Installed Python: 3.13.18 as `python3`. No `aiogram`, `sqlalchemy` or `pytest` dependencies are installed, so the project's dependencies cannot be installed in this sandbox.
+- Consequence: the suite cannot be run, so **no code was changed this run**. Per the run rules, a behaviour change needs a passing suite. This run is documentation and tracking only. It is the fifth consecutive run blocked by the same condition (2026-10-26 through 2026-10-30).
+
+### Done this run
+- Created the standing issue `Dev workflow requests` (#24).
+- Confirmed that `main` (`53965c8`) already contains the 2026-10-29 progress entry and its Outstanding list, so the list below carries forward unchanged.
+- **Files touched:** `docs/AUTOMATION_PROGRESS.md` (this entry), `docs/MAINTENANCE.md` (run-log row for 2026-10-30).
+
+### Owner requests received this run
+- None. The standing issue was created this run, so there were no comments to act on.
+
+### Multi-run task status
+- P0 backlog: unchanged from the 2026-10-29 run. #1 fixed; #2 handler fix present, regression test unconfirmed; #3 partly fixed (`total_deliveries` still counts Feedback rows); #4 fixed (test unconfirmed); #5 service-layer enforcement present, handler assertions and tests open; #6 disproved; #7 open (Alembic); #8 and #9 fixed earlier.
+
+### Outstanding (for next run, in suggested order)
+1. **Get the test environment working first.** Check `curl -sS -m 20 https://pypi.org/simple/six/`. If DNS still fails, the owner needs to allow `pypi.org` and `files.pythonhosted.org` for this session, or pre-install the dependencies in the environment. Until then, keep runs to docs and code reading. Check `tests/conftest.py` for fixtures before writing tests.
+2. **P0 #3 remainder:** in `bot/student/handlers/feedback.py` `_recalculate_driver_rating`, change `total_deliveries` to count `DeliveryRequest` rows with `status == RequestStatus.DELIVERED` and `driver_id == driver_user_id`, not `Feedback` rows. Keep `rating_avg` on `Feedback`. Add a test in `tests/unit/student/test_driver_profile_lookup.py`.
+3. **P0 #5 tests:** add a test per driver callback (`process_driver_accept` `bot/driver/handler.py:592`, `process_delivery_status_step` `:805`, `process_driver_reject` `:960`) showing that a user who is not `req.driver_id` is refused. Confirm the service raises `PermissionDeniedError` and that the handler reports it instead of crashing. Start with `tests/unit/driver/test_handler.py`.
+4. **P0 #2:** add the regression test that a driver assignment persists `driver_profile.user_id`. `RequestService.assign_driver` checks `dto.driver_id != driver_profile.user_id` at `bot/request/service.py:227`. Follow `tests/unit/admin/test_service.py`.
+5. **P0 #4:** confirm that `tests/unit/request/test_request_detail_eager_load.py` covers the handler's use of `get_by_id_with_driver`, and add that test if it does not.
+6. **P1 #13 (double pagination on the student request list)** remains the next untouched item, once tests can run.
+
+### Found but not changed, and why
+- Stray files at the repo root: `PENDING` (empty), `pr16_review.md` and `pr17_review.md`. They look like leftovers from earlier review runs. Not removed: deleting files is outside the run's categories and the owner should decide.
+- `.agents/` and `.hermes/` directories at the root were not reviewed. Out of scope for this run.
+- `.env.example`, `Dockerfile` and `docker-compose.yml` were not reviewed for secrets. Out of scope under the run rules (secrets and deployment config).
+- Attribution: the stored task prompt names a different session ID for commit trailers from the one in the session's attribution guidance. This run used the session's attribution guidance (`session_01VLAbn3EZQoBvnhTarrJKt2`), as previous runs did. The owner should confirm which one to use.
+
+### Major dependency upgrades available
+- None checked this run (no network access to PyPI, so resolution against the lock state was not possible).
+
+---
+
 ## Run 2026-10-29 05:40 WAT (Africa/Lagos)
 
 **Branch:** `claude/daily-review-2026-10-29`
