@@ -401,6 +401,7 @@ are still unguarded.**
 | 2026-10-13 | `fix/integrity-error-savepoint` | P1 #14 `IntegrityError` → `ValidationError` never reaches user (SAVEPOINT) | #19 | **Fixed.** 7 service methods wrapped in SAVEPOINT. Tests updated. 466 unit tests pass. |
 | 2026-10-28 | `claude/daily-review-2026-10-28` | Re-verified P0 #3, #4, #5 against current code; statuses updated; progress log added. Test suite still could not run (no PyPI, no deps installed). | see `docs/AUTOMATION_PROGRESS.md` | **Docs only.** |
 | 2026-10-29 | `claude/daily-review-2026-10-29` | Confirmed P0 #3 remainder (`total_deliveries` still counts Feedback rows) and P0 #5 handler gaps by reading code. Test suite still could not run (PyPI and npm do not resolve; no deps installed). | see `docs/AUTOMATION_PROGRESS.md` | **Docs only.** |
+| 2026-10-30 | `claude/daily-review-2026-10-30` | No code change. Test suite still could not run: `pypi.org` and `files.pythonhosted.org` fail DNS resolution, no deps installed (fifth consecutive blocked run). Created standing issue #24 `Dev workflow requests`. | see `docs/AUTOMATION_PROGRESS.md` | **Docs only.** |
 | 2026-10-27 | `claude/daily-review-2026-10-27` | Stale-status audit: P0 #1 confirmed fixed (`dbf4ba8`), P0 #2 handler fix confirmed; no code changed (test suite could not be run: PyPI returned 403 through the agent proxy) | see `docs/AUTOMATION_PROGRESS.md` | **Docs only.** |
 
 **Remaining backlog:** 6 × P0 (all in open PRs #5–#10), 10 × P1 (#10, #12, #14 closed, #22 partially), 12 × P2, 7 × P3 = **35 open items**.
