@@ -36,11 +36,9 @@ async def _recalculate_driver_rating(session, driver_user_id: int) -> None:
         return
 
     stmt = (
-        select(func.avg(Feedback.rating), func.count(DeliveryRequest.id))
-        .select_from(DeliveryRequest)
-        .outerjoin(Feedback, Feedback.request_id == DeliveryRequest.id)
+        select(func.avg(Feedback.rating), func.count(Feedback.id))
+        .join(DeliveryRequest, Feedback.request_id == DeliveryRequest.id)
         .where(DeliveryRequest.driver_id == driver_user_id)
-        .where(DeliveryRequest.status == RequestStatus.DELIVERED)
     )
     res = await session.execute(stmt)
     avg_rating, total_count = res.one()
