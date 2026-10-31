@@ -41,10 +41,19 @@ async def _recalculate_driver_rating(session, driver_user_id: int) -> None:
         .where(DeliveryRequest.driver_id == driver_user_id)
     )
     res = await session.execute(stmt)
-    avg_rating, total_count = res.one()
+    avg_rating, _feedback_count = res.one()
+
+    # ``total_deliveries`` counts completed deliveries, not feedback rows: a
+    # delivery may be unrated, and a rating is only one row per delivery.
+    deliveries_stmt = (
+        select(func.count(DeliveryRequest.id))
+        .where(DeliveryRequest.driver_id == driver_user_id)
+        .where(DeliveryRequest.status == RequestStatus.DELIVERED)
+    )
+    delivered_count = (await session.execute(deliveries_stmt)).scalar_one()
 
     driver_profile.rating_avg = round(float(avg_rating or 0.0), 2)
-    driver_profile.total_deliveries = total_count or 0
+    driver_profile.total_deliveries = delivered_count or 0
     await session.flush()
 
 
