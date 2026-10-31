@@ -6,6 +6,7 @@ from aiogram.fsm.context import FSMContext
 from bot.core.constants.enums import DriverAvailability, DriverStatus
 from bot.core.models.driver_profile import DriverProfile
 from bot.driver.handler import (
+    process_driver_reject,
     cancel_driver_registration,
     check_approval_status,
     process_driver_reject,
@@ -317,9 +318,95 @@ class TestProcessDriverReject:
                 req = MagicMock(id=17)
                 return req, MagicMock()
 
-        with patch("bot.driver.handler.RequestService", _FakeRequestService):
+        with patch("bot.request.service.RequestService", _FakeRequestService):
             await process_driver_reject(callback, session=session)
 
         assert captured["dto"].request_id == 17
         assert captured["dto"].driver_id == 42
         session.commit.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# P0 #5 regression: a driver who is not assigned to a request must be refused
+# by the driver callbacks, without committing or editing the original message.
+# The real RequestService is used so the service-layer ownership guard runs.
+# ---------------------------------------------------------------------------
+
+
+def _ownership_session(driver_user_id: int = 42):
+    session = AsyncMock()
+    driver_user = MagicMock(id=driver_user_id, full_name="Other Driver", phone_number="0800")
+    driver_row = MagicMock()
+    driver_row.scalar_one_or_none.return_value = driver_user
+    session.execute.return_value = driver_row
+    return session
+
+
+def _request_assigned_to(driver_id: int, status):
+    req = MagicMock()
+    req.id = 17
+    req.driver_id = driver_id
+    req.status = status
+    return req
+
+
+class TestDriverCallbackOwnershipGuard:
+    async def test_accept_by_unassigned_driver_is_refused(self):
+        from bot.core.constants.enums import RequestStatus
+        from bot.driver.handler import process_driver_accept
+        from bot.request.repository import RequestRepository
+
+        callback = _make_callback(data="driver_accept:17", user_id=999)
+        session = _ownership_session(driver_user_id=42)
+        req = _request_assigned_to(driver_id=7, status=RequestStatus.ASSIGNED)
+
+        with patch.object(
+            RequestRepository, "get_by_id_for_update", AsyncMock(return_value=req)
+        ):
+            await process_driver_accept(callback, session=session)
+
+        session.commit.assert_not_awaited()
+        callback.message.edit_text.assert_not_awaited()
+        callback.answer.assert_awaited_once()
+        assert callback.answer.await_args.kwargs.get("show_alert") is True
+        assert "is not the driver assigned" in callback.answer.await_args.args[0]
+        assert req.status == RequestStatus.ASSIGNED
+
+    async def test_reject_by_unassigned_driver_is_refused(self):
+        from bot.core.constants.enums import RequestStatus
+        from bot.request.repository import RequestRepository
+
+        callback = _make_callback(data="driver_reject:17", user_id=999)
+        session = _ownership_session(driver_user_id=42)
+        req = _request_assigned_to(driver_id=7, status=RequestStatus.ASSIGNED)
+
+        with patch.object(
+            RequestRepository, "get_by_id_for_update", AsyncMock(return_value=req)
+        ):
+            await process_driver_reject(callback, session=session)
+
+        session.commit.assert_not_awaited()
+        callback.answer.assert_awaited_once()
+        assert callback.answer.await_args.kwargs.get("show_alert") is True
+        assert "is not the driver assigned" in callback.answer.await_args.args[0]
+        assert req.driver_id == 7
+        assert req.status == RequestStatus.ASSIGNED
+
+    async def test_status_update_by_unassigned_driver_is_refused(self):
+        from bot.core.constants.enums import RequestStatus
+        from bot.driver.handler import process_delivery_status_step
+        from bot.request.repository import RequestRepository
+
+        callback = _make_callback(data="driver_step:en_route:17", user_id=999)
+        session = _ownership_session(driver_user_id=42)
+        req = _request_assigned_to(driver_id=7, status=RequestStatus.ACCEPTED)
+
+        with patch.object(
+            RequestRepository, "get_by_id_for_update", AsyncMock(return_value=req)
+        ):
+            await process_delivery_status_step(callback, session=session)
+
+        session.commit.assert_not_awaited()
+        callback.answer.assert_awaited_once()
+        assert "is not the driver assigned" in callback.answer.await_args.args[0]
+        assert req.status == RequestStatus.ACCEPTED

@@ -32,6 +32,24 @@ from bot.student.states import RequestCreateFSM, RequestUpdateFSM
 from datetime import date
 
 
+
+class _SavepointCM:
+    """Async context manager standing in for ``AsyncSession.begin_nested()``."""
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
+def _make_session():
+    """AsyncMock session whose ``begin_nested()`` is a usable async context manager."""
+    session = AsyncMock()
+    session.begin_nested = MagicMock(side_effect=lambda: _SavepointCM())
+    return session
+
+
 def _make_message(text: str = "", user_id: int = 1) -> MagicMock:
     msg = MagicMock()
     msg.text = text
@@ -96,7 +114,7 @@ class TestRequestCreationFlowIntegration:
         })
         state.clear = AsyncMock()
 
-        session = AsyncMock()
+        session = _make_session()
         req = MagicMock(spec=DeliveryRequest)
         req.id = 1
         session.get.return_value = req
@@ -119,7 +137,7 @@ class TestRequestCreationFlowIntegration:
 
     async def test_my_requests_list_empty(self):
         message = _make_message(text="📋 My Requests", user_id=1)
-        session = AsyncMock()
+        session = _make_session()
 
         result_mock = MagicMock()
         result_mock.scalars.return_value.all.return_value = []
@@ -140,7 +158,7 @@ class TestRequestEditFlowIntegration:
         req.student_id = 1
         req.status = RequestStatus.ASSIGNED
 
-        session = AsyncMock()
+        session = _make_session()
 
         user_row = MagicMock()
         user_row.id = 1
@@ -165,7 +183,7 @@ class TestRequestCancelFlowIntegration:
         req.student_id = 1
         req.status = RequestStatus.DELIVERED
 
-        session = AsyncMock()
+        session = _make_session()
 
         user_row = MagicMock()
         user_row.id = 1
@@ -191,7 +209,7 @@ class TestRequestCancelFlowIntegration:
         req.status = RequestStatus.ASSIGNED
         req.driver_id = 7
 
-        session = AsyncMock()
+        session = _make_session()
 
         user_row = MagicMock()
         user_row.id = 1
@@ -206,15 +224,22 @@ class TestRequestCancelFlowIntegration:
         driver.availability = DriverAvailability.BUSY
         session.get = AsyncMock(side_effect=lambda model, id: driver if model.__name__ == "DriverProfile" else req)
 
-        service = RequestService(session)
-        service.request_repo = repo
-
         updated_req = MagicMock()
         updated_req.id = 1
         updated_req.driver_id = 7
-        service.cancel_request = AsyncMock(return_value=(updated_req, MagicMock()))
+        driver_repo_lookup = AsyncMock(return_value=driver)
 
-        await confirm_cancel_request(callback, session=session)
+        with patch.object(
+            RequestService,
+            "cancel_request",
+            AsyncMock(return_value=(updated_req, MagicMock())),
+        ), patch(
+            "bot.student.handlers.requests.DriverRepository.get_by_user_id",
+            driver_repo_lookup,
+        ):
+            await confirm_cancel_request(callback, session=session)
+
+        driver_repo_lookup.assert_awaited_once_with(7)
 
         assert driver.availability == DriverAvailability.AVAILABLE
         assert session.flush.call_count >= 1

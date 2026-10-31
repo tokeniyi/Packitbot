@@ -43,9 +43,20 @@ def test_alembic_upgrade_and_downgrade():
 
 
 def test_alembic_revision_autogenerate():
+    from pathlib import Path
+
+    versions_dir = Path("alembic/versions")
+    before = set(versions_dir.glob("*.py"))
+
     _run_alembic("downgrade", "base")
     _run_alembic("upgrade", "head")
 
-    result = _run_alembic("revision", "--autogenerate", "-m", "test_rev")
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert "Generating" in result.stdout or "done" in result.stdout
+    try:
+        result = _run_alembic("revision", "--autogenerate", "-m", "test_rev")
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "Generating" in result.stdout or "done" in result.stdout
+    finally:
+        # Autogenerate writes a real revision file into the repo. Remove it so the
+        # migrations tree is not left with a stub that breaks other tests.
+        for generated in set(versions_dir.glob("*.py")) - before:
+            generated.unlink()
