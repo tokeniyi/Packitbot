@@ -5,6 +5,66 @@ Backlog source of truth: `docs/MAINTENANCE.md` (section 4). This file tracks wha
 
 ---
 
+## Run 2026-11-01 05:40 WAT (Africa/Lagos)
+
+**Branch:** `claude/daily-review-2026-11-01` (cut from `main` at `ea6a598`; the previous run's PR #27 is merged, so there was no open `claude/daily-review` work to continue)
+**PR:** opened against `main` at the end of this run (link in PR list)
+
+### Starting state
+- Open PRs on `tokeniyi/Packitbot`: only #26 (`fix/driver-callback-error-message`). It is not a `claude/daily-review` branch and was not touched.
+- Standing issue #24 `Dev workflow requests`: last updated 2026-10-30, no new comments, so no owner requests this run.
+- Repo rules file `.agents/rules/GEMINI.md` says "DO NOT RUN pytest". This conflicts with this routine's instruction to run the project's tests before committing. This run followed the routine (as every prior run did). See "Found but not changed".
+
+### Environment
+- Python 3.12 venv at `.venv/` (git-ignored) with `requirements.txt` installed.
+- PostgreSQL 16 started locally in the sandbox; role `user` (password `pass`, superuser) and database `packitbot_test` were created so the alembic tests can run. Sandbox setup only, not a repo change.
+- Baseline on `main` before changes: **503 passed, 0 failed**.
+
+### Done this run
+- **Outstanding #1 (P0 #4 handler-level eager-load test): done.** New `tests/unit/student/test_request_list_handlers.py` asserts `show_request_detail` calls `RequestRepository.get_by_id_with_driver` with the request id, and refuses a request owned by another student.
+- **Outstanding #3 (P1 #13 double pagination): verified already fixed in code.** `RequestRepository.get_history_for_student` is the only place that slices; the handlers pass `requests.items` straight to the keyboard with the repository's `page` and `total_pages`. Added regression tests in the same new file: the page is fetched exactly once with the requested page number, every item renders, Prev and Next render from the true total, and a bad payload falls back to page 1. Updated the P1 #13 entry in `docs/MAINTENANCE.md` to FIXED.
+- **Files touched:** `tests/unit/student/test_request_list_handlers.py` (new, 5 tests); `docs/MAINTENANCE.md` (P1 #13 status); `docs/AUTOMATION_PROGRESS.md` (this entry).
+- **No production code changed.** Nothing in `bot/` was edited.
+
+### Owner requests received this run
+- None.
+
+### Plan validation
+- Not a multi-stage task this run.
+
+### Verification
+- `pytest` (full suite): **508 passed, 0 failed** (baseline 503; +5 new tests).
+- `python -m compileall -q bot tests`: clean.
+- No linter is configured, so none was run.
+- Not mutation-tested this run. The new tests are straightforward assertions on the handler's repository calls and rendered keyboard, and all pass on the current code.
+
+### Multi-run task status
+- P0 backlog: #1 to #6, #8 and #9 fixed or disproved (see `docs/MAINTENANCE.md`); #7 (Alembic) still open.
+- P1 #13 fixed (this run). P1 #22 partially fixed: the three remaining unguarded `int()` sites in `bot/admin/handler.py` (around lines 236, 262, 827) are still open.
+
+### Outstanding (for next run, in suggested order)
+1. **Reject path ownership (carried over from 2026-10-31, not started this run):** `reject_assignment` does not go through `transition_status`, so the `require_assigned_driver` guard does not cover it. The handler test still refuses an unassigned driver, so some other check applies. Confirm which one with a service-level test in `tests/unit/request/` (look at `RequestService.reject_assignment`), then decide whether to enforce the actor rule explicitly.
+2. **P0 #7 (Alembic):** still open per `docs/MAINTENANCE.md`. Recreate `packitbot_test` (`DROP DATABASE packitbot_test; CREATE DATABASE packitbot_test OWNER "user";`), then re-check the revision chain with `pytest tests/integration/db/test_alembic.py` and `tests/unit/core/test_migrations.py`.
+3. **Test isolation for alembic:** consider resetting the schema at the start of `tests/integration/db/test_alembic.py`. Deliberately not done, because `DROP SCHEMA` against a developer's `DATABASE_URL` is destructive. Needs an owner decision on a dedicated test database.
+4. **P1 #22 remainder:** guard the three unguarded `int()` callback parses in `bot/admin/handler.py` (around lines 236, 262, 827) with the `_parse_page_number()` pattern or the `ErrorMessages.INVALID_INPUT` guard used in `bot/student/handlers/requests.py`. Add a test per site.
+5. **P1 #21:** `callback.message` None guards at 23 sites in `bot/admin/handler.py`. Consider a router-level wrapper; this is a larger refactor and should be planned in `docs/plans/` first.
+6. **Minor dependency updates not applied:** `aiohttp` 3.14.5 (needs `yarl` 1.25.1), `aiogram` 3.31.0, `alembic` 1.20.1, `pydantic` 2.14.2, `pydantic-core` 2.50.2, `pydantic-settings` 2.16.2, `SQLAlchemy` 2.1.6, `pytest` 9.2.0, `pluggy` 1.7.0, `Pygments` 2.21.0, `packaging` 26.3, `asyncpg` 0.32.0, `redis` 8.1.0, `Mako` 1.4.3, `typing-inspection` 0.4.4, `annotated-types` 0.8.0, `idna` 3.20, `greenlet` 3.5.6, `certifi` 2026.10.23. Each needs a full suite run before it is applied. `SQLAlchemy` 2.1 is the one most likely to need code changes.
+
+### Found but not changed, and why
+- **`.agents/rules/GEMINI.md` says "DO NOT RUN pytest".** It is a repo convention for another agent. This routine requires running the test suite before committing, so the run ran it. The owner should decide which rule wins and, if the rule should stand, update one of the two.
+- **Attribution session ID mismatch.** The routine's stored prompt names session `session_01VLAbn74n9b7QhQiKpdAp5k`. The session attribution reminder for this run names `session_01VLAbn4pfYAWmjvQiX46Qwd`. Earlier entries name a third ID. This run used the reminder's ID, and the owner should confirm which one to use.
+- **Open PR #26** (`fix/driver-callback-error-message`) is not part of this workflow and was not touched.
+- **Stray root files** `PENDING` (empty), `pr16_review.md`, `pr17_review.md`, and the `.agents/` and `.hermes/` directories are left in place. Deleting files is outside this run's categories.
+- **`.env.example`, `Dockerfile`, `docker-compose.yml`** were not reviewed for secrets (out of scope under the hard rules).
+
+### Dependency upgrades applied
+- None this run.
+
+### Major dependency upgrades available
+- `multidict` 6.7.1 → 7.2.1 (major, not applied).
+
+---
+
 ## Run 2026-10-31 05:47 WAT (Africa/Lagos)
 
 **Branch:** `claude/daily-review-2026-10-31` (cut from `main` at `90525e4`; no open `claude/daily-review` PR existed to continue)

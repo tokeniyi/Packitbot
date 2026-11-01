@@ -316,11 +316,14 @@ it and `_ensure_admin_profile` (88-111). `main.py::_seed_admins` already does th
     value is the raw truthy coroutine result, so *every* handler "matches"
     *every* callback. The test evaluates each `FilterObject.call` directly.
 
-**#13 Double pagination on the student request list** — `request/repository.py:147-154`
-applies `OFFSET/LIMIT`, then the handler re-paginates the slice
-(`requests.py:603-609, 637-644`). `total_pages` is always 1, Next never renders, and page ≥ 2
-returns fewer or no rows. Pick one strategy. **Verified again 2026-10-05** — still open;
-it is the natural next task.
+**#13 ~~Double pagination on the student request list~~ — FIXED in code (verified 2026-11-01)**
+Originally `request/repository.py` applied `OFFSET/LIMIT` and the handler re-paginated the slice.
+On the current `main`, `RequestRepository.get_history_for_student` is the single place that slices
+(`OFFSET/LIMIT` plus a `COUNT` for `total`), and `show_my_requests_list` / `my_requests_page_callback`
+pass `requests.items` straight to `my_requests_list_keyboard` with the repository's `page` and
+`total_pages`. No second slice remains. **Regression tests (2026-11-01):**
+`tests/unit/student/test_request_list_handlers.py` asserts the repository is called once per page,
+every page item is rendered, and Prev/Next render from the true total.
 
 **#14 ~~`IntegrityError` → `ValidationError` never reaches the user~~ — FIXED 2026-10-13 (PR #19, `fix/integrity-error-savepoint`)**
 - `request/service.py:139,179,243,298,362,415` (7 methods). The `except IntegrityError` blocks ran inside an open transaction; `DbSessionMiddleware` rolled back and re-raised, so the domain `ValidationError` never reached the `PackitbotError` branch at `main.py:231`. The user always got `MSG_SOMETHING_WENT_WRONG`.
