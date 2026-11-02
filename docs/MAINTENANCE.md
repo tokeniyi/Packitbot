@@ -130,16 +130,17 @@ with `DriverProfile.id`, and lookups treat it as a `DriverProfile` PK. Items **#
 - **Fix:** `AssignDriverDTO(driver_id=driver_profile.user_id, …)`; add an assertion in
   `RequestService.assign_driver` that `dto.driver_id == driver_profile.user_id`.
 
-**#3 ~~Cancellation / feedback re-query `DriverProfile` with a `users.id`~~ — FIXED (commit `e928594`, PR #25, 2026-10-30)**
-- `bot/student/handlers/requests.py:1012`; `bot/student/handlers/feedback.py:28-50`
-- Profile lookup resolves via `DriverRepository.get_by_user_id` (PR #6). The remaining `total_deliveries` defect was fixed in `e928594`: the aggregate query now counts `DeliveryRequest.id` rows with `status == DELIVERED` using a `LEFT OUTER JOIN` to `Feedback`, instead of counting `Feedback.id` rows via an inner join.
-- **Impact (old):** driver availability never restored on cancellation; `total_deliveries` undercounted whenever a delivered request had no Feedback row → driver ranking and the `/drivers` leaderboard were silently wrong.
-- **Regression tests:** `test_total_deliveries_counts_delivered_requests_not_feedback` and `test_total_deliveries_excludes_non_delivered_requests` in `tests/unit/student/test_driver_profile_lookup.py` — both use the `db_session` fixture against real in-memory SQLite and fail with the old query.
+**#3 Cancellation / feedback re-query `DriverProfile` with a `users.id`** — *partly fixed, re-verified in code 2026-10-28:* cancellation availability restore (`bot/student/handlers/requests.py:1012`) and feedback rating recalculation (`bot/student/handlers/feedback.py:~36-50`, `_recalculate_driver_rating`) now resolve the profile via `DriverRepository.get_by_user_id`. **Fixed 2026-10-31:** `total_deliveries` now counts `DeliveryRequest` rows with `status == DELIVERED` for the driver (feedback.py `_recalculate_driver_rating`); `rating_avg` still averages `Feedback.rating`. Regression test: `test_total_deliveries_counts_delivered_requests_not_feedback_rows`.
+- `bot/student/handlers/requests.py:1012`; `bot/student/handlers/feedback.py:28, 35, 189`
+- **Impact:** driver availability never restored on cancellation; `rating_avg` and
+  `total_deliveries` never updated → driver ranking and the `/drivers` leaderboard are
+  permanently zero/empty.
+- **Fix:** resolve via `DriverRepository(session).get_by_user_id(user_id)` or join on
+  `user_id`. Separately, `total_deliveries` counts `Feedback` rows (feedback.py:33-41) —
+  it must count `DeliveryRequest` where `status == DELIVERED`.
 
-**#4 ~~`MissingGreenlet` on "view request detail"~~ — FIXED on `main` (PR #9, `fix/request-detail-missing-greenlet`)**
-|- `bot/student/handlers/requests.py:668` (load) and `:141-147` (lazy access)
-|- The handler loads via `RequestRepository.get_by_id_with_driver` (`bot/request/repository.py:63`), which uses `selectinload(DeliveryRequest.driver).selectinload(User.driver_profile)` for both hops.
-|- **Regression test:** `tests/unit/request/test_request_detail_eager_load.py` exists and passes. Confirmed in the 2026-10-30 test run (497 passed, 15 pre-existing failures).
+**#4 `MissingGreenlet` on "view request detail"** — *FIXED on `main`, re-verified 2026-10-28:* the handler loads via `RequestRepository.get_by_id_with_driver` (`bot/request/repository.py:63`), which uses `selectinload` for both hops. Regression test not confirmed (tests could not be run in the sandbox).
+- `bot/student/handlers/requests.py:668` (load) and `:141-147` (lazy access)
 - `req.driver` / `req.driver.driver_profile` lazy-load outside an awaited context →
   `MissingGreenlet` (a subclass of `InvalidRequestError`, **not** `PackitbotError`),
   so it bypasses the global handler and shows a generic error.
@@ -390,6 +391,7 @@ Re-encoded as UTF-8. All dependencies are still in `requirements.txt`; `pyprojec
 | 2026-10-28 | `claude/daily-review-2026-10-28` | Re-verified P0 #3, #4, #5 against current code; statuses updated; progress log added. Test suite still could not run (no PyPI, no deps installed). | see `docs/AUTOMATION_PROGRESS.md` | **Docs only.** |
 | 2026-10-29 | `claude/daily-review-2026-10-29` | Confirmed P0 #3 remainder (`total_deliveries` still counts Feedback rows) and P0 #5 handler gaps by reading code. Test suite still could not run (PyPI and npm do not resolve; no deps installed). | see `docs/AUTOMATION_PROGRESS.md` | **Docs only.** |
 | 2026-10-30 | `claude/daily-review-2026-10-30` | No code change. Test suite still could not run: `pypi.org` and `files.pythonhosted.org` fail DNS resolution, no deps installed (fifth consecutive blocked run). Created standing issue #24 `Dev workflow requests`. | see `docs/AUTOMATION_PROGRESS.md` | **Docs only.** |
+| 2026-10-31 | `claude/daily-review-2026-10-31` | Test suite now runs (PyPI reachable; local PostgreSQL 16 started for the alembic tests). Fixed 11 pre-existing failures: test harness only (AsyncMock sessions lacked `begin_nested()` context manager, handler tests patched wrong names or omitted the injected session, alembic autogenerate test leaked a revision file). P0 #3 remainder fixed: `total_deliveries` counts DELIVERED requests. Added P0 #5 ownership-guard tests for driver callbacks. Patch-level dependency bumps (aiohttp kept at 3.14.3 because 3.14.5 needs yarl 1.25). Suite: 503 passed. | see `docs/AUTOMATION_PROGRESS.md` | **Fix + tests.** |
 | 2026-10-27 | `claude/daily-review-2026-10-27` | Stale-status audit: P0 #1 confirmed fixed (`dbf4ba8`), P0 #2 handler fix confirmed; no code changed (test suite could not be run: PyPI returned 403 through the agent proxy) | see `docs/AUTOMATION_PROGRESS.md` | **Docs only.** |
 | 2026-10-30 | `fix/driver-callback-error-message` | P1 #22 completion: `bot/driver/handler.py` returned hardcoded `"Invalid callback data."` instead of `ErrorMessages.INVALID_INPUT` (4 sites), failing 4 `test_callback_int_parsing.py` tests. Also `RequestService` was imported locally inside 3 handler functions, so `test_routes_rejection_through_service`'s `patch("bot.driver.handler.RequestService")` target silently no-opped. Fixed both: module-level import + `ErrorMessages.INVALID_INPUT` at all 4 sites. | #26 | **Fixed.** Suite: 502 passed, 10 failed (was 497 passed, 15 failed). 5 tests fixed, 0 regressions. |
 

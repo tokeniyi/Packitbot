@@ -78,7 +78,7 @@ class TestDriverRegistrationFlowIntegration:
             "bot.driver.handler.register_driver", new_callable=AsyncMock
         ) as mock_reg:
             mock_reg.return_value = MagicMock()
-            await process_submit_registration(callback, state)
+            await process_submit_registration(callback, state, session=AsyncMock())
             mock_reg.assert_awaited_once()
             state.clear.assert_awaited_once()
 
@@ -116,7 +116,7 @@ class TestDriverRegistrationFlowIntegration:
                 return_value=profile,
             ) as mock_set:
                 profile.availability = DriverAvailability.AVAILABLE
-                await toggle_availability_handler(message)
+                await toggle_availability_handler(message, session=AsyncMock())
                 mock_set.assert_awaited_once()
 
     async def test_registration_service_with_duplicate_plate_raises(self):

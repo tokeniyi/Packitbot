@@ -20,12 +20,19 @@ from bot.student.handlers.feedback import _recalculate_driver_rating
 from bot.student.handlers.requests import show_request_detail
 
 
-def _make_session() -> MagicMock:
+def _make_session(avg: float = 4.5, delivered: int = 2) -> MagicMock:
+    """Session whose two ``execute`` calls return the rating aggregate, then the delivered count.
+
+    ``_recalculate_driver_rating`` issues the rating aggregate first and the
+    ``DELIVERED`` count second. ``Result.one()`` and ``Result.scalar_one()`` are
+    *sync* methods on the result object.
+    """
     session = MagicMock()
-    # session.execute() is awaited; Result.one() is a *sync* method on the result.
-    result = MagicMock()
-    result.one.return_value = (4.5, 2)
-    session.execute = AsyncMock(return_value=result)
+    rating_result = MagicMock()
+    rating_result.one.return_value = (avg, 99)  # feedback-row count is not used
+    delivered_result = MagicMock()
+    delivered_result.scalar_one.return_value = delivered
+    session.execute = AsyncMock(side_effect=[rating_result, delivered_result])
     session.flush = AsyncMock()
     session.get = AsyncMock()
     return session
@@ -33,12 +40,7 @@ def _make_session() -> MagicMock:
 
 @pytest.mark.asyncio
 async def test_recalculate_driver_rating_resolves_profile_by_user_id():
-    session = MagicMock()
-    result = MagicMock()
-    result.one.return_value = (4.5, 3)
-    session.execute = AsyncMock(return_value=result)
-    session.flush = AsyncMock()
-    session.get = AsyncMock()
+    session = _make_session(avg=4.5, delivered=3)
     profile = MagicMock(rating_avg=0.0, total_deliveries=0)
 
     with patch("bot.student.handlers.feedback.DriverRepository") as repo_cls:
@@ -76,12 +78,39 @@ async def test_recalculate_resolves_profile_via_user_id_not_profile_pk():
     # The bug: session.get(DriverProfile, users.id) must never be called.
     session_get.assert_not_called()
 
-    # And the aggregate query still filters DeliveryRequest by users.id.
-    stmt = session.execute.await_args[0][0]
-    assert "driver_id" in str(stmt)
+    # And both aggregate queries still filter DeliveryRequest by users.id.
+    rating_stmt = session.execute.await_args_list[0][0][0]
+    assert "driver_id" in str(rating_stmt)
     assert profile.rating_avg == 4.5
     assert profile.total_deliveries == 2
     session.flush.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_total_deliveries_counts_delivered_requests_not_feedback_rows():
+    """``total_deliveries`` must count DELIVERED requests, not Feedback rows.
+
+    Regression (maintenance P0 #3): the count used to be ``count(Feedback.id)``, so
+    unrated deliveries were not counted and any extra feedback was double-counted.
+    """
+    from bot.core.constants.enums import RequestStatus
+
+    session = _make_session(avg=3.0, delivered=7)
+    profile = MagicMock(rating_avg=0.0, total_deliveries=0)
+
+    with patch("bot.student.handlers.feedback.DriverRepository") as repo_cls:
+        repo_cls.return_value.get_by_user_id = AsyncMock(return_value=profile)
+        await _recalculate_driver_rating(session, 42)
+
+    assert profile.total_deliveries == 7
+    assert profile.rating_avg == 3.0
+
+    delivered_stmt = session.execute.await_args_list[1][0][0]
+    compiled = str(delivered_stmt.compile(compile_kwargs={"literal_binds": True}))
+    assert "FROM delivery_requests" in compiled
+    assert "feedback" not in compiled.lower()
+    assert f"'{RequestStatus.DELIVERED.name}'" in compiled
+    assert "driver_id = 42" in compiled
 
 
 @pytest.mark.asyncio

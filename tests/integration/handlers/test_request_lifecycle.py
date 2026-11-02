@@ -38,8 +38,21 @@ from bot.request.business_rules import (
 )
 
 
+class _SavepointCM:
+    """Async context manager standing in for ``AsyncSession.begin_nested()``."""
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
 def _make_session():
-    return AsyncMock()
+    """AsyncMock session whose ``begin_nested()`` is a usable async context manager."""
+    session = AsyncMock()
+    session.begin_nested = MagicMock(side_effect=lambda: _SavepointCM())
+    return session
 
 
 def _make_request(
@@ -78,6 +91,7 @@ class TestRequestLifecycleIntegration:
         req = _make_request(id=1, status=RequestStatus.PENDING)
         session.get.return_value = req
         repo.create = AsyncMock(return_value=req)
+        repo.get_by_id_for_update = AsyncMock(return_value=req)
 
         async def apply_updates(entity_id, **kwargs):
             for key, value in kwargs.items():
@@ -115,8 +129,10 @@ class TestRequestLifecycleIntegration:
         assert req.status == RequestStatus.ASSIGNED
 
         req.status = RequestStatus.ACCEPTED
+        # Driver-side transitions must come from the assigned driver (users.id 7),
+        # not the admin who made the assignment.
         transition_dto = TransitionDTO(
-            request_id=1, new_status=RequestStatus.EN_ROUTE_TO_PICKUP, actor_id=3
+            request_id=1, new_status=RequestStatus.EN_ROUTE_TO_PICKUP, actor_id=7
         )
         _, transitioned_event = await service.transition_status(transition_dto)
         assert isinstance(transitioned_event, RequestStatusChangedEvent)
@@ -130,6 +146,7 @@ class TestRequestLifecycleIntegration:
         req = _make_request(id=1, status=RequestStatus.PENDING, student_id=42)
         session.get.return_value = req
         repo.create = AsyncMock(return_value=req)
+        repo.get_by_id_for_update = AsyncMock(return_value=req)
 
         async def apply_updates(entity_id, **kwargs):
             for key, value in kwargs.items():
@@ -177,6 +194,7 @@ class TestRequestLifecycleIntegration:
         req = _make_request(id=1, status=RequestStatus.DELIVERED, student_id=42)
         session.get.return_value = req
         repo.create = AsyncMock(return_value=req)
+        repo.get_by_id_for_update = AsyncMock(return_value=req)
 
         feedback = MagicMock(spec=Feedback)
         feedback.id = 10

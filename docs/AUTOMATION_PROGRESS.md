@@ -5,45 +5,66 @@ Backlog source of truth: `docs/MAINTENANCE.md` (section 4). This file tracks wha
 
 ---
 
-## Run 2026-10-30 (cron, scheduled)
+## Run 2026-10-31 05:47 WAT (Africa/Lagos)
 
-**Branch:** `fix/driver-callback-error-message`
-**PR:** #26 — `fix(driver): use ErrorMessages.INVALID_INPUT in callback parsing guards (P1 #22)`
+**Branch:** `claude/daily-review-2026-10-31` (cut from `main` at `90525e4`; no open `claude/daily-review` PR existed to continue)
+**PR:** opened against `main` at the end of this run (link in PR list)
 
 ### Starting state
-- `main` is at `90525e4` (merged PR #25). The P0 #3 fix (`e928594`) is already on `main` with regression tests.
-- The `.venv` has Python 3.12.7 with all deps installed (from a prior session). The test suite **can** run.
-- `docs/MAINTENANCE.md` is present on `main` (merged via PRs #22/#23/#25).
+- Open PRs on `tokeniyi/packitbot`: only #26 (`fix/driver-callback-error-message`), which is not a `claude/daily-review` branch and was not touched. PR #25 (the 2026-10-30 run) is merged.
+- Standing issue #24 `Dev workflow requests`: no comments at all, so no owner requests this run.
+- No `CLAUDE.md`. Conventions: `pytest` with asyncio auto mode (`pyproject.toml`), Python 3.12. No linter configured.
 
-### Test environment check (working)
-- `.venv/Scripts/python -m pytest -q` runs successfully: **502 passed, 10 failed**.
-- The 10 failures are pre-existing: 3 PostgreSQL-dependent (alembic), 7 AsyncMock integration
-  (`session.begin_nested()` not supported by AsyncMock).
-- Before this run's change: 497 passed, 15 failed. The 2026-10-30 Claude run reported the suite
-  could not run at all (DNS for pypi.org); the venv was provisioned in an earlier session.
+### Test environment (unblocked)
+- `pypi.org` now resolves. A Python 3.12 venv installed `requirements.txt` cleanly.
+- The alembic tests (`tests/integration/db/test_alembic.py`) need PostgreSQL at `localhost:5432` with user `user` / password `pass` and database `packitbot_test` (the defaults in `tests/conftest.py`). This sandbox has PostgreSQL 16 installed; it was started locally and the role and database were created. This is sandbox setup only, not a repo change.
+- Baseline on `main` before this run: **11 failed, 488 passed** (without Postgres, 3 alembic tests fail with connection refused).
 
 ### Done this run
-- **Completed P1 #22:** The `int()` parsing guards added by `de263bb` (PR #20) returned a hardcoded
-  `"Invalid callback data."` string instead of `ErrorMessages.INVALID_INPUT`, causing 4
-  `test_callback_int_parsing.py` tests to fail. Replaced all 4 sites in `bot/driver/handler.py`
-  (lines 616, 831, 838, 986) with `ErrorMessages.INVALID_INPUT`, matching the admin handler's
-  behaviour.
-- **Fixed `test_routes_rejection_through_service`:** `RequestService` was imported locally inside
-  3 handler functions, so `patch("bot.driver.handler.RequestService")` in the test silently
-  no-opped. Moved the import to module level (no circular import — `bot.request.service` only
-  imports from `bot.core.*`).
-- **Verified:** P0 #3 fix is already on `main` (commit `e928594`); the 2 regression tests pass.
-- **Files touched:** `bot/driver/handler.py` (4 error message replacements + 1 module-level import, 3 local import removals), `docs/MAINTENANCE.md` (P1 #22 completed, Testing section updated, run log row + run notes added, P0 #4–#7/P1 #13/#16/#20 marked FIXED, duplicate rows cleaned up).
+- **Test harness fixes (no production behaviour change):**
+  - `tests/integration/handlers/test_request_flow.py` and `test_request_lifecycle.py`: `AsyncMock` sessions had no usable `begin_nested()`; added a `_make_session()` helper whose `begin_nested()` is an async context manager. Lifecycle test also stubs `get_by_id_for_update`.
+  - `test_request_lifecycle.py::test_create_then_assign_then_transition_to_delivered`: the transition was issued by the admin (actor 3) instead of the assigned driver (users.id 7). The service correctly refused it under the P0 #5 guard; the test now uses the driver.
+  - `test_request_flow.py::test_confirm_cancel_restores_driver_availability`: patched a service instance the handler never uses; now patches `RequestService.cancel_request` and `DriverRepository.get_by_user_id` on the classes.
+  - `test_driver_registration_flow.py`: two tests omitted the injected `session`, so the handlers returned early; now pass `session`.
+  - `tests/unit/driver/test_handler.py`: reject-routing test patched `bot.driver.handler.RequestService`, which is a local import; now patches `bot.request.service.RequestService`.
+  - `tests/integration/db/test_alembic.py`: the autogenerate test left a real `*_test_rev.py` file in `alembic/versions/`, which broke `tests/unit/core/test_migrations.py` and later alembic runs. It now deletes files it created in a `finally`.
+- **P0 #3 remainder (code fix):** `bot/student/handlers/feedback.py` `_recalculate_driver_rating` now sets `total_deliveries` from a count of `DeliveryRequest` rows with `status == DELIVERED` and `driver_id == users.id`. `rating_avg` still averages `Feedback.rating`. Updated `tests/unit/student/test_driver_profile_lookup.py` (two-query mock) and added `test_total_deliveries_counts_delivered_requests_not_feedback_rows`.
+- **P0 #5 regression tests:** `tests/unit/driver/test_handler.py::TestDriverCallbackOwnershipGuard` (accept, reject, status step). Each drives the real `RequestService`, with a non-assigned driver, and asserts: refused with "is not the driver assigned", no commit, no message edit, status unchanged. Mutation check: with the service guard disabled, the accept and status tests fail. The reject test still passes when that guard is disabled, because `reject_assignment` does not go through `transition_status` (see Outstanding item 2).
+- **Dependencies (patch level only):** `iniconfig` 2.3.0→2.3.1, `MarkupSafe` 3.0.3→3.0.4, `python-dotenv` 1.2.2→1.2.4, `pytest-asyncio` 1.4.0→1.4.1. `aiohttp` 3.14.3→3.14.5 was attempted and reverted: it requires `yarl>=1.25.1`, a transitive minor bump.
+- **Files touched:** `bot/student/handlers/feedback.py`; `tests/integration/db/test_alembic.py`; `tests/integration/handlers/test_driver_registration_flow.py`; `tests/integration/handlers/test_request_flow.py`; `tests/integration/handlers/test_request_lifecycle.py`; `tests/unit/driver/test_handler.py`; `tests/unit/student/test_driver_profile_lookup.py`; `requirements.txt`; `docs/MAINTENANCE.md` (P0 #3 status and run-log row); `docs/AUTOMATION_PROGRESS.md` (this entry).
 
-### Not done, and why
-- P0 #7 (Alembic): `test_alembic.py` still fails — requires a real PostgreSQL instance, not available.
-- P1 #18 (`student/service.py` opens own sessions), P1 #19 (throttling), P1 #21 (callback.message None guards), P1 #15 (raw exception text), P1 #17 (unescaped HTML): all still open, not touched this run.
+### Owner requests received this run
+- None (standing issue #24 has no comments).
 
-### Found but not changed
-- `bot/driver/handler.py:620, 842, 990` returns a hardcoded `"Session unavailable."` string instead of
-  `ErrorMessages.SESSION_UNAVAILABLE` — same class of inconsistency as the P1 #22 error message fix.
-  The admin handler uses `ErrorMessages.SESSION_UNAVAILABLE`. A follow-up PR should normalize these.
-- `.env.example`, `Dockerfile`, `docker-compose.yml` not reviewed for secrets. Out of scope.
+### Plan validation
+- Not a multi-stage task this run.
+
+### Verification
+- `pytest` (full suite) on the branch with PostgreSQL 16 running and a freshly created `packitbot_test` database: **503 passed, 0 failed** (baseline on `main`: 11 failed, 488 passed).
+- Targeted re-runs of the touched modules passed.
+- Known caveat: the alembic tests are order-dependent on the state of `packitbot_test` (`alembic_version`). A leftover revision row breaks `downgrade base`. Recreate the database before a run if alembic tests fail with "Can't locate revision".
+- No linter is configured, so none was run.
+
+### Multi-run task status
+- P0 backlog: #1 fixed; #2 fixed, regression tests already present (`test_assign_driver_rejects_driver_profile_id`, `test_assign_driver_persists_users_id`); #3 fixed (this run completes `total_deliveries`); #4 fixed, repo-level eager-load test present; #5 service enforcement + handler-level tests for accept/reject/status (this run); #6 disproved; #7 open (Alembic); #8 and #9 fixed earlier.
+
+### Outstanding (for next run, in suggested order)
+1. **Handler-level eager-load test for P0 #4:** `bot/student/handlers/requests.py:669` calls `repo.get_by_id_with_driver`. The repo test (`tests/unit/request/test_request_detail_eager_load.py`) covers the repository only. Add a test that `show_request_detail` uses that method (patch it and assert it is awaited with the request id).
+2. **Reject path ownership:** `reject_assignment` does not go through `transition_status`, so the `require_assigned_driver` guard does not cover it. The new handler test still refuses an unassigned driver, so some other check in `reject_assignment` applies. Confirm which one with a service-level test. Then decide whether `reject_assignment` should enforce the actor rule explicitly.
+3. **P1 #13 (double pagination on the student request list):** untouched. Start in `bot/student/handlers/requests.py` list handler; add a test that a page is fetched once.
+4. **P0 #7 (Alembic):** still open per `docs/MAINTENANCE.md`. Re-check the revision chain with a clean `packitbot_test` database.
+5. **Test isolation for alembic:** consider resetting the schema at the start of `tests/integration/db/test_alembic.py`. Deliberately not done in this run, because `DROP SCHEMA` against a developer's `DATABASE_URL` would be destructive. Needs an owner decision on a dedicated test database.
+6. **Minor dependency updates not applied:** `aiohttp` 3.14.5 (needs `yarl` 1.25.1), `aiogram` 3.31.0, `alembic` 1.20.1, `pydantic` 2.14.2, `pydantic-core` 2.50.2, `pydantic-settings` 2.16.2, `SQLAlchemy` 2.1.6, `pytest` 9.2.0, `pluggy` 1.7.0, `Pygments` 2.21.0, `packaging` 26.3, `asyncpg` 0.32.0, `redis` 8.1.0, `Mako` 1.4.3, `typing-inspection` 0.4.4, `annotated-types` 0.8.0, `idna` 3.20, `greenlet` 3.5.6, `frozenlist`/`propcache`/`yarl` (see aiohttp), `certifi` 2026.10.23. Each needs the full suite run before it is applied; `SQLAlchemy` 2.1 is the one most likely to need code changes.
+7. **Major upgrade available (not applied):** `multidict` 6.7.1 → 7.2.1.
+
+### Found but not changed, and why
+- **Open PR #26** (`fix/driver-callback-error-message`) is not part of this workflow. It was not touched.
+- **Stray root files** `PENDING` (empty), `pr16_review.md`, `pr17_review.md`, and the `.agents/` and `.hermes/` directories. Left in place: deleting files is outside this run's categories and the owner should decide.
+- **`.env.example`, `Dockerfile`, `docker-compose.yml`** were not reviewed for secrets (out of scope under the hard rules).
+- **Attribution:** the stored task prompt names session `session_01VLAbn74n9b7QhQiKpdAp5k` for commit trailers; the session attribution guidance names `session_01VLAbn6rftGvyyxhwFRiznK`. This run used the session attribution guidance, as previous runs did. The owner should confirm which one to use.
+
+### Major dependency upgrades available
+- `multidict` 6.7.1 → 7.2.1 (major, not applied).
 
 ---
 
