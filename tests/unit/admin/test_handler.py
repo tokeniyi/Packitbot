@@ -10,10 +10,12 @@ from bot.admin.handler import (
     handle_approve_driver,
     handle_back_to_pending_list,
     handle_confirm_driver_assignment,
+    handle_driver_edit_back,
     handle_reject_driver,
     handle_view_driver_detail,
 )
 from bot.core.constants.enums import UserRole
+from bot.core.constants.messages import ErrorMessages
 from bot.core.models.user import User
 
 
@@ -359,3 +361,27 @@ class TestHandleBackToPendingList:
         await handle_back_to_pending_list(callback, user=student)
 
         callback.answer.assert_awaited_once()
+
+
+class TestDriverEditBackPayload:
+    """Backlog P1 #22: client-controlled ``admin_driver_detail_back:`` payloads.
+
+    A non-numeric driver id must be answered with ``INVALID_INPUT`` and must
+    never reach the service layer.
+    """
+
+    @pytest.mark.parametrize(
+        "payload",
+        ["admin_driver_detail_back:abc", "admin_driver_detail_back:", "admin_driver_detail_back"],
+    )
+    async def test_malformed_payload_answers_invalid_input(self, payload):
+        cb = _make_callback(data=payload)
+        user = _make_admin_user()
+        session = AsyncMock()
+
+        with patch("bot.admin.handler.get_driver_by_id", new=AsyncMock()) as fetch:
+            await handle_driver_edit_back(cb, user=user, session=session)
+
+        fetch.assert_not_awaited()
+        cb.answer.assert_awaited_once_with(ErrorMessages.INVALID_INPUT, show_alert=True)
+        cb.message.edit_text.assert_not_awaited()
