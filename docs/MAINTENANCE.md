@@ -359,7 +359,7 @@ correct the docstring.
 **#21 `callback.message` used without `None` guards** — 23 sites in `admin/handler.py`
 (239 … 1213). Add one router-level wrapper.
 
-**#22 `int()` on callback data without try/except** — `admin/handler.py:236, 262, 542, 827`.
+**#22 `int()` on callback data without try/except** — `admin/handler.py:236, 262, 542, 827`. **FIXED (2026-11-02).**
 Copy the guard already used at `student/handlers/requests.py:655-660`.
 **Partially fixed 2026-10-05 (PR #13):** the two pagination handlers
 (`handle_pending_requests_pagination`, `handle_drivers_pagination`) now use the
@@ -367,6 +367,16 @@ Copy the guard already used at `student/handlers/requests.py:655-660`.
 the handler answer `ErrorMessages.INVALID_INPUT` instead of raising
 `ValueError` out of the handler. **The three remaining sites (`admin/handler.py:262, 236, 827`)
 are still unguarded.**
+
+**Status 2026-11-02: FIXED.** Every callback-data `int()` in `bot/admin/handler.py`
+now has a guard: the pagination helper (`_parse_page_number`, line ~114), the
+request-id parse in the driver-assignment picker (line ~289, `INVALID_INPUT`),
+the driver id in `handle_driver_edit_back` (line ~867, which was the last
+unguarded site; it previously fell into the generic `except Exception` and
+showed "something went wrong" instead of `INVALID_INPUT`), and the `/add_driver`
+text parse (line ~1309, already gated by `isdigit()`). Regression tests:
+`TestDriverEditBackPayload` in `tests/unit/admin/test_handler.py`, 3 cases, all
+verified to fail before the fix.
 ---
 
 ## 5. Testing
@@ -398,6 +408,7 @@ are still unguarded.**
 | 2026-10-03 | `fix/unawaited-set-my-commands` | P1 #8 un-awaited `set_my_commands` | #11 | **Fixed.** 4 new tests. Also **disproved P0 #6** — it was a documentation error, not a bug. |
 | 2026-10-04 | `fix/driver-reject-bypasses-fsm` | P1 #9 `process_driver_reject` bypassed the FSM and audit log | #12 | **Fixed.** 13 new/updated tests; 7 verified to fail when the fix is reverted. Full suite unchanged at 34 pre-existing failures. |
 | 2026-10-05 | `fix/dead-admin-pagination-buttons` | P1 #12 admin driver-list Prev/Next buttons were unroutable; + P1 #22 on 2 handlers | #13 | **Fixed.** 13 new tests; 8 verified to fail when the fix is reverted. Full suite unchanged at 34 pre-existing failures. |
+| 2026-11-02 | `claude/daily-review-2026-11-01` (continued) | P1 #22 remainder: unguarded `int()` in `handle_driver_edit_back`; P1 Outstanding #1 reject ownership tests | #28 | **Fixed.** 3 handler tests (fail before fix) + 2 service tests. Full suite 513 passed. |
 | 2026-10-08 | `fix/dead-admin-promotion-block` | P1 #11 dead admin-promotion block in AuthMiddleware (int vs str split) | #16 | **Fixed.** 1 new test. Unit tests 412 pass. Pre-existing integration failures unchanged. |
 | 2026-10-09 | `fix/echo-sql-logging` | P1 #16 `echo=True` hardcoded on production engine | #17 | **Fixed.** 3 new tests. 414 passed. |
 | 2026-10-11 | `fix/rbac-callback-authorization` | P1 #10 RBAC never authorizes callbacks | #18 | **Fixed.** Extended RBACMiddleware to authorize callback queries (37 prefixes mapped to roles). 14 new tests. Defence-in-depth for P0 #5. Suite: 474 passed, 7 failed (pre-existing). |
@@ -408,7 +419,7 @@ are still unguarded.**
 | 2026-10-31 | `claude/daily-review-2026-10-31` | Test suite now runs (PyPI reachable; local PostgreSQL 16 started for the alembic tests). Fixed 11 pre-existing failures: test harness only (AsyncMock sessions lacked `begin_nested()` context manager, handler tests patched wrong names or omitted the injected session, alembic autogenerate test leaked a revision file). P0 #3 remainder fixed: `total_deliveries` counts DELIVERED requests. Added P0 #5 ownership-guard tests for driver callbacks. Patch-level dependency bumps (aiohttp kept at 3.14.3 because 3.14.5 needs yarl 1.25). Suite: 503 passed. | see `docs/AUTOMATION_PROGRESS.md` | **Fix + tests.** |
 | 2026-10-27 | `claude/daily-review-2026-10-27` | Stale-status audit: P0 #1 confirmed fixed (`dbf4ba8`), P0 #2 handler fix confirmed; no code changed (test suite could not be run: PyPI returned 403 through the agent proxy) | see `docs/AUTOMATION_PROGRESS.md` | **Docs only.** |
 
-**Remaining backlog:** 6 × P0 (all in open PRs #5–#10), 10 × P1 (#10, #12, #14 closed, #22 partially), 12 × P2, 7 × P3 = **35 open items**.
+**Remaining backlog:** 6 × P0 (all in open PRs #5–#10), 10 × P1 (#10, #12, #14, #22 closed), 12 × P2, 7 × P3 = **35 open items**.
 
 ### 2026-10-08 run notes
 
@@ -420,7 +431,7 @@ are still unguarded.**
 || 2026-10-05 | `fix/dead-admin-pagination-buttons` | P1 #12 admin driver-list Prev/Next buttons were unroutable; + P1 #22 on 2 handlers | #13 | **Fixed.** 13 new tests; 8 verified to fail when the fix is reverted. Full suite unchanged at 34 pre-existing failures. ||
 || 2026-10-11 | `fix/rbac-callback-authorization` | P1 #10 RBAC never authorizes callbacks | #18 | **Fixed.** Extended RBACMiddleware to authorize callback queries (37 prefixes mapped to roles). 14 new tests. Defence-in-depth for P0 #5. Suite: 474 passed, 7 failed (pre-existing). ||
 
-**Remaining backlog:** 6 × P0 (all in open PRs #5–#10), 10 × P1 (#10, #12, #14 closed, #22 partially), 12 × P2, 7 × P3 = **35 open items**.
+**Remaining backlog:** 6 × P0 (all in open PRs #5–#10), 10 × P1 (#10, #12, #14, #22 closed), 12 × P2, 7 × P3 = **35 open items**.
 
 ### 2026-10-13 run notes
 

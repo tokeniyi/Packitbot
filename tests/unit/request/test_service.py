@@ -921,6 +921,36 @@ class TestRequestServiceRejectAssignment:
             5, status=RequestStatus.PENDING, driver_id=None
         )
 
+    async def test_reject_assignment_refuses_non_assigned_driver(self):
+        """Ownership: a driver other than the assignee cannot hand a request back.
+
+        Backlog outstanding #1. ``reject_assignment`` does not go through
+        ``transition_status``, so the explicit ``can_driver_act_on_request``
+        check in the service is the guard. This pins it.
+        """
+        session = _make_session()
+        req = _make_request(id=5, status=RequestStatus.ASSIGNED, student_id=42, driver_id=7)
+        service, repo, status_log_repo, driver_repo = self._service(session, req, None)
+
+        with pytest.raises(PermissionDeniedError):
+            await service.reject_assignment(RejectAssignmentDTO(request_id=5, driver_id=99))
+
+        repo.update.assert_not_called()
+        status_log_repo.create.assert_not_called()
+        driver_repo.get_by_user_id.assert_not_called()
+
+    async def test_reject_assignment_refuses_unassigned_request(self):
+        """A request with no assignee cannot be handed back; the ownership check refuses it."""
+        session = _make_session()
+        req = _make_request(id=5, status=RequestStatus.PENDING, student_id=42, driver_id=None)
+        service, repo, status_log_repo, _ = self._service(session, req, None)
+
+        with pytest.raises(PermissionDeniedError):
+            await service.reject_assignment(RejectAssignmentDTO(request_id=5, driver_id=7))
+
+        repo.update.assert_not_called()
+        status_log_repo.create.assert_not_called()
+
     async def test_reject_assignment_not_found(self):
         session = _make_session()
         repo = RequestRepository(session)

@@ -865,6 +865,13 @@ async def handle_driver_edit_back(
 
     try:
         driver_id = int(callback.data.split(":")[1])
+    except (IndexError, ValueError):
+        # Callback data is client-controlled; a malformed payload must get the
+        # same INVALID_INPUT answer as the other parse guards in this module.
+        await callback.answer(ErrorMessages.INVALID_INPUT, show_alert=True)
+        return
+
+    try:
         detail = await get_driver_by_id(session=session, driver_id=driver_id)
         keyboard = driver_detail_keyboard(detail.driver_id)
         text = MSG_DRIVER_DETAIL_TITLE.format(
