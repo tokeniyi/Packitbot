@@ -5,6 +5,71 @@ Backlog source of truth: `docs/MAINTENANCE.md` (section 4). This file tracks wha
 
 ---
 
+## Run 2026-11-03 05:39 WAT (Africa/Lagos)
+
+**Branch:** `claude/daily-review-2026-11-03` (cut from `main` at `f76c341`; PR #28 was already merged, so no open `claude/daily-review` work existed to continue)
+**PR:** opened against `main` at the end of this run (link in PR list)
+
+### Starting state
+- Open PRs on `tokeniyi/packitbot`: none. PR #28 (`claude/daily-review-2026-11-01`) merged 2026-11-02. PR #26 is merged too.
+- Standing issue #24 `Dev workflow requests`: two comments, both `[Claude run]` notes from earlier runs. No owner comments, so no owner requests this run.
+- Test environment: a fresh sandbox. PostgreSQL 16 was started, role `user` (password `pass`, superuser) and database `packitbot_test` were created. Sandbox setup only, not a repo change. Venv: Python 3.12 at `.venv/`.
+- Baseline on `main` before changes: **523 passed, 1 failed** (`tests/unit/driver/test_handler.py::TestProcessDriverReject::test_routes_rejection_through_service`).
+
+### Done this run
+- **Outstanding #1 (P0 #7 Alembic): verified.** `tests/integration/db/test_alembic.py` and `tests/unit/core/test_migrations.py` pass (13 passed) against a freshly recreated `packitbot_test`. Not a code change.
+- **Test fix:** `tests/unit/driver/test_handler.py` patched `bot.request.service.RequestService`, but `bot/driver/handler.py` imports the name at module load. The patch now targets `bot.driver.handler.RequestService`. This was the failure left over from the 2026-10-30 run's note. Its test passes now.
+- **Outstanding #4 (minor/patch dependency updates): applied, with one exception.** Bumped in `requirements.txt`: aiogram 3.31.0, aiohttp 3.14.5, alembic 1.20.1, asyncpg 0.32.0, certifi 2026.10.23, greenlet 3.5.6, idna 3.20, Mako 1.4.3, packaging 26.3, pluggy 1.7.0, Pygments 2.21.0, pydantic-settings 2.16.2, pytest 9.2.0, redis 8.1.0, SQLAlchemy 2.1.6, typing-inspection 0.4.4, annotated-types 0.8.0, yarl 1.25.1. Suite green on SQLAlchemy 2.1.6 with no code change needed.
+  - **Not applied:** `pydantic` 2.14.2 and `pydantic-core` 2.50.2. `aiogram` 3.31.0 requires `pydantic<2.14`, so the pair stays at 2.13.4 / 2.46.4. Revisit when aiogram relaxes the constraint.
+  - **Major upgrade available, not applied:** `multidict` 6.7.1 → 7.2.1.
+- **Outstanding #3 (P1 #21 callback.message guards): stage 1 done.**
+  - Validation found that the backlog's planned check (`if callback.message:`) does not work. `InaccessibleMessage` (a message older than 48 h) is truthy but has no `edit_text`. The plan records this and the chosen fix.
+  - New `bot/core/middlewares/callback_message.py`: `CallbackMessageGuardMiddleware` answers callbacks whose message is not a `Message` with `ErrorMessages.MESSAGE_EXPIRED` (new constant in `bot/core/constants/messages.py`) and stops the handler chain.
+  - Wired in `bot/main.py` with `dp.callback_query.outer_middleware(...)`, after the update-level middlewares (so RBAC still runs first).
+  - Tests: `tests/unit/core/test_callback_message_middleware.py` (8 tests). Includes a real `Dispatcher` with a nested router. The fail-before case confirms that without the guard the handler runs and raises `AttributeError: 'InaccessibleMessage' object has no attribute 'edit_text'`.
+  - Plan: `docs/plans/callback-message-guards.md`, with validation notes, options, and stages 2–3.
+- **Files touched:** `tests/unit/driver/test_handler.py`; `requirements.txt`; `bot/core/middlewares/callback_message.py` (new); `bot/core/constants/messages.py`; `bot/main.py`; `tests/unit/core/test_callback_message_middleware.py` (new); `docs/plans/callback-message-guards.md` (new); `docs/MAINTENANCE.md` (#21 entry, backlog counts, run-log row); `docs/AUTOMATION_PROGRESS.md` (this entry).
+
+### Owner requests received this run
+- None. Issue #24 has no owner comments. The two `[Claude run]` comments are our own and were not treated as instructions.
+
+### Plan validation
+- P1 #21 is a multi-stage task. Plan validated against the code as described in `docs/plans/callback-message-guards.md` (sections "Validation against the code" and "Stages"). Stage 1 is implemented. The fail-before/pass-after check is in the test file.
+- The plan's first assumption (a plain `None` check is enough) was **wrong** and is corrected in the plan.
+
+### Verification
+- `pytest` (full suite, Python 3.12, local PostgreSQL 16): **532 passed, 0 failed** (baseline 523 passed, 1 failed).
+- `python -m compileall -q bot tests`: clean.
+- `bot.main` imports with placeholder settings (`BOT_TOKEN`, `DATABASE_URL`, `REDIS_URL`), so the middleware wiring is at least import-checked.
+- No linter is configured, so none was run.
+
+### Multi-run task status
+- P0: all fixed. #7 (Alembic) verified green this run.
+- P1: #13 and #22 fixed earlier. #21 stage 1 fixed this run. #15, #17, #18, #19 still open.
+
+### Outstanding (for next run, in suggested order)
+1. **P1 #21 stage 2 (optional cleanup):** the `if callback.message:` guards in `bot/student/handlers/*` (about 30 sites) are now redundant for correctness. Decide whether to remove them or narrow types. Plan section "Stages". Start by checking whether any handler relies on the silent no-op for `None`, and in particular `bot/common/start.py`'s home callback.
+2. **P1 #21 stage 3 (later):** typed helper for message access, only if stage 2 shows churn.
+3. **Alembic test isolation:** consider resetting the schema at the start of `tests/integration/db/test_alembic.py`. Deliberately not done, because `DROP SCHEMA` against a developer's `DATABASE_URL` is destructive. Needs an owner decision on a dedicated test database.
+4. **Dependency pin conflict:** `pydantic` 2.14.2 / `pydantic-core` 2.50.2 blocked by aiogram 3.31.0 (requires `pydantic<2.14`). Re-check when aiogram relaxes it.
+5. **P1 #15, #17, #18, #19:** still open per `docs/MAINTENANCE.md` section 2. Not started this run. #18 (student/service.py opens its own sessions) and #19 (throttling unusable) are the bigger ones and need planning first.
+6. **Major dependency upgrade (not applied):** `multidict` 6.7.1 → 7.2.1. Needs its own run with a full suite pass.
+
+### Found but not changed, and why
+- **Attribution session ID mismatch.** The stored prompt names `session_01VLAbn74n9b7QhQiKpdAp5k`. The session attribution reminder for this run names `session_01VLAbn5nPPmHu8DrvVtajiA`. This run used the reminder's ID. The owner should confirm which one to use.
+- **`.agents/rules/GEMINI.md` says "DO NOT RUN pytest".** It conflicts with this routine, which requires running tests before commit. The routine's rule was followed. The owner should reconcile the two.
+- **Stray root files** `PENDING` (empty), `pr16_review.md`, `pr17_review.md`, and the `.agents/` and `.hermes/` directories are left in place. Deleting files is outside this run's scope.
+- **`.env.example`, `Dockerfile`, `docker-compose.yml`** were not reviewed for secrets (out of scope under the hard rules).
+- **`pyproject.toml` still does not list dependencies.** `requirements.txt` is the only pin source.
+
+### Dependency upgrades applied
+- Minor/patch, listed under "Done this run": aiogram 3.31.0, aiohttp 3.14.5, alembic 1.20.1, asyncpg 0.32.0, certifi 2026.10.23, greenlet 3.5.6, idna 3.20, Mako 1.4.3, packaging 26.3, pluggy 1.7.0, Pygments 2.21.0, pydantic-settings 2.16.2, pytest 9.2.0, redis 8.1.0, SQLAlchemy 2.1.6, typing-inspection 0.4.4, annotated-types 0.8.0, yarl 1.25.1.
+
+### Major dependency upgrades available
+- `multidict` 6.7.1 → 7.2.1 (major, not applied).
+
+---
+
 ## Run 2026-11-02 05:42 WAT (Africa/Lagos)
 
 **Branch:** `claude/daily-review-2026-11-01` (continued; same branch as open PR #28, which was not yet merged, so no new branch was cut)

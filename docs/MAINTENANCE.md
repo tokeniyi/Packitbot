@@ -330,8 +330,14 @@ correct the docstring.
 Re-encoded as UTF-8. All dependencies are still in `requirements.txt`; `pyproject.toml`
   does not yet carry them.
 
-**#21 `callback.message` used without `None` guards** — 23 sites in `admin/handler.py`
-(239 … 1213). Add one router-level wrapper.
+**#21 `callback.message` used without `None` guards — stage 1 FIXED (2026-11-03)**
+Original note: 23 sites in `admin/handler.py` (239 … 1213). Validation on 2026-11-03 found that
+an `if callback.message:` guard does not protect against the real failure: an
+`InaccessibleMessage` (message older than 48 h) is truthy but has no `edit_text`. Stage 1 adds
+`CallbackMessageGuardMiddleware` (`bot/core/middlewares/callback_message.py`), registered on
+`dp.callback_query`, which answers such callbacks with an alert and skips the handler. Tests:
+`tests/unit/core/test_callback_message_middleware.py`. Plan and remaining stages:
+`docs/plans/callback-message-guards.md`.
 
 **#22 ~~`int()` on callback data without try/except~~ — FIXED (PR #13 + commit `de263bb`, PR #20; completed 2026-10-30)**
 `admin/handler.py:289` (`admin_assign_req`), `driver/handler.py` (`driver_accept`, `driver_reject`, `driver_step`),
@@ -394,9 +400,10 @@ Re-encoded as UTF-8. All dependencies are still in `requirements.txt`; `pyprojec
 | 2026-10-30 | `claude/daily-review-2026-10-30` | No code change. Test suite still could not run: `pypi.org` and `files.pythonhosted.org` fail DNS resolution, no deps installed (fifth consecutive blocked run). Created standing issue #24 `Dev workflow requests`. | see `docs/AUTOMATION_PROGRESS.md` | **Docs only.** |
 | 2026-10-31 | `claude/daily-review-2026-10-31` | Test suite now runs (PyPI reachable; local PostgreSQL 16 started for the alembic tests). Fixed 11 pre-existing failures: test harness only (AsyncMock sessions lacked `begin_nested()` context manager, handler tests patched wrong names or omitted the injected session, alembic autogenerate test leaked a revision file). P0 #3 remainder fixed: `total_deliveries` counts DELIVERED requests. Added P0 #5 ownership-guard tests for driver callbacks. Patch-level dependency bumps (aiohttp kept at 3.14.3 because 3.14.5 needs yarl 1.25). Suite: 503 passed. | see `docs/AUTOMATION_PROGRESS.md` | **Fix + tests.** |
 | 2026-10-27 | `claude/daily-review-2026-10-27` | Stale-status audit: P0 #1 confirmed fixed (`dbf4ba8`), P0 #2 handler fix confirmed; no code changed (test suite could not be run: PyPI returned 403 through the agent proxy) | see `docs/AUTOMATION_PROGRESS.md` | **Docs only.** |
+| 2026-11-03 | `claude/daily-review-2026-11-03` | P1 #21 stage 1: `CallbackMessageGuardMiddleware` blocks callbacks with an `InaccessibleMessage` or `None` message (plan in `docs/plans/callback-message-guards.md`). Fixed `test_routes_rejection_through_service` (patch target). Minor/patch dependency bumps; P0 #7 Alembic tests verified green on a fresh `packitbot_test`. | see `docs/AUTOMATION_PROGRESS.md` | **Fix + tests.** Suite: 532 passed. |
 | 2026-10-30 | `fix/driver-callback-error-message` | P1 #22 completion: `bot/driver/handler.py` returned hardcoded `"Invalid callback data."` instead of `ErrorMessages.INVALID_INPUT` (4 sites), failing 4 `test_callback_int_parsing.py` tests. Also `RequestService` was imported locally inside 3 handler functions, so `test_routes_rejection_through_service`'s `patch("bot.driver.handler.RequestService")` target silently no-opped. Fixed both: module-level import + `ErrorMessages.INVALID_INPUT` at all 4 sites. | #26 | **Fixed.** Suite: 502 passed, 10 failed (was 497 passed, 15 failed). 5 tests fixed, 0 regressions. |
 
-**Remaining backlog:** 0 × P0 (all fixed; #6 was not a bug), 5 × P1 (#15, #17, #18, #19, #21), 12 × P2, 7 × P3 = **24 open items**.
+**Remaining backlog:** 0 × P0 (all fixed; #6 was not a bug), 4 × P1 (#15, #17, #18, #19; #21 stage 1 fixed 2026-11-03, stages 2–3 open), 12 × P2, 7 × P3 = **23 open items**.
 
 ### 2026-10-08 run notes
 

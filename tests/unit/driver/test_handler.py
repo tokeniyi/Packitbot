@@ -318,7 +318,9 @@ class TestProcessDriverReject:
                 req = MagicMock(id=17)
                 return req, MagicMock()
 
-        with patch("bot.request.service.RequestService", _FakeRequestService):
+        # The handler imports RequestService at module load, so the fake must be
+        # patched where it is looked up (bot.driver.handler), not at its source.
+        with patch("bot.driver.handler.RequestService", _FakeRequestService):
             await process_driver_reject(callback, session=session)
 
         assert captured["dto"].request_id == 17
