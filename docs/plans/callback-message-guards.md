@@ -1,6 +1,6 @@
 # Plan: guard callback handlers against unusable `callback.message` (P1 #21)
 
-Status: stage 1 in progress (2026-11-03 run). Owner: automation.
+Status: stage 1 done (2026-11-03). Stage 2 decided, not implemented (2026-11-04). Owner: automation.
 
 ## Problem
 
@@ -63,13 +63,19 @@ Checked by reading the code and by running aiogram 3.31.0 in the project venv:
 - Message text: reuse `ErrorMessages`-style constant, e.g. "This message is too old. Please
   start again from the menu." Added to `bot/core/constants/messages.py`.
 
-**Stage 2 (next runs): remove redundant guards and tighten types.**
-- Optional. Replace the `if callback.message:` guards in `bot/student/handlers/*` with a
-  narrowed type once stage 1 is merged. Not needed for correctness.
-- Decide whether `None` should still be answered silently in `start.py`.
+**Stage 2: remove redundant guards and tighten types. DECIDED 2026-11-04: keep the guards, do not remove them.**
+- Audit result: after stage 1, every `if callback.message:` guard in `bot/student/handlers/*`
+  and the `callback.message is None` check in `bot/common/start.py::home_callback` is
+  unreachable for `None` or `InaccessibleMessage`. The middleware answers those callbacks before
+  any handler runs. The guards are dead but harmless.
+- Decision: do not remove about 30 guards. Removing them changes about 30 call sites for no
+  behaviour change, and a future handler added outside the middleware would still benefit from them.
+  `start.py` keeps its `is None` check for the same reason.
+- Stage 2 is closed unless a later run finds a handler that the middleware does not cover
+  (for example, one registered on `dp.message` that takes a callback-like payload).
 
-**Stage 3 (later): helper for typed message access (option C)**, only if stage 2 shows
-enough churn to justify it.
+**Stage 3 (later): helper for typed message access (option C)**. Not started. Revisit only if
+new handlers keep needing the same `isinstance(callback.message, Message)` check.
 
 ## Test strategy
 

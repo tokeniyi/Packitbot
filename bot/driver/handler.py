@@ -42,6 +42,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from bot.core.constants.enums import DriverAvailability, DriverStatus
+from bot.core.exceptions import PackitbotError
 from bot.core.keyboards.common_kb import HomeButton
 from bot.core.utils.validators import (
     ValidationError,
@@ -444,8 +445,10 @@ async def process_submit_registration(callback: CallbackQuery, state: FSMContext
             return
         await register_driver(session=session, dto=dto)
     except Exception as exc:
-        logger.error("Failed driver registration for user %s: %s", callback.from_user.id, exc)
-        await callback.message.answer(f"❌ Registration failed: {exc}")
+        logger.exception("Failed driver registration for user %s: %s", callback.from_user.id, exc)
+        await callback.message.answer(
+            f"❌ {exc}" if isinstance(exc, PackitbotError) else ErrorMessages.SOMETHING_WENT_WRONG
+        )
         return
 
     await state.clear()
@@ -573,8 +576,10 @@ async def toggle_availability_handler(message: Message, session=None) -> None:
             target_availability=target_status,
         )
     except Exception as exc:
-        logger.error("Error toggling availability for user %s: %s", message.from_user.id, exc)
-        await message.answer(f"❌ Failed to update status: {exc}")
+        logger.exception("Error toggling availability for user %s: %s", message.from_user.id, exc)
+        await message.answer(
+            f"❌ {exc}" if isinstance(exc, PackitbotError) else ErrorMessages.SOMETHING_WENT_WRONG
+        )
         return
 
     if updated_profile.availability == DriverAvailability.AVAILABLE:

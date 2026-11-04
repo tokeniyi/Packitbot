@@ -19,6 +19,7 @@ from bot.core.constants.messages import (
     RegistrationMessages,
     SuccessMessages,
 )
+from bot.core.exceptions import PackitbotError
 from bot.core.keyboards.common_kb import HomeButton
 from bot.core.utils.formatters import format_step_prompt
 from bot.core.utils.validators import validate_full_name, validate_phone
@@ -188,9 +189,11 @@ async def submit_registration(callback: CallbackQuery, state: FSMContext) -> Non
             phone=data.get("phone_number") or data.get("phone"),
         )
     except Exception as e:
-        logger.error("Failed to register student: %s", e)
+        logger.exception("Failed to register student: %s", e)
         if callback.message:
-            await callback.message.edit_text(f"Registration error: {str(e)}")
+            await callback.message.edit_text(
+                str(e) if isinstance(e, PackitbotError) else ErrorMessages.SOMETHING_WENT_WRONG
+            )
         return
 
     await state.clear()

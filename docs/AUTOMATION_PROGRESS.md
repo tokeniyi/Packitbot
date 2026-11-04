@@ -5,6 +5,70 @@ Backlog source of truth: `docs/MAINTENANCE.md` (section 4). This file tracks wha
 
 ---
 
+## Run 2026-11-04 05:39 WAT (Africa/Lagos)
+
+**Branch:** `claude/daily-review-2026-11-03` (continued; same branch as open PR #29, so no new branch was cut)
+**PR:** #29, updated with new commits.
+
+### Starting state
+- Open PRs on `tokeniyi/Packitbot`: #29 (`claude/daily-review-2026-11-03`, this workflow). No other open PR.
+- Standing issue #24 `Dev workflow requests`: three comments, all `[Claude run]` notes from earlier runs. No owner comments, so no owner requests this run.
+- Test environment: fresh sandbox. Python 3.12 venv at `.venv/` (git-ignored) with `requirements.txt`. PostgreSQL 16 started; role `user` and database `packitbot_test` created (sandbox setup only, not a repo change).
+- Baseline on the branch before changes: **532 passed, 0 failed**.
+
+### Done this run
+- **P1 #15 (raw exception text leaked to users): fixed.** Four user-facing replies interpolated `str(exc)`, which can show table, column, or constraint names:
+  - `bot/student/handlers/registration.py` `submit_registration`: was `"Registration error: {e}"`.
+  - `bot/student/handlers/requests.py` `submit_request_creation`: was `"❌ Error creating request: {exc}"`.
+  - `bot/driver/handler.py` `process_submit_registration`: was `"❌ Registration failed: {exc}"`.
+  - `bot/driver/handler.py` `toggle_availability_handler`: was `"❌ Failed to update status: {exc}"`.
+  - Each now logs with `logger.exception` and replies with `ErrorMessages.SOMETHING_WENT_WRONG`. `PackitbotError` messages still pass through, since they are written for users and the global handler in `bot/main.py` already shows them that way.
+  - Tests: new `tests/unit/core/test_user_facing_errors.py` (5 tests). Fail-before check: all 5 fail with `git stash` of `bot/`, and all pass after.
+- **P1 #21 stage 2 (decision): guards kept, no removal.** The audit found the `if callback.message:` guards and the `is None` check in `start.py` are now unreachable for the cases they were meant for, because the stage 1 middleware answers those callbacks first. They are dead but harmless. Removing about 30 call sites would be churn with no behaviour change. Recorded in `docs/plans/callback-message-guards.md`.
+- **Patch dependency bumps** in `requirements.txt`: SQLAlchemy 2.1.6 → 2.1.8, propcache 0.5.2 → 0.5.4, pytest-asyncio 1.4.1 → 1.4.1.post1 (post-release). `pip check` reports no broken requirements. Full suite green after the bumps.
+- **Files touched:** `bot/student/handlers/registration.py`; `bot/student/handlers/requests.py`; `bot/driver/handler.py`; `tests/unit/core/test_user_facing_errors.py` (new); `requirements.txt`; `docs/MAINTENANCE.md` (#15 FIXED, #21 stage 2 decision, headline state, run log); `docs/plans/callback-message-guards.md` (stage 2 decision, stage 3 status); `docs/AUTOMATION_PROGRESS.md` (this entry).
+
+### Owner requests received this run
+- None. Issue #24 has no owner comments.
+
+### Plan validation
+- P1 #21 plan: stage 2 audited against the code and closed with a recorded decision. Stage 3 is not started and is not needed yet.
+
+### Verification
+- `pytest` full suite (Python 3.12, local PostgreSQL 16, `packitbot_test`): **537 passed, 0 failed** (baseline 532; +5 new tests). Run after the code change and again after the dependency bumps.
+- New tests fail-before/pass-after: confirmed (see above).
+- `python -m compileall -q bot tests`: clean.
+- `pip check`: no broken requirements.
+- No linter is configured, so none was run.
+
+### Multi-run task status
+- P0: all fixed. #7 (Alembic) verified green on 2026-11-03.
+- P1: #13, #15, #22 fixed. #21 stage 1 done (2026-11-03); stage 2 decided (2026-11-04). #17, #18, #19 still open.
+
+### Outstanding (for next run, in suggested order)
+1. **P1 #17 (unescaped user input in `parse_mode="HTML"` messages):** sites are `bot/student/handlers/requests.py` (about lines 155-163 and 679 in the current file; re-check with grep for `parse_mode`), `bot/driver/handler.py` (around lines 648-649, 758-762, 888-889; the `escape` import already exists at the top of the file), and admin Markdown input in `bot/admin/handler.py` (around lines 313, 377-384, 926-935). Plan: add a shared `render_html()` (or reuse `html.escape`) in `bot/core/utils/formatters.py` that escapes by default, then route the sites through it. Write a test per site that passes `<b>x</b>` as input and asserts it is escaped in the sent text. Check the Markdown path separately, since escaping rules differ.
+2. **P1 #18 (`student/service.py` opens its own sessions inside the middleware transaction):** `bot/student/service.py` lines around 38, 88, 99, 116, 173, 201, 225. Make `session` a required first parameter like `bot/driver/` and `bot/admin/`, passed from `bot/student/handlers/registration.py` (around line 183 before this run's edits; the call is `register_student(...)` inside `submit_registration`). Check other callers with grep first. Expect a two-file change plus test updates. Plan it first in `docs/plans/student-service-sessions.md` if the caller count is above about five.
+3. **P1 #19 (throttling unusable at default rate):** `bot/core/middlewares/throttling.py` lines 114-135 and 65-71. Options are a real token bucket (burst about 5, carry fractional remainder, evict idle > 1 h) or delete `_get_redis` and fix the docstring. Needs a decision on the bucket; plan first.
+4. **Alembic test isolation:** consider resetting the schema at the start of `tests/integration/db/test_alembic.py`. Deliberately not done, because `DROP SCHEMA` against a developer's `DATABASE_URL` is destructive. Needs an owner decision on a dedicated test database.
+5. **Dependency pin conflict:** `pydantic` 2.14.2 / `pydantic-core` 2.50.2 blocked by aiogram 3.31.0 (requires `pydantic<2.14`). Re-check when aiogram relaxes it.
+6. **Major dependency upgrade (not applied):** `multidict` 6.7.1 → 7.2.1. Needs its own run with a full suite pass.
+
+### Found but not changed, and why
+- **Attribution session ID mismatch.** The stored prompt names `session_01VLAbn74n9b7QhQiKpdAp5k`. This run's attribution reminder names `session_01VLAbn435sJ7m2e9RNVizbP`, which was used for the commit trailer. The owner should confirm which one to use.
+- **`.agents/rules/GEMINI.md` says "DO NOT RUN pytest".** It conflicts with this routine, which requires tests before commit. The routine's rule was followed. The owner should reconcile the two.
+- **Stray root files** `PENDING` (empty), `pr16_review.md`, `pr17_review.md`, and the `.agents/` and `.hermes/` directories are left in place. Deleting files is outside this run's scope.
+- **`.env.example`, `Dockerfile`, `docker-compose.yml`** were not reviewed for secrets (out of scope under the hard rules).
+- **`pyproject.toml` still does not list dependencies.** `requirements.txt` is the only pin source.
+- **`pip list --outdated` also shows `pip` 24.0 → 26.3.** Not a project dependency, so not changed.
+
+### Dependency upgrades applied
+- Patch: SQLAlchemy 2.1.6 → 2.1.8; propcache 0.5.2 → 0.5.4; pytest-asyncio 1.4.1 → 1.4.1.post1.
+
+### Major dependency upgrades available
+- `multidict` 6.7.1 → 7.2.1 (major, not applied).
+
+---
+
 ## Run 2026-11-03 05:39 WAT (Africa/Lagos)
 
 **Branch:** `claude/daily-review-2026-11-03` (cut from `main` at `f76c341`; PR #28 was already merged, so no open `claude/daily-review` work existed to continue)

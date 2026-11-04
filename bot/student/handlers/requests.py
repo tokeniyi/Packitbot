@@ -578,9 +578,11 @@ async def submit_request_creation(callback: CallbackQuery, state: FSMContext, se
                 reply_markup=student_persistent_menu(),
             )
     except Exception as exc:
-        logger.error("Failed to create delivery request: %s", exc)
+        logger.exception("Failed to create delivery request: %s", exc)
         if callback.message:
-            await callback.message.answer(f"❌ Error creating request: {exc}")
+            await callback.message.answer(
+                f"❌ {exc}" if isinstance(exc, PackitbotError) else ErrorMessages.SOMETHING_WENT_WRONG
+            )
 
 
 # ==============================================================================
