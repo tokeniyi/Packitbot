@@ -1,4 +1,3 @@
-from html import escape
 """Driver module router - registration FSM, availability, and active delivery flows.
 
 This module defines the aiogram Router for all driver-related conversation
@@ -58,7 +57,7 @@ from bot.core.constants.messages import (
     RegistrationMessages,
     SuccessMessages,
 )
-from bot.core.utils.formatters import format_step_prompt, render_progress_bar
+from bot.core.utils.formatters import escape_html, format_step_prompt, render_progress_bar
 from bot.request.service import RequestService
 from bot.driver.keyboards import (
     delivery_status_update_keyboard,
@@ -94,11 +93,11 @@ async def _show_review_screen(target: Message | CallbackQuery, state: FSMContext
 
     summary = (
         "🚗 <b>Driver Registration Review</b>\n\n"
-        f"• <b>Full Name:</b> {escape(str(data.get('full_name') or ""))}\n"
-        f"• <b>Phone Number:</b> {escape(str(data.get('phone_number') or ""))}\n"
-        f"• <b>Vehicle Type:</b> {escape(str(data.get('vehicle_type', '') or '').upper())}\n"
-        f"• <b>Plate Number:</b> {escape(str(data.get('plate_number') or ""))}\n"
-        f"• <b>License Number:</b> {escape(str(data.get('license_number') or ""))}\n\n"
+        f"• <b>Full Name:</b> {escape_html(data.get('full_name'))}\n"
+        f"• <b>Phone Number:</b> {escape_html(data.get('phone_number'))}\n"
+        f"• <b>Vehicle Type:</b> {escape_html(str(data.get('vehicle_type') or '').upper())}\n"
+        f"• <b>Plate Number:</b> {escape_html(data.get('plate_number'))}\n"
+        f"• <b>License Number:</b> {escape_html(data.get('license_number'))}\n\n"
         "Please confirm your registration details."
     )
 
@@ -678,12 +677,12 @@ async def process_driver_accept(callback: CallbackQuery, session=None) -> None:
         await callback.message.edit_text(
             f"✅ <b>Assignment Accepted!</b>\n\n"
             f"📦 <b>Request #{req.id}</b>\n"
-            f"📍 Pickup: {req.pickup_detail} ({req.hall_of_residence})\n"
-            f"🎯 Dropoff: {req.dropoff_address}\n"
-            f"👤 Recipient: {escape(str(req.recipient_name or ""))} ({escape(str(req.recipient_phone or ""))})\n\n"
+            f"📍 Pickup: {escape_html(req.pickup_detail)} ({escape_html(req.hall_of_residence)})\n"
+            f"🎯 Dropoff: {escape_html(req.dropoff_address)}\n"
+            f"👤 Recipient: {escape_html(req.recipient_name)} ({escape_html(req.recipient_phone)})\n\n"
             f"📞 <b>Student Contact Details:</b>\n"
-            f"• Name: {student_name}\n"
-            f"• Phone: {escape(str(student_phone or ""))}",
+            f"• Name: {escape_html(student_name)}\n"
+            f"• Phone: {escape_html(student_phone)}",
             parse_mode="HTML",
             reply_markup=delivery_status_update_keyboard(req.id, req.status),
         )
@@ -698,8 +697,8 @@ async def process_driver_accept(callback: CallbackQuery, session=None) -> None:
                         f"🎉 <b>Driver Accepted Your Request!</b>\n\n"
                         f"📦 <b>Request #{req.id}</b>\n"
                         f"📞 <b>Driver Contact Details:</b>\n"
-                        f"• Name: {driver_name}\n"
-                        f"• Phone: {escape(str(driver_phone or ""))}"
+                        f"• Name: {escape_html(driver_name)}\n"
+                        f"• Phone: {escape_html(driver_phone)}"
                     ),
                     parse_mode="HTML",
                 )
@@ -788,14 +787,14 @@ async def active_delivery_dashboard_handler(message: Message, session=None) -> N
             f"📊 <b>Current Delivery Dashboard</b>\n\n"
             f"📦 <b>Request ID:</b> #{active_req.id}\n"
             f"📌 <b>Status:</b> {active_req.status.value.replace('_', ' ').title()}\n"
-            f"📍 <b>Pickup:</b> {active_req.pickup_detail} ({active_req.hall_of_residence})\n"
-            f"🎯 <b>Dropoff:</b> {active_req.dropoff_address} ({active_req.dropoff_landmark or 'N/A'})\n"
-            f"👤 <b>Recipient:</b> {escape(str(active_req.recipient_name or ""))} ({escape(str(active_req.recipient_phone or ""))})\n"
+            f"📍 <b>Pickup:</b> {escape_html(active_req.pickup_detail)} ({escape_html(active_req.hall_of_residence)})\n"
+            f"🎯 <b>Dropoff:</b> {escape_html(active_req.dropoff_address)} ({escape_html(active_req.dropoff_landmark or 'N/A')})\n"
+            f"👤 <b>Recipient:</b> {escape_html(active_req.recipient_name)} ({escape_html(active_req.recipient_phone)})\n"
             f"🧳 <b>Luggage:</b> {active_req.luggage_size.value.title()} x{active_req.luggage_count}\n"
-            f"📝 <b>Instructions:</b> {active_req.special_instructions or 'None'}\n\n"
+            f"📝 <b>Instructions:</b> {escape_html(active_req.special_instructions or 'None')}\n\n"
             f"📞 <b>Student Contact Details:</b>\n"
-            f"• Name: {student_name}\n"
-            f"• Phone: {escape(str(student_phone or ""))}"
+            f"• Name: {escape_html(student_name)}\n"
+            f"• Phone: {escape_html(student_phone)}"
         )
 
         kb = delivery_status_update_keyboard(active_req.id, active_req.status)
@@ -921,12 +920,12 @@ async def process_delivery_status_step(callback: CallbackQuery, session=None) ->
             f"<b>{status_header}</b>\n\n"
             f"📦 <b>Request ID:</b> #{req.id}\n"
             f"📌 <b>Current Status:</b> {new_status_title}\n"
-            f"📍 <b>Pickup:</b> {req.pickup_detail} ({req.hall_of_residence})\n"
-            f"🎯 <b>Dropoff:</b> {req.dropoff_address}\n"
-            f"👤 <b>Recipient:</b> {escape(str(req.recipient_name or ""))} ({escape(str(req.recipient_phone or ""))})\n\n"
+            f"📍 <b>Pickup:</b> {escape_html(req.pickup_detail)} ({escape_html(req.hall_of_residence)})\n"
+            f"🎯 <b>Dropoff:</b> {escape_html(req.dropoff_address)}\n"
+            f"👤 <b>Recipient:</b> {escape_html(req.recipient_name)} ({escape_html(req.recipient_phone)})\n\n"
             f"📞 <b>Student Contact Details:</b>\n"
-            f"• Name: {student_name}\n"
-            f"• Phone: {escape(str(student_phone or ""))}",
+            f"• Name: {escape_html(student_name)}\n"
+            f"• Phone: {escape_html(student_phone)}",
             parse_mode="HTML",
             reply_markup=kb,
         )
@@ -1060,7 +1059,8 @@ async def process_driver_reject(callback: CallbackQuery, session=None) -> None:
 
         alert_text = (
             f"⚠️ <b>Request Assignment Rejected!</b>\n\n"
-            f"📦 <b>Request #{request_id}</b> was rejected by Driver {driver_user.full_name or driver_user.id}.\n"
+            f"📦 <b>Request #{request_id}</b> was rejected by Driver "
+            f"{escape_html(driver_user.full_name or driver_user.id)}.\n"
             f"Status has been reset to <b>PENDING</b> and requires reassignment."
         )
 

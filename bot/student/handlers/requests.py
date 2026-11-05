@@ -39,7 +39,7 @@ from bot.core.exceptions import (
     ValidationError,
 )
 from bot.core.keyboards.common_kb import HomeButton
-from bot.core.utils.formatters import format_step_prompt
+from bot.core.utils.formatters import escape_html, format_step_prompt
 from bot.core.utils.pagination import Page
 from bot.core.utils.validators import (
     validate_dropoff_address,
@@ -112,17 +112,17 @@ async def _show_request_review(target: Message | CallbackQuery, state: FSMContex
     data = await state.get_data()
     summary = (
         "📦 <b>Delivery Request Review</b>\n\n"
-        f"• <b>Pickup Detail:</b> {data.get('pickup_detail')}\n"
-        f"• <b>Dropoff Address:</b> {data.get('dropoff_address')}\n"
-        f"• <b>Landmark:</b> {data.get('dropoff_landmark') or 'None'}\n"
-        f"• <b>Hall of Residence:</b> {data.get('hall_of_residence')}\n"
-        f"• <b>Recipient Name:</b> {data.get('recipient_name')}\n"
-        f"• <b>Recipient Phone:</b> {data.get('recipient_phone')}\n"
-        f"• <b>Luggage Size:</b> {data.get('luggage_size')}\n"
-        f"• <b>Luggage Count:</b> {data.get('luggage_count')}\n"
-        f"• <b>Preferred Date:</b> {data.get('preferred_date')}\n"
-        f"• <b>Time Window:</b> {data.get('preferred_time_window')}\n"
-        f"• <b>Special Instructions:</b> {data.get('special_instructions') or 'None'}\n"
+        f"• <b>Pickup Detail:</b> {escape_html(data.get('pickup_detail'))}\n"
+        f"• <b>Dropoff Address:</b> {escape_html(data.get('dropoff_address'))}\n"
+        f"• <b>Landmark:</b> {escape_html(data.get('dropoff_landmark') or 'None')}\n"
+        f"• <b>Hall of Residence:</b> {escape_html(data.get('hall_of_residence'))}\n"
+        f"• <b>Recipient Name:</b> {escape_html(data.get('recipient_name'))}\n"
+        f"• <b>Recipient Phone:</b> {escape_html(data.get('recipient_phone'))}\n"
+        f"• <b>Luggage Size:</b> {escape_html(data.get('luggage_size'))}\n"
+        f"• <b>Luggage Count:</b> {escape_html(data.get('luggage_count'))}\n"
+        f"• <b>Preferred Date:</b> {escape_html(data.get('preferred_date'))}\n"
+        f"• <b>Time Window:</b> {escape_html(data.get('preferred_time_window'))}\n"
+        f"• <b>Special Instructions:</b> {escape_html(data.get('special_instructions') or 'None')}\n"
     )
     if isinstance(target, CallbackQuery):
         if target.message:
@@ -139,12 +139,14 @@ def _format_request_detail(req) -> str:
 
     driver_info = "Not assigned yet"
     if req.driver:
-        d_name = req.driver.full_name or "Driver"
-        d_phone = req.driver.phone_number or "N/A"
+        d_name = escape_html(req.driver.full_name or "Driver")
+        d_phone = escape_html(req.driver.phone_number or "N/A")
         driver_info = f"{d_name} ({d_phone})"
         if hasattr(req.driver, "driver_profile") and req.driver.driver_profile:
             dp = req.driver.driver_profile
-            driver_info += f"\n  Vehicle: {dp.vehicle_type} ({dp.plate_number})"
+            driver_info += (
+                f"\n  Vehicle: {escape_html(dp.vehicle_type)} ({escape_html(dp.plate_number)})"
+            )
 
     luggage_size_str = req.luggage_size.value if hasattr(req.luggage_size, "value") else str(req.luggage_size)
 
@@ -152,22 +154,22 @@ def _format_request_detail(req) -> str:
         f"📋 <b>Request Detail #{req.id}</b>\n\n"
         f"<b>Status:</b> {status_label}\n"
         f"<b>Progress:</b> {progress}\n\n"
-        f"📍 <b>Pickup Detail:</b> {req.pickup_detail}\n"
-        f"🏛️ <b>Hall of Residence:</b> {req.hall_of_residence}\n"
-        f"🎯 <b>Dropoff Address:</b> {req.dropoff_address}\n"
-        f"🗺️ <b>Landmark:</b> {req.dropoff_landmark or 'None'}\n\n"
-        f"👤 <b>Recipient:</b> {req.recipient_name} ({req.recipient_phone})\n"
+        f"📍 <b>Pickup Detail:</b> {escape_html(req.pickup_detail)}\n"
+        f"🏛️ <b>Hall of Residence:</b> {escape_html(req.hall_of_residence)}\n"
+        f"🎯 <b>Dropoff Address:</b> {escape_html(req.dropoff_address)}\n"
+        f"🗺️ <b>Landmark:</b> {escape_html(req.dropoff_landmark or 'None')}\n\n"
+        f"👤 <b>Recipient:</b> {escape_html(req.recipient_name)} ({escape_html(req.recipient_phone)})\n"
         f"📦 <b>Luggage:</b> {req.luggage_count}x {luggage_size_str.title()}\n"
-        f"📅 <b>Preferred Date:</b> {req.preferred_date}\n"
-        f"⏰ <b>Time Window:</b> {req.preferred_time_window}\n"
-        f"📝 <b>Special Instructions:</b> {req.special_instructions or 'None'}\n\n"
+        f"📅 <b>Preferred Date:</b> {escape_html(req.preferred_date)}\n"
+        f"⏰ <b>Time Window:</b> {escape_html(req.preferred_time_window)}\n"
+        f"📝 <b>Special Instructions:</b> {escape_html(req.special_instructions or 'None')}\n\n"
         f"🚗 <b>Driver Details:</b> {driver_info}\n"
     )
     if req.cancelled_by:
         cancelled_by_str = req.cancelled_by.value if hasattr(req.cancelled_by, "value") else str(req.cancelled_by)
         text += f"\n🚫 <b>Cancelled By:</b> {cancelled_by_str.title()}"
         if req.cancellation_reason:
-            text += f"\n<b>Reason:</b> {req.cancellation_reason}"
+            text += f"\n<b>Reason:</b> {escape_html(req.cancellation_reason)}"
 
     return text
 
@@ -862,7 +864,7 @@ async def _store_field_change(
     formatted_diff = []
     for f_name, val in changes.items():
         val_str = val.value if hasattr(val, "value") else str(val)
-        formatted_diff.append(f"• <b>{f_name.replace('_', ' ').title()}:</b> {val_str}")
+        formatted_diff.append(f"• <b>{f_name.replace('_', ' ').title()}:</b> {escape_html(val_str)}")
 
     diff_text = "\n".join(formatted_diff)
     prompt = (
