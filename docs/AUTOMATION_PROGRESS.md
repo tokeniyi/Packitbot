@@ -5,6 +5,69 @@ Backlog source of truth: `docs/MAINTENANCE.md` (section 4). This file tracks wha
 
 ---
 
+## Run 2026-11-06 05:40 WAT (Africa/Lagos)
+
+**Branch:** `claude/daily-review-2026-11-03` (continued; same branch as open PR #29, so no new branch was cut)
+**PR:** #29, updated with new commits.
+
+### Starting state
+- Open PRs on `tokeniyi/packitbot`: #29 (`claude/daily-review-2026-11-03`, this workflow). No other open PR.
+- Standing issue #24 `Dev workflow requests`: five comments, all `[Claude run]` notes from earlier runs. No owner comments, so no owner requests this run.
+- PR #29 review comments: none.
+- Test environment: fresh sandbox. Python 3.12 venv at `.venv/` (git-ignored) with `requirements.txt` and `pytest-asyncio`; PostgreSQL 16 started; role `user` and database `packitbot_test` created (sandbox setup only, not a repo change).
+- Baseline on the branch before changes: **545 passed, 0 failed**.
+
+### Done this run
+- **P1 #17 stage 2 (admin legacy-Markdown user input): fixed.** Plan first, in `docs/plans/markdown-escaping.md` (site list, scope decisions, validation against the code, staged split).
+  - `bot/core/utils/formatters.py`: new `escape_markdown()` (prefixes `_ * ` [` with a backslash, `None` to `""`) and `markdown_code()` (replaces backticks inside code spans, since escapes are not honoured there).
+  - `bot/admin/handler.py`: applied to every user or database value in admin legacy-Markdown messages: driver-assignment notice to the driver (hall, dropoff), driver application detail, approved and rejected driver notices, the three driver-record detail views (name, phone, licence, plate, Telegram username), driver edit success (typed new value), user lookup (search identifier in a code span, name, username, phone, ban reason), ban, unban and promote confirmations (name, ban reason).
+  - Deliberately **not** escaped: the admin broadcast body (preview and `send_broadcast_message`). It is admin-authored text whose Markdown formatting is intended; escaping would remove the formatting. Recorded as stage 2b, needs an owner decision.
+  - Tests: new `tests/unit/core/test_markdown_escaping.py` (8 tests: helper behaviour, driver detail site, unban site with a name and with `None`).
+  - Fail-before/pass-after: with the original `bot/admin/handler.py` restored, 2 site tests fail; with the fix, 8 pass.
+- **Files touched:** `bot/core/utils/formatters.py`; `bot/admin/handler.py`; `tests/unit/core/test_markdown_escaping.py` (new); `docs/plans/markdown-escaping.md` (new); `docs/MAINTENANCE.md` (#17 status, headline, backlog count, run-log row); `docs/AUTOMATION_PROGRESS.md` (this entry).
+
+### Owner requests received this run
+- None. Issue #24 has no owner comments.
+
+### Plan validation
+- `docs/plans/markdown-escaping.md` was checked against `bot/admin/handler.py`, `bot/core/constants/messages.py` (the `MSG_DRIVER_DETAIL_TITLE` and `MSG_DRIVER_EDIT_SUCCESS` templates are filled with `.format`, so escaping is applied at the call site), `bot/core/utils/formatters.py` and `bot/core/services/notification_service.py`. The broadcast exclusion was confirmed against the code.
+- Stage split: 2a (this run) admin user values; 2b broadcast body, needs an owner decision; 2c per-site tests for the driver-side HTML sites.
+
+### Verification
+- `pytest` full suite (Python 3.12, local PostgreSQL 16, `packitbot_test`): **553 passed, 0 failed** (baseline 545; +8 new tests).
+- Fail-before/pass-after: `tests/unit/core/test_markdown_escaping.py` run against the original `bot/admin/handler.py` gives 2 failed, 6 passed; with the fix, 8 passed.
+- `python -m compileall -q bot tests`: clean.
+- No linter is configured, so none was run.
+- Not manually checked against live Telegram rendering. The escape set (`_ * ` [`) follows Telegram's legacy-Markdown documentation.
+
+### Multi-run task status
+- P0: all fixed.
+- P1: #13, #15, #17 (HTML sites and admin Markdown sites), #22 fixed. #21 stage 1 done (2026-11-03), stage 2 decided (guards kept). #17 stage 2c (driver-side HTML tests) and stage 2b (broadcast, owner decision) open. #18, #19 open.
+
+### Outstanding (for next run, in suggested order)
+1. **P1 #17 stage 2c, per-site tests for driver-side HTML messages.** `bot/driver/handler.py`: accept, status-update, active-delivery and admin rejection-alert messages now use `escape_html`, verified only by grep and compile. Add one test per site following `tests/unit/core/test_html_escaping.py`, and fail-before for each.
+2. **P1 #18 (`student/service.py` opens its own sessions):** `bot/student/service.py` around lines 38, 88, 99, 116, 173, 201, 225. Make `session` a required first parameter like `bot/driver/` and `bot/admin/`, passed from `bot/student/handlers/registration.py` (`submit_registration`, around line 183). Grep callers first; plan in `docs/plans/student-service-sessions.md` if above about five.
+3. **P1 #19 (throttling unusable at the default rate):** `bot/core/middlewares/throttling.py` lines 114-135 and 65-71. Options: a real token bucket (burst about 5, carry the fractional remainder, evict idle > 1 h), or delete `_get_redis` and fix the docstring. Needs a decision; plan first.
+4. **P1 #17 stage 2b (broadcast body escaping), owner decision needed:** the admin broadcast body is sent with `parse_mode="Markdown"` on purpose. Escaping it would remove the admin's formatting. Ask the owner whether they want it escaped, and if so, whether a preview-time parse check is preferred.
+5. **Alembic test isolation:** consider resetting the schema at the start of `tests/integration/db/test_alembic.py`. Deliberately not done, because `DROP SCHEMA` against a developer's `DATABASE_URL` is destructive. Needs an owner decision on a dedicated test database.
+6. **Dependency pin conflict:** `pydantic` 2.14.2 / `pydantic-core` 2.50.2 blocked by aiogram 3.31.0 (requires `pydantic<2.14`). Re-check when aiogram relaxes it.
+7. **Major dependency upgrade (not applied):** `multidict` 6.7.1 → 7.2.1. Needs its own run with a full suite pass.
+
+### Found but not changed, and why
+- **Attribution session ID.** The stored prompt names `session_01VLAbn74n9b7QhQiKpdAp5k`. This run's attribution reminder names `session_01VLAbn6TWruSncqzXaExSdR`. This run used the stored prompt's ID in the commit trailer, as earlier runs did, because it is the owner's configured instruction. The owner should confirm which one to use.
+- **`.agents/rules/GEMINI.md` says "DO NOT RUN pytest".** It conflicts with this routine, which requires tests before commit. The routine's rule was followed. The owner should reconcile the two.
+- **Admin broadcast body** left unescaped on purpose (see outstanding item 4).
+- **Stray root files** `PENDING` (empty), `pr16_review.md`, `pr17_review.md`, and the `.agents/` and `.hermes/` directories are left in place. Deleting files is outside this run's scope.
+- **`.env.example`, `Dockerfile`, `docker-compose.yml`** were not reviewed for secrets (out of scope under the hard rules).
+
+### Dependency upgrades applied
+- None this run. Dependency checks were not repeated, because owner-independent outstanding work came first.
+
+### Major dependency upgrades available
+- `multidict` 6.7.1 → 7.2.1 (major, not applied).
+
+---
+
 ## Run 2026-11-05 05:39 WAT (Africa/Lagos)
 
 **Branch:** `claude/daily-review-2026-11-03` (continued; same branch as open PR #29, so no new branch was cut)

@@ -77,6 +77,7 @@ from bot.core.constants.messages import (
 from bot.core.exceptions import PackitbotError, ValidationError
 from bot.core.models.user import User
 from bot.core.services.notification_service import notify_driver_approval_status, send_broadcast_message
+from bot.core.utils.formatters import escape_markdown, markdown_code
 from bot.core.utils.callback_data import AdminAssign, AdminDriverApproval, AdminDriverEdit, AdminDriverManage, AdminDriverRemove, AdminUserAction
 from bot.request.schemas import AssignDriverDTO
 from bot.request.service import RequestService
@@ -346,7 +347,7 @@ async def handle_confirm_driver_assignment(
                     from bot.driver.keyboards import driver_assignment_response_keyboard
                     await callback.bot.send_message(
                         chat_id=driver_profile.user.telegram_id,
-                        text=f"{MSG_NOTIFY_DRIVER_ASSIGNED}\n\n📦 **Request #{updated_req.id}**\n📍 Pickup: {updated_req.hall_of_residence}\n🎯 Dropoff: {updated_req.dropoff_address}",
+                        text=f"{MSG_NOTIFY_DRIVER_ASSIGNED}\n\n📦 **Request #{updated_req.id}**\n📍 Pickup: {escape_markdown(updated_req.hall_of_residence)}\n🎯 Dropoff: {escape_markdown(updated_req.dropoff_address)}",
                         reply_markup=driver_assignment_response_keyboard(updated_req.id),
                         parse_mode="Markdown",
                     )
@@ -411,15 +412,15 @@ async def handle_view_driver_detail(
         detail = await get_driver_application_detail(session=session, driver_id=callback_data.driver_id)
         text = (
             f"🚘 **Driver Application Review**\n\n"
-            f"👤 **Name:** {detail.full_name}\n"
-            f"📱 **Phone:** {detail.phone_number}\n"
+            f"👤 **Name:** {escape_markdown(detail.full_name)}\n"
+            f"📱 **Phone:** {escape_markdown(detail.phone_number)}\n"
             f"🚗 **Vehicle:** {detail.vehicle_type.upper()}\n"
-            f"🔢 **Plate Number:** {detail.plate_number}\n"
-            f"🪪 **License Number:** {detail.license_number}\n"
+            f"🔢 **Plate Number:** {escape_markdown(detail.plate_number)}\n"
+            f"🪪 **License Number:** {escape_markdown(detail.license_number)}\n"
             f"📌 **Status:** {detail.status.value.upper()}\n"
         )
         if detail.username:
-            text += f"💬 **Telegram:** @{detail.username}\n"
+            text += f"💬 **Telegram:** @{escape_markdown(detail.username)}\n"
 
         keyboard = driver_approval_keyboard(detail.driver_id)
         await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
@@ -459,8 +460,8 @@ async def handle_approve_driver(
 
         await callback.message.edit_text(
             f"✅ **Driver Approved Successfully!**\n\n"
-            f"👤 **Driver:** {approved_driver.full_name}\n"
-            f"📱 **Phone:** {approved_driver.phone_number}\n"
+            f"👤 **Driver:** {escape_markdown(approved_driver.full_name)}\n"
+            f"📱 **Phone:** {escape_markdown(approved_driver.phone_number)}\n"
             f"Status updated to `APPROVED`.",
             parse_mode="Markdown",
         )
@@ -500,7 +501,7 @@ async def handle_reject_driver(
 
         await callback.message.edit_text(
             f"❌ **Driver Application Rejected**\n\n"
-            f"👤 **Driver:** {rejected_driver.full_name}\n"
+            f"👤 **Driver:** {escape_markdown(rejected_driver.full_name)}\n"
             f"Status updated to `REJECTED`.",
             parse_mode="Markdown",
         )
@@ -609,18 +610,18 @@ async def handle_view_driver_detail_manage(
     try:
         detail = await get_driver_by_id(session=session, driver_id=callback_data.driver_id)
         text = MSG_DRIVER_DETAIL_TITLE.format(
-            full_name=detail.full_name,
-            phone_number=detail.phone_number,
-            license_number=detail.license_number,
+            full_name=escape_markdown(detail.full_name),
+            phone_number=escape_markdown(detail.phone_number),
+            license_number=escape_markdown(detail.license_number),
             vehicle_type=detail.vehicle_type.upper(),
-            plate_number=detail.plate_number,
+            plate_number=escape_markdown(detail.plate_number),
             status=detail.status.value.upper(),
             availability=detail.availability.upper(),
             rating_avg=f"{detail.rating_avg:.1f}",
             total_deliveries=detail.total_deliveries,
         )
         if detail.username:
-            text += f"\n💬 **Telegram:** @{detail.username}"
+            text += f"\n💬 **Telegram:** @{escape_markdown(detail.username)}"
 
         keyboard = driver_detail_keyboard(detail.driver_id)
         await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
@@ -739,7 +740,7 @@ async def handle_driver_field_input(
         await message.answer(
             MSG_DRIVER_EDIT_SUCCESS.format(
                 field=field_label,
-                value=new_value,
+                value=escape_markdown(new_value),
             ),
             parse_mode="Markdown",
         )
@@ -826,18 +827,18 @@ async def handle_remove_driver_cancel(
         detail = await get_driver_by_id(session=session, driver_id=callback_data.driver_id)
         keyboard = driver_detail_keyboard(detail.driver_id)
         text = MSG_DRIVER_DETAIL_TITLE.format(
-            full_name=detail.full_name,
-            phone_number=detail.phone_number,
-            license_number=detail.license_number,
+            full_name=escape_markdown(detail.full_name),
+            phone_number=escape_markdown(detail.phone_number),
+            license_number=escape_markdown(detail.license_number),
             vehicle_type=detail.vehicle_type.upper(),
-            plate_number=detail.plate_number,
+            plate_number=escape_markdown(detail.plate_number),
             status=detail.status.value.upper(),
             availability=detail.availability.upper(),
             rating_avg=f"{detail.rating_avg:.1f}",
             total_deliveries=detail.total_deliveries,
         )
         if detail.username:
-            text += f"\n💬 **Telegram:** @{detail.username}"
+            text += f"\n💬 **Telegram:** @{escape_markdown(detail.username)}"
 
         await callback.message.edit_text(
             MSG_DRIVER_REMOVE_CANCELLED + "\n\n" + text,
@@ -875,18 +876,18 @@ async def handle_driver_edit_back(
         detail = await get_driver_by_id(session=session, driver_id=driver_id)
         keyboard = driver_detail_keyboard(detail.driver_id)
         text = MSG_DRIVER_DETAIL_TITLE.format(
-            full_name=detail.full_name,
-            phone_number=detail.phone_number,
-            license_number=detail.license_number,
+            full_name=escape_markdown(detail.full_name),
+            phone_number=escape_markdown(detail.phone_number),
+            license_number=escape_markdown(detail.license_number),
             vehicle_type=detail.vehicle_type.upper(),
-            plate_number=detail.plate_number,
+            plate_number=escape_markdown(detail.plate_number),
             status=detail.status.value.upper(),
             availability=detail.availability.upper(),
             rating_avg=f"{detail.rating_avg:.1f}",
             total_deliveries=detail.total_deliveries,
         )
         if detail.username:
-            text += f"\n💬 **Telegram:** @{detail.username}"
+            text += f"\n💬 **Telegram:** @{escape_markdown(detail.username)}"
 
         await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
         await callback.answer()
@@ -959,7 +960,7 @@ async def process_user_search(
 
     if not user_detail:
         await message.answer(
-            f"❌ No user found matching `{identifier}`.\n"
+            f"❌ No user found matching `{markdown_code(identifier)}`.\n"
             f"Please check the ID or username and try again with /users.",
             parse_mode="Markdown",
         )
@@ -974,14 +975,14 @@ async def process_user_search(
         f"👤 **User Profile Details**\n\n"
         f"🆔 **DB ID:** {user_detail.user_id}\n"
         f"📱 **Telegram ID:** {user_detail.telegram_id}\n"
-        f"👤 **Name:** {user_detail.full_name or 'N/A'}\n"
-        f"💬 **Username:** @{user_detail.username if user_detail.username else 'N/A'}\n"
-        f"📞 **Phone:** {user_detail.phone_number or 'N/A'}\n"
+        f"👤 **Name:** {escape_markdown(user_detail.full_name) or 'N/A'}\n"
+        f"💬 **Username:** @{escape_markdown(user_detail.username) if user_detail.username else 'N/A'}\n"
+        f"📞 **Phone:** {escape_markdown(user_detail.phone_number) or 'N/A'}\n"
         f"🎭 **Role:** {role_str}\n"
         f"📌 **Status:** {status_icon}\n"
     )
     if user_detail.account_status == "banned":
-        text += f"⚠️ **Ban Reason:** {user_detail.banned_reason or 'No reason provided'}\n"
+        text += f"⚠️ **Ban Reason:** {escape_markdown(user_detail.banned_reason) or 'No reason provided'}\n"
         text += f"🕒 **Banned At:** {user_detail.banned_at or 'N/A'}\n"
 
     keyboard = user_action_keyboard(user_detail)
@@ -1044,9 +1045,9 @@ async def process_ban_reason(
         updated_user = await ban_user(session, dto)
         await message.answer(
             f"🛑 **User #{updated_user.user_id} has been banned.**\n\n"
-            f"👤 **Name:** {updated_user.full_name or 'N/A'}\n"
+            f"👤 **Name:** {escape_markdown(updated_user.full_name) or 'N/A'}\n"
             f"📌 **Status:** BANNED\n"
-            f"📝 **Reason:** {updated_user.banned_reason or 'None'}",
+            f"📝 **Reason:** {escape_markdown(updated_user.banned_reason) or 'None'}",
             parse_mode="Markdown",
         )
     except PackitbotError as e:
@@ -1076,7 +1077,7 @@ async def handle_unban_user(
         updated_user = await unban_user(session, dto)
         await callback.message.edit_text(
             f"🟢 **User #{updated_user.user_id} has been unbanned.**\n\n"
-            f"👤 **Name:** {updated_user.full_name or 'N/A'}\n"
+            f"👤 **Name:** {escape_markdown(updated_user.full_name) or 'N/A'}\n"
             f"📌 **Status:** ACTIVE",
             parse_mode="Markdown",
         )
@@ -1108,7 +1109,7 @@ async def handle_promote_admin(
         updated_user = await promote_admin(session, dto)
         await callback.message.edit_text(
             f"⭐ **User #{updated_user.user_id} promoted to ADMIN!**\n\n"
-            f"👤 **Name:** {updated_user.full_name or 'N/A'}\n"
+            f"👤 **Name:** {escape_markdown(updated_user.full_name) or 'N/A'}\n"
             f"🎭 **Role:** ADMIN",
             parse_mode="Markdown",
         )

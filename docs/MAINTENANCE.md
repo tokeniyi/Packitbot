@@ -76,7 +76,7 @@ Use `uv` to provision 3.12 — do not attempt to run the suite under the system 
   completion): **502 passed, 10 failed** (5 fixed, 0 regressions). The 10 remaining failures
   are pre-existing (3 PostgreSQL-dependent, 7 AsyncMock integration).
 - **Remaining open P1 items:** #17 (HTML-mode sites escaped 2026-11-05; admin legacy-Markdown
-  input still open), #18 (student/service.py opens own sessions), #19 (throttling unusable).
+  sites escaped 2026-11-06 except the broadcast preview by design), #18 (student/service.py opens own sessions), #19 (throttling unusable).
   #15 fixed 2026-11-04.
   #21 stage 1 fixed 2026-11-03; stage 2 decided 2026-11-04 (see `docs/plans/callback-message-guards.md`).
 - **Architectural drift.** Only `bot/request/` follows the layering in
@@ -322,9 +322,13 @@ Added `escape_html()` to `bot/core/utils/formatters.py`; every user-entered or d
 HTML-mode messages in `student/handlers/requests.py` (review summary, request detail, edit diff),
 `student/handlers/profile.py`, and `driver/handler.py` (accept/status/active/rejection-alert
 messages) now goes through it. 3 call-site tests fail before the fix and pass after.
-**Still open (stage 2):** admin sends `parse_mode="Markdown"` (legacy) with unescaped user input
-(`admin/handler.py` ~lines 313, 349, 377-384, 414-417, 462-463, 503, 926-935). Legacy Markdown
-needs escaping of `_ * ` [` rather than HTML escaping, so plan it first.
+**Stage 2 FIXED 2026-11-06.** Plan in `docs/plans/markdown-escaping.md`. Added `escape_markdown()`
+(escapes `_ * ` [`) and `markdown_code()` (for code spans) to `bot/core/utils/formatters.py`.
+Every user/DB value in admin legacy-Markdown messages (driver assignment notice, driver detail
+and edit views, approve/reject, user lookup, ban/unban/promote, driver edit success, search
+identifier) now goes through one of them. The admin-authored broadcast body is deliberately not
+escaped (its Markdown formatting is intended). 8 new tests; 2 site tests fail before the fix.
+**Stage 2c (open):** per-site tests for the driver-side HTML sites (coverage gap).
 
 **#18 `student/service.py` opens its own sessions inside the middleware's transaction** —
 `service.py:38, 88, 99, 116, 173, 201, 225`. Make `session` a required first parameter like
@@ -408,6 +412,7 @@ an `if callback.message:` guard does not protect against the real failure: an
 | 2026-10-28 | `claude/daily-review-2026-10-28` | Re-verified P0 #3, #4, #5 against current code; statuses updated; progress log added. Test suite still could not run (no PyPI, no deps installed). | see `docs/AUTOMATION_PROGRESS.md` | **Docs only.** |
 | 2026-10-29 | `claude/daily-review-2026-10-29` | Confirmed P0 #3 remainder (`total_deliveries` still counts Feedback rows) and P0 #5 handler gaps by reading code. Test suite still could not run (PyPI and npm do not resolve; no deps installed). | see `docs/AUTOMATION_PROGRESS.md` | **Docs only.** |
 | 2026-11-03 | `claude/daily-review-2026-11-03` | P1 #21 stage 1: callback message guard middleware; minor/patch dep bumps; driver test patch fix | #29 | **Fixed.** 8 middleware tests. Suite 532 passed. |
+| 2026-11-06 | `claude/daily-review-2026-11-03` (continued) | P1 #17 stage 2: `escape_markdown()` / `markdown_code()` helpers; admin legacy-Markdown user values escaped; plan in `docs/plans/markdown-escaping.md`. Broadcast body left unescaped by design. | #29 | **Fixed (admin Markdown sites).** 8 new tests (2 site tests fail before fix). Suite 553 passed. |
 | 2026-11-05 | `claude/daily-review-2026-11-03` (continued) | P1 #17 stage 1: shared `escape_html()` helper; HTML-mode user input escaped in student request review/detail/edit, student profile, and driver accept/status/active/rejection messages. Admin legacy-Markdown sites still open. | #29 | **Fixed (HTML sites).** 8 new tests (3 call-site tests fail before fix). Suite 545 passed. |
 | 2026-11-04 | `claude/daily-review-2026-11-03` (continued) | P1 #15 raw exception text in four user-facing replies; P1 #21 stage 2 decision (guards kept); SQLAlchemy/propcache/pytest-asyncio patch bumps | #29 | **Fixed.** 5 regression tests (all fail pre-fix). Suite 537 passed. |
 | 2026-10-30 | `claude/daily-review-2026-10-30` | No code change. Test suite still could not run: `pypi.org` and `files.pythonhosted.org` fail DNS resolution, no deps installed (fifth consecutive blocked run). Created standing issue #24 `Dev workflow requests`. | see `docs/AUTOMATION_PROGRESS.md` | **Docs only.** |
@@ -416,7 +421,7 @@ an `if callback.message:` guard does not protect against the real failure: an
 | 2026-11-03 | `claude/daily-review-2026-11-03` | P1 #21 stage 1: `CallbackMessageGuardMiddleware` blocks callbacks with an `InaccessibleMessage` or `None` message (plan in `docs/plans/callback-message-guards.md`). Fixed `test_routes_rejection_through_service` (patch target). Minor/patch dependency bumps; P0 #7 Alembic tests verified green on a fresh `packitbot_test`. | see `docs/AUTOMATION_PROGRESS.md` | **Fix + tests.** Suite: 532 passed. |
 | 2026-10-30 | `fix/driver-callback-error-message` | P1 #22 completion: `bot/driver/handler.py` returned hardcoded `"Invalid callback data."` instead of `ErrorMessages.INVALID_INPUT` (4 sites), failing 4 `test_callback_int_parsing.py` tests. Also `RequestService` was imported locally inside 3 handler functions, so `test_routes_rejection_through_service`'s `patch("bot.driver.handler.RequestService")` target silently no-opped. Fixed both: module-level import + `ErrorMessages.INVALID_INPUT` at all 4 sites. | #26 | **Fixed.** Suite: 502 passed, 10 failed (was 497 passed, 15 failed). 5 tests fixed, 0 regressions. |
 
-**Remaining backlog:** 0 × P0 (all fixed; #6 was not a bug), 4 × P1 (#17 stage 2 for admin Markdown, #18, #19; #21 stage 3 optional), 12 × P2, 7 × P3 = **23 open items** (#17 partly fixed).
+**Remaining backlog:** 0 × P0 (all fixed; #6 was not a bug), 3 × P1 (#18, #19; #21 stage 3 optional; #17 stage 2c coverage only), 12 × P2, 7 × P3 = **22 open items** (#17 stage 2 fixed).
 
 ### 2026-10-08 run notes
 

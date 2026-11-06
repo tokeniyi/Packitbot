@@ -61,6 +61,49 @@ def escape_html(value: object) -> str:
     return html.escape(str(value), quote=False)
 
 
+_MARKDOWN_SPECIAL = ("_", "*", "`", "[")
+
+
+def escape_markdown(value: object) -> str:
+    """Escape a value for interpolation into a ``parse_mode="Markdown"`` message.
+
+    Legacy Markdown treats ``_``, ``*``, ``` ` ``` and ``[`` as entity markers. A
+    user-entered or database value containing one of them makes Telegram reject
+    the whole message. Each marker is prefixed with a backslash, which legacy
+    Markdown honours. ``None`` becomes ``""``. Use :func:`markdown_code` instead
+    for values placed inside a backtick code span.
+
+    Args:
+        value: Any value; it is converted with ``str()`` first.
+
+    Returns:
+        The escaped text, safe to embed in legacy-Markdown message text.
+    """
+    if value is None:
+        return ""
+    text = str(value)
+    for char in _MARKDOWN_SPECIAL:
+        text = text.replace(char, "\\" + char)
+    return text
+
+
+def markdown_code(value: object) -> str:
+    """Make a value safe to place inside a legacy-Markdown code span.
+
+    Backslash escapes are not honoured inside a code entity, so backticks are
+    replaced with an apostrophe instead. ``None`` becomes ``""``.
+
+    Args:
+        value: Any value; it is converted with ``str()`` first.
+
+    Returns:
+        The text with no backtick characters.
+    """
+    if value is None:
+        return ""
+    return str(value).replace("`", "'")
+
+
 def _utc_to_wat(utc_dt: datetime) -> datetime:
     """Convert a UTC datetime to West Africa Time (WAT).
 
