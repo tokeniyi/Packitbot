@@ -75,9 +75,10 @@ Use `uv` to provision 3.12 — do not attempt to run the suite under the system 
   Baseline established 2026-10-30: **497 passed, 15 failed**. After this run's change (P1 #22
   completion): **502 passed, 10 failed** (5 fixed, 0 regressions). The 10 remaining failures
   are pre-existing (3 PostgreSQL-dependent, 7 AsyncMock integration).
-- **Remaining open P1 items:** #15 (raw exception text leaked), #17 (unescaped HTML
-  in `parse_mode` messages), #18 (student/service.py opens own sessions), #19
-  (throttling unusable), #21 (callback.message `None` guards, 23 sites in admin/handler.py).
+- **Remaining open P1 items:** #17 (HTML-mode sites escaped 2026-11-05; admin legacy-Markdown
+  sites escaped 2026-11-06 except the broadcast preview by design), #18 (student/service.py opens own sessions), #19 (throttling unusable).
+  #15 fixed 2026-11-04.
+  #21 stage 1 fixed 2026-11-03; stage 2 decided 2026-11-04 (see `docs/plans/callback-message-guards.md`).
 - **Architectural drift.** Only `bot/request/` follows the layering in
   `.agents/rules/GEMINI.md`. The recurring `users.id` vs `DriverProfile.id` vs
   `telegram_id` ambiguity is the root cause of the entire P0 cluster.
@@ -304,17 +305,30 @@ slice (`requests.py:603-609, 637-644`). `total_pages` was always 1, Next never r
 - **Tests:** Updated `tests/unit/request/test_service.py` to mock `session.begin_nested()` as an async context manager (same pattern as `tests/unit/driver/test_service.py`).
 - **Validation:** All 466 unit tests pass. 7 pre-existing integration failures unchanged.
 
-**#15 Raw exception text leaked to users** — `registration.py:193`, `requests.py:583`,
-`driver/handler.py:435, 552` — can surface table, column, and constraint names. Log with
-`logger.exception`, send a fixed string.
+**#15 ~~Raw exception text leaked to users~~ — FIXED 2026-11-04 (branch `claude/daily-review-2026-11-03`)**
+`registration.py` (student `submit_registration`), `requests.py` (`submit_request_creation`),
+`driver/handler.py` (`process_submit_registration`, `toggle_availability_handler`) interpolated
+`str(exc)` into replies. Now they log with `logger.exception` and reply with
+`ErrorMessages.SOMETHING_WENT_WRONG`. `PackitbotError` messages still pass through, since they are
+written for users and the global handler already shows them. Tests: `tests/unit/core/test_user_facing_errors.py`
+(5 tests; all 5 fail on the pre-fix code).
 
 **#16 ~~`echo=True` hardcoded on the production engine~~ — FIXED (PR #17, `fix/echo-sql-logging`)**
 `bot/core/db/session.py:46` wrote every INSERT (including phone numbers and addresses) to stdout,
   defeating the PII scrubbing in `logging.py`. Gated behind `settings.debug_sql: bool = False`.
 
-**#17 Unescaped user input in `parse_mode="HTML"` messages** — `requests.py:155-163, 679`;
-`driver/handler.py:648-649, 758-762, 888-889`; admin uses unescaped Markdown input
-(`admin/handler.py:313, 377-384, 926-935`). Add a shared `render_html()` that escapes by default.
+**#17 Unescaped user input in `parse_mode="HTML"` messages** — **HTML sites FIXED 2026-11-05.**
+Added `escape_html()` to `bot/core/utils/formatters.py`; every user-entered or database value in
+HTML-mode messages in `student/handlers/requests.py` (review summary, request detail, edit diff),
+`student/handlers/profile.py`, and `driver/handler.py` (accept/status/active/rejection-alert
+messages) now goes through it. 3 call-site tests fail before the fix and pass after.
+**Stage 2 FIXED 2026-11-06.** Plan in `docs/plans/markdown-escaping.md`. Added `escape_markdown()`
+(escapes `_ * ` [`) and `markdown_code()` (for code spans) to `bot/core/utils/formatters.py`.
+Every user/DB value in admin legacy-Markdown messages (driver assignment notice, driver detail
+and edit views, approve/reject, user lookup, ban/unban/promote, driver edit success, search
+identifier) now goes through one of them. The admin-authored broadcast body is deliberately not
+escaped (its Markdown formatting is intended). 8 new tests; 2 site tests fail before the fix.
+**Stage 2c (open):** per-site tests for the driver-side HTML sites (coverage gap).
 
 **#18 `student/service.py` opens its own sessions inside the middleware's transaction** —
 `service.py:38, 88, 99, 116, 173, 201, 225`. Make `session` a required first parameter like
@@ -330,8 +344,14 @@ correct the docstring.
 Re-encoded as UTF-8. All dependencies are still in `requirements.txt`; `pyproject.toml`
   does not yet carry them.
 
-**#21 `callback.message` used without `None` guards** — 23 sites in `admin/handler.py`
-(239 … 1213). Add one router-level wrapper.
+**#21 `callback.message` used without `None` guards — stage 1 FIXED (2026-11-03); stage 2 decided 2026-11-04 (no removal)**
+Original note: 23 sites in `admin/handler.py` (239 … 1213). Validation on 2026-11-03 found that
+an `if callback.message:` guard does not protect against the real failure: an
+`InaccessibleMessage` (message older than 48 h) is truthy but has no `edit_text`. Stage 1 adds
+`CallbackMessageGuardMiddleware` (`bot/core/middlewares/callback_message.py`), registered on
+`dp.callback_query`, which answers such callbacks with an alert and skips the handler. Tests:
+`tests/unit/core/test_callback_message_middleware.py`. Plan and remaining stages:
+`docs/plans/callback-message-guards.md`.
 
 **#22 ~~`int()` on callback data without try/except~~ — FIXED (PR #13 + commit `de263bb`, PR #20; completed 2026-10-30)**
 `admin/handler.py:289` (`admin_assign_req`), `driver/handler.py` (`driver_accept`, `driver_reject`, `driver_step`),
@@ -391,12 +411,17 @@ Re-encoded as UTF-8. All dependencies are still in `requirements.txt`; `pyprojec
 | 2026-10-13 | `fix/integrity-error-savepoint` | P1 #14 `IntegrityError` → `ValidationError` never reaches user (SAVEPOINT) | #19 | **Fixed.** 7 service methods wrapped in SAVEPOINT. Tests updated. 466 unit tests pass. |
 | 2026-10-28 | `claude/daily-review-2026-10-28` | Re-verified P0 #3, #4, #5 against current code; statuses updated; progress log added. Test suite still could not run (no PyPI, no deps installed). | see `docs/AUTOMATION_PROGRESS.md` | **Docs only.** |
 | 2026-10-29 | `claude/daily-review-2026-10-29` | Confirmed P0 #3 remainder (`total_deliveries` still counts Feedback rows) and P0 #5 handler gaps by reading code. Test suite still could not run (PyPI and npm do not resolve; no deps installed). | see `docs/AUTOMATION_PROGRESS.md` | **Docs only.** |
+| 2026-11-03 | `claude/daily-review-2026-11-03` | P1 #21 stage 1: callback message guard middleware; minor/patch dep bumps; driver test patch fix | #29 | **Fixed.** 8 middleware tests. Suite 532 passed. |
+| 2026-11-06 | `claude/daily-review-2026-11-03` (continued) | P1 #17 stage 2: `escape_markdown()` / `markdown_code()` helpers; admin legacy-Markdown user values escaped; plan in `docs/plans/markdown-escaping.md`. Broadcast body left unescaped by design. | #29 | **Fixed (admin Markdown sites).** 8 new tests (2 site tests fail before fix). Suite 553 passed. |
+| 2026-11-05 | `claude/daily-review-2026-11-03` (continued) | P1 #17 stage 1: shared `escape_html()` helper; HTML-mode user input escaped in student request review/detail/edit, student profile, and driver accept/status/active/rejection messages. Admin legacy-Markdown sites still open. | #29 | **Fixed (HTML sites).** 8 new tests (3 call-site tests fail before fix). Suite 545 passed. |
+| 2026-11-04 | `claude/daily-review-2026-11-03` (continued) | P1 #15 raw exception text in four user-facing replies; P1 #21 stage 2 decision (guards kept); SQLAlchemy/propcache/pytest-asyncio patch bumps | #29 | **Fixed.** 5 regression tests (all fail pre-fix). Suite 537 passed. |
 | 2026-10-30 | `claude/daily-review-2026-10-30` | No code change. Test suite still could not run: `pypi.org` and `files.pythonhosted.org` fail DNS resolution, no deps installed (fifth consecutive blocked run). Created standing issue #24 `Dev workflow requests`. | see `docs/AUTOMATION_PROGRESS.md` | **Docs only.** |
 | 2026-10-31 | `claude/daily-review-2026-10-31` | Test suite now runs (PyPI reachable; local PostgreSQL 16 started for the alembic tests). Fixed 11 pre-existing failures: test harness only (AsyncMock sessions lacked `begin_nested()` context manager, handler tests patched wrong names or omitted the injected session, alembic autogenerate test leaked a revision file). P0 #3 remainder fixed: `total_deliveries` counts DELIVERED requests. Added P0 #5 ownership-guard tests for driver callbacks. Patch-level dependency bumps (aiohttp kept at 3.14.3 because 3.14.5 needs yarl 1.25). Suite: 503 passed. | see `docs/AUTOMATION_PROGRESS.md` | **Fix + tests.** |
 | 2026-10-27 | `claude/daily-review-2026-10-27` | Stale-status audit: P0 #1 confirmed fixed (`dbf4ba8`), P0 #2 handler fix confirmed; no code changed (test suite could not be run: PyPI returned 403 through the agent proxy) | see `docs/AUTOMATION_PROGRESS.md` | **Docs only.** |
+| 2026-11-03 | `claude/daily-review-2026-11-03` | P1 #21 stage 1: `CallbackMessageGuardMiddleware` blocks callbacks with an `InaccessibleMessage` or `None` message (plan in `docs/plans/callback-message-guards.md`). Fixed `test_routes_rejection_through_service` (patch target). Minor/patch dependency bumps; P0 #7 Alembic tests verified green on a fresh `packitbot_test`. | see `docs/AUTOMATION_PROGRESS.md` | **Fix + tests.** Suite: 532 passed. |
 | 2026-10-30 | `fix/driver-callback-error-message` | P1 #22 completion: `bot/driver/handler.py` returned hardcoded `"Invalid callback data."` instead of `ErrorMessages.INVALID_INPUT` (4 sites), failing 4 `test_callback_int_parsing.py` tests. Also `RequestService` was imported locally inside 3 handler functions, so `test_routes_rejection_through_service`'s `patch("bot.driver.handler.RequestService")` target silently no-opped. Fixed both: module-level import + `ErrorMessages.INVALID_INPUT` at all 4 sites. | #26 | **Fixed.** Suite: 502 passed, 10 failed (was 497 passed, 15 failed). 5 tests fixed, 0 regressions. |
 
-**Remaining backlog:** 0 × P0 (all fixed; #6 was not a bug), 5 × P1 (#15, #17, #18, #19, #21), 12 × P2, 7 × P3 = **24 open items**.
+**Remaining backlog:** 0 × P0 (all fixed; #6 was not a bug), 3 × P1 (#18, #19; #21 stage 3 optional; #17 stage 2c coverage only), 12 × P2, 7 × P3 = **22 open items** (#17 stage 2 fixed).
 
 ### 2026-10-08 run notes
 

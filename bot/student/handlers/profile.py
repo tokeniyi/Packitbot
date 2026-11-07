@@ -11,6 +11,7 @@ from bot.core.constants.enums import AccountStatus, VerificationStatus
 from bot.core.constants.messages import ErrorMessages, SuccessMessages
 from bot.core.constants.quick_replies import BTN_MY_PROFILE
 from bot.core.exceptions import NotFoundError, ValidationError
+from bot.core.utils.formatters import escape_html
 from bot.core.utils.validators import validate_phone
 from bot.student.keyboards import req_hall_selection_keyboard, student_persistent_menu
 from bot.student.service import (
@@ -62,10 +63,10 @@ async def _show_profile(
 
     text = (
         "👤 <b>Student Profile</b>\n\n"
-        f"• <b>Name:</b> {name_display}\n"
+        f"• <b>Name:</b> {escape_html(name_display)}\n"
         f"• <b>Telegram ID:</b> <code>{uid}</code>\n"
-        f"• <b>Phone Number:</b> {phone}\n"
-        f"• <b>Default Hall:</b> {default_hall}\n"
+        f"• <b>Phone Number:</b> {escape_html(phone)}\n"
+        f"• <b>Default Hall:</b> {escape_html(default_hall)}\n"
         f"• <b>Status:</b> {status_text}\n\n"
         "📊 <b>Delivery Stats:</b>\n"
         f"• Active Requests: {active_requests}\n"

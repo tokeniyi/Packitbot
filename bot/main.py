@@ -56,6 +56,7 @@ from bot.core.exceptions import PackitbotError
 from bot.core.keyboards.common_kb import HomeButton
 from bot.core.loader import get_bot, get_dispatch
 from bot.core.middlewares.auth import AuthMiddleware
+from bot.core.middlewares.callback_message import CallbackMessageGuardMiddleware
 from bot.core.middlewares.db_session import DbSessionMiddleware
 from bot.core.middlewares.logging import LoggingMiddleware, logger
 from bot.core.middlewares.rbac import RBACMiddleware
@@ -450,6 +451,8 @@ def main() -> None:
     dp.update.outer_middleware(ThrottlingMiddleware(settings))
     dp.update.outer_middleware(AuthMiddleware(settings))
     dp.update.outer_middleware(RBACMiddleware())
+    # Callback-only guard: runs after RBAC, before any handler.
+    dp.callback_query.outer_middleware(CallbackMessageGuardMiddleware())
 
     try:
         if settings.webhook_url:

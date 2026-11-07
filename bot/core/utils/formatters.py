@@ -18,12 +18,14 @@ Function Calls:
     - format_request_summary(...) -> str
     - format_driver_name(full_name) -> str
     - format_rating(rating_avg) -> str
+    - escape_html(value) -> str
 
 Cross-References:
     - Depends on: bot.core.constants.enums.*
     - Imported by: bot/student/handlers/registration.py, bot/student/handlers/requests.py, bot/common/start.py, bot/driver/handler.py
 """
 
+import html
 from datetime import date, datetime, timedelta
 
 from bot.core.constants.enums import (
@@ -38,6 +40,68 @@ from bot.core.constants.enums import (
 )
 
 WAT_OFFSET = timedelta(hours=1)
+
+
+def escape_html(value: object) -> str:
+    """Escape a value for interpolation into a ``parse_mode="HTML"`` message.
+
+    Every user-entered or database-sourced value must pass through this before
+    it is placed in an HTML-formatted message, otherwise a value such as
+    ``<b>`` breaks the markup or injects formatting. ``None`` becomes ``""``.
+    Literal markup written in the message template is left untouched.
+
+    Args:
+        value: Any value; it is converted with ``str()`` first.
+
+    Returns:
+        The escaped text, safe to embed in HTML-mode message text.
+    """
+    if value is None:
+        return ""
+    return html.escape(str(value), quote=False)
+
+
+_MARKDOWN_SPECIAL = ("_", "*", "`", "[")
+
+
+def escape_markdown(value: object) -> str:
+    """Escape a value for interpolation into a ``parse_mode="Markdown"`` message.
+
+    Legacy Markdown treats ``_``, ``*``, ``` ` ``` and ``[`` as entity markers. A
+    user-entered or database value containing one of them makes Telegram reject
+    the whole message. Each marker is prefixed with a backslash, which legacy
+    Markdown honours. ``None`` becomes ``""``. Use :func:`markdown_code` instead
+    for values placed inside a backtick code span.
+
+    Args:
+        value: Any value; it is converted with ``str()`` first.
+
+    Returns:
+        The escaped text, safe to embed in legacy-Markdown message text.
+    """
+    if value is None:
+        return ""
+    text = str(value)
+    for char in _MARKDOWN_SPECIAL:
+        text = text.replace(char, "\\" + char)
+    return text
+
+
+def markdown_code(value: object) -> str:
+    """Make a value safe to place inside a legacy-Markdown code span.
+
+    Backslash escapes are not honoured inside a code entity, so backticks are
+    replaced with an apostrophe instead. ``None`` becomes ``""``.
+
+    Args:
+        value: Any value; it is converted with ``str()`` first.
+
+    Returns:
+        The text with no backtick characters.
+    """
+    if value is None:
+        return ""
+    return str(value).replace("`", "'")
 
 
 def _utc_to_wat(utc_dt: datetime) -> datetime:

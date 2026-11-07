@@ -146,6 +146,7 @@ class ErrorMessages:
     ACCESS_DENIED_UNREGISTERED: Final[str] = "⛔ Your registration is not complete. Use /start to begin setup."
     ACCESS_DENIED_NOT_FULLY_REGISTERED: Final[str] = "⛔ Your registration is not fully completed. Please complete registration first."
     DRIVER_NOT_AUTHORIZED: Final[str] = "⛔ Driver registration requires pre-authorization. Please contact an admin to request driver access."
+    MESSAGE_EXPIRED: Final[str] = "⌛ This message is too old to use. Please start again from the menu."
 
 
 # ==============================================================================
