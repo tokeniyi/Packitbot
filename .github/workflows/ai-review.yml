@@ -91,7 +91,7 @@ jobs:
                   { role: 'system', content: system },
                   { role: 'user', content: prompt }
                 ],
-                max_tokens: 1800,
+                max_tokens: 4000,
                 temperature: 0.1
               }),
               signal: AbortSignal.timeout(180000)
@@ -101,9 +101,31 @@ jobs:
               return;
             }
             const data = await response.json();
-            const review = data.choices?.[0]?.message?.content;
-            if (!review || typeof review !== 'string') {
-              core.setFailed('Kilo returned no review text.');
+            const choice = data.choices?.[0];
+            const message = choice?.message;
+            const rawContent = message?.content;
+            const review = typeof rawContent === 'string'
+              ? rawContent.trim()
+              : Array.isArray(rawContent)
+                ? rawContent.filter(p => p?.type === 'text' && typeof p.text === 'string')
+                    .map(p => p.text).join('\\n').trim()
+                : '';
+            if (!review) {
+              // Log metadata only. Never log the API response body, prompts, or key.
+              core.error('Kilo returned no usable review text. ' + JSON.stringify({
+                model: data.model || process.env.KILO_MODEL,
+                choices: data.choices?.length ?? 0,
+                finish_reason: choice?.finish_reason ?? null,
+                message_keys: message ? Object.keys(message) : [],
+                content_type: Array.isArray(rawContent) ? 'array' : typeof rawContent,
+                content_length: typeof rawContent === 'string' ? rawContent.length : null,
+                usage: data.usage ? {
+                  prompt_tokens: data.usage.prompt_tokens,
+                  completion_tokens: data.usage.completion_tokens,
+                  total_tokens: data.usage.total_tokens
+                } : null
+              }));
+              core.setFailed('Kilo returned no review text; inspect metadata above.');
               return;
             }
 
