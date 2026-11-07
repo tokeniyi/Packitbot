@@ -77,7 +77,7 @@ async def prompt_feedback_rating(callback: CallbackQuery, state: FSMContext, ses
     repo = RequestRepository(session)
     req = await repo.get_by_id(req_id)
 
-    user_id = await resolve_user_id(callback.from_user.id, session)
+    user_id = await resolve_user_id(session, callback.from_user.id)
     if not req or req.student_id != user_id:
         if callback.message:
             await callback.message.answer(ErrorMessages.REQUEST_NOT_FOUND)
@@ -182,7 +182,7 @@ async def _finalize_feedback_submission(
         return
 
     service = RequestService(session)
-    user_id = await resolve_user_id(target.from_user.id, session)
+    user_id = await resolve_user_id(session, target.from_user.id)
     if user_id is None:
         err_msg = ErrorMessages.USER_NOT_FOUND
         if isinstance(target, CallbackQuery):

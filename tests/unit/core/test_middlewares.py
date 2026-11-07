@@ -9,7 +9,7 @@ from aiogram.types import Chat, Message, Update, User
 from bot.core.constants.enums import AccountStatus, UserRole
 from bot.core.middlewares.auth import AuthMiddleware
 from bot.core.middlewares.db_session import DbSessionMiddleware
-from bot.core.middlewares.throttling import ThrottlingMiddleware
+from bot.core.middlewares.throttling import THROTTLE_BURST, ThrottlingMiddleware
 
 
 """Unit tests for core middlewares and common handlers.
@@ -324,11 +324,11 @@ async def test_throttling_middleware_denies_rapid_updates():
     async def fake_handler(event, data):
         return "ok"
 
-    # First call should pass
-    result1 = await middleware(fake_handler, mock_update, {})
-    assert result1 == "ok"
+    # The bucket starts with THROTTLE_BURST tokens; a rate of 0 means none refill.
+    for _ in range(THROTTLE_BURST):
+        assert await middleware(fake_handler, mock_update, {}) == "ok"
 
-    # Immediate second call should be blocked (0 tokens regenerate)
+    # The next update finds the bucket empty and is blocked.
     result2 = await middleware(fake_handler, mock_update, {})
     assert result2 is None
     mock_update.message.answer.assert_awaited_once()

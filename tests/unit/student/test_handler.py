@@ -3,7 +3,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from aiogram.fsm.context import FSMContext
 
-from bot.core.exceptions import ValidationError
+from bot.core.exceptions import DuplicateResourceError, ValidationError
+from sqlalchemy.exc import IntegrityError
 from bot.core.models.student_profile import StudentProfile
 from bot.core.constants.enums import UserRole
 from bot.student.handler import (
@@ -49,6 +50,7 @@ async def test_register_student_creates_user_and_profile_atomically():
     row = MagicMock()
     row.scalar_one_or_none.return_value = None
     session.execute.return_value = row
+    session.begin_nested = MagicMock()
 
     profile = await register_student(
         telegram_id=999,
@@ -69,9 +71,10 @@ async def test_register_student_duplicate_raises_validation_error():
     row = MagicMock()
     row.scalar_one_or_none.return_value = None
     session.execute.return_value = row
-    session.flush.side_effect = ValidationError("IntegrityError")
+    session.begin_nested = MagicMock()
+    session.flush.side_effect = IntegrityError("insert", {}, Exception("duplicate key"))
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(DuplicateResourceError):
         await register_student(
             telegram_id=999,
             username="janedoe",
@@ -81,36 +84,45 @@ async def test_register_student_duplicate_raises_validation_error():
             session=session,
         )
 
+    session.begin_nested.assert_called_once()
     session.flush.assert_awaited()
 
 
+async def test_student_service_has_no_session_factory():
+    """P1 #18: the student service must not open sessions of its own.
+
+    Every function takes the middleware's session, so the module must not even
+    import ``async_session``. A second connection would bypass the update's
+    transaction.
+    """
+    import bot.student.service as student_service
+
+    assert not hasattr(student_service, "async_session")
+
+
 async def test_is_registered_returns_false_before_registration():
-    with patch("bot.student.service.async_session") as mock_session_factory:
-        session = AsyncMock()
-        mock_session_factory.return_value = session
+    session = AsyncMock()
 
-        row = MagicMock()
-        row.scalar_one_or_none.return_value = None
-        session.execute.return_value = row
+    row = MagicMock()
+    row.scalar_one_or_none.return_value = None
+    session.execute.return_value = row
 
-        result = await is_registered(telegram_id=999)
-        assert result is False
+    result = await is_registered(session, telegram_id=999)
+    assert result is False
 
 
 async def test_is_registered_returns_true_after_registration():
-    with patch("bot.student.service.async_session") as mock_session_factory:
-        session = AsyncMock()
-        mock_session_factory.return_value = session
+    session = AsyncMock()
 
-        user = MagicMock()
-        user.role = UserRole.STUDENT
+    user = MagicMock()
+    user.role = UserRole.STUDENT
 
-        row = MagicMock()
-        row.scalar_one_or_none.return_value = user
-        session.execute.return_value = row
+    row = MagicMock()
+    row.scalar_one_or_none.return_value = user
+    session.execute.return_value = row
 
-        result = await is_registered(telegram_id=999)
-        assert result is True
+    result = await is_registered(session, telegram_id=999)
+    assert result is True
 
 
 async def test_receive_full_name_advances_to_hall_state():
@@ -190,11 +202,13 @@ async def test_submit_registration_creates_profile():
     )
     state.clear = AsyncMock()
 
+    db = AsyncMock()
     with patch("bot.student.handlers.registration.register_student", new_callable=AsyncMock) as mock_reg:
         mock_reg.return_value = MagicMock(spec=StudentProfile)
-        await submit_registration(callback, state)
+        await submit_registration(callback, state, session=db)
 
         mock_reg.assert_awaited_once_with(
+            db,
             telegram_id=callback.from_user.id,
             username=callback.from_user.username,
             full_name=VALID_FULL_NAME,
@@ -219,7 +233,7 @@ async def test_submit_registration_shows_error_on_duplicate():
         mock_reg.side_effect = ValidationError(
             "This full name is already registered."
         )
-        await submit_registration(callback, state)
+        await submit_registration(callback, state, session=AsyncMock())
 
         callback.message.edit_text.assert_awaited_once()
 
