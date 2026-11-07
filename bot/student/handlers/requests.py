@@ -549,7 +549,7 @@ async def submit_request_creation(callback: CallbackQuery, state: FSMContext, se
             await callback.message.answer(ErrorMessages.SESSION_UNAVAILABLE, reply_markup=student_persistent_menu())
         return
 
-    user_id = await resolve_user_id(callback.from_user.id, session)
+    user_id = await resolve_user_id(session, callback.from_user.id)
     if user_id is None:
         if callback.message:
             await callback.message.answer(ErrorMessages.USER_NOT_FOUND, reply_markup=student_persistent_menu())
@@ -600,7 +600,7 @@ async def show_my_requests_list(message: Message, session=None, page: int = 1) -
         return
 
     repo = RequestRepository(session)
-    user_id = await resolve_user_id(message.from_user.id, session)
+    user_id = await resolve_user_id(session, message.from_user.id)
     if user_id is None:
         await message.answer(ErrorMessages.USER_NOT_FOUND, reply_markup=student_persistent_menu())
         return
@@ -632,7 +632,7 @@ async def my_requests_page_callback(callback: CallbackQuery, session=None) -> No
         return
 
     repo = RequestRepository(session)
-    user_id = await resolve_user_id(callback.from_user.id, session)
+    user_id = await resolve_user_id(session, callback.from_user.id)
     if user_id is None:
         if callback.message:
             await callback.message.answer(ErrorMessages.USER_NOT_FOUND, reply_markup=student_persistent_menu())
@@ -672,7 +672,7 @@ async def show_request_detail(callback: CallbackQuery, session=None) -> None:
     # MissingGreenlet when touched outside the awaited context.
     req = await repo.get_by_id_with_driver(req_id)
 
-    user_id = await resolve_user_id(callback.from_user.id, session)
+    user_id = await resolve_user_id(session, callback.from_user.id)
     if not req or req.student_id != user_id:
         if callback.message:
             await callback.message.answer(ErrorMessages.REQUEST_NOT_FOUND, reply_markup=HomeButton())
@@ -714,7 +714,7 @@ async def start_request_edit(callback: CallbackQuery, state: FSMContext, session
     repo = RequestRepository(session)
     req = await repo.get_by_id(req_id)
 
-    user_id = await resolve_user_id(callback.from_user.id, session)
+    user_id = await resolve_user_id(session, callback.from_user.id)
     if not req or req.student_id != user_id:
         if callback.message:
             await callback.message.answer(ErrorMessages.REQUEST_NOT_FOUND)
@@ -900,7 +900,7 @@ async def confirm_request_update(callback: CallbackQuery, state: FSMContext, ses
             await callback.message.answer(ErrorMessages.SESSION_UNAVAILABLE)
         return
 
-    actor_id = await resolve_user_id(callback.from_user.id, session)
+    actor_id = await resolve_user_id(session, callback.from_user.id)
     if actor_id is None:
         if callback.message:
             await callback.message.answer(ErrorMessages.USER_NOT_FOUND)
@@ -958,7 +958,7 @@ async def prompt_cancel_request(callback: CallbackQuery, session=None) -> None:
     repo = RequestRepository(session)
     req = await repo.get_by_id(req_id)
 
-    user_id = await resolve_user_id(callback.from_user.id, session)
+    user_id = await resolve_user_id(session, callback.from_user.id)
     if not req or req.student_id != user_id:
         if callback.message:
             await callback.message.answer(ErrorMessages.REQUEST_NOT_FOUND)
@@ -995,7 +995,7 @@ async def confirm_cancel_request(callback: CallbackQuery, session=None) -> None:
             await callback.message.answer(ErrorMessages.SESSION_UNAVAILABLE)
         return
 
-    actor_id = await resolve_user_id(callback.from_user.id, session)
+    actor_id = await resolve_user_id(session, callback.from_user.id)
     if actor_id is None:
         if callback.message:
             await callback.message.answer(ErrorMessages.USER_NOT_FOUND)

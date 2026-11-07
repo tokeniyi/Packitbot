@@ -50,7 +50,7 @@ async def test_student_registration_hides_raw_exception_text():
         new_callable=AsyncMock,
         side_effect=RuntimeError(LEAKY),
     ):
-        await submit_registration(cb, _state({"full_name": "Tester", "hall": "A"}))
+        await submit_registration(cb, _state({"full_name": "Tester", "hall": "A"}), session=AsyncMock())
 
     text = _sent_text(cb.message.edit_text)
     assert text == ErrorMessages.SOMETHING_WENT_WRONG
@@ -64,7 +64,7 @@ async def test_student_registration_keeps_domain_error_text():
         new_callable=AsyncMock,
         side_effect=ValidationError("You are already registered."),
     ):
-        await submit_registration(cb, _state({"full_name": "Tester", "hall": "A"}))
+        await submit_registration(cb, _state({"full_name": "Tester", "hall": "A"}), session=AsyncMock())
 
     assert _sent_text(cb.message.edit_text) == "You are already registered."
 
