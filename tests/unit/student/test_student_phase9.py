@@ -3,7 +3,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from aiogram.fsm.context import FSMContext
 
-from bot.core.exceptions import ValidationError
+from bot.core.exceptions import DuplicateResourceError, ValidationError
+from sqlalchemy.exc import IntegrityError
 from bot.core.models.student_profile import StudentProfile
 from bot.core.constants.enums import UserRole
 from bot.student.schemas import RegisterStudentDTO
@@ -44,6 +45,7 @@ async def test_register_student_creates_user_and_profile():
     row = MagicMock()
     row.scalar_one_or_none.return_value = None
     session.execute.return_value = row
+    session.begin_nested = MagicMock()
 
     profile = await register_student(
         telegram_id=999,
@@ -67,9 +69,10 @@ async def test_register_student_duplicate_raises_validation_error():
     # and flush() raises to simulate a unique constraint violation.
     row.scalar_one_or_none.return_value = None
     session.execute.return_value = row
-    session.flush.side_effect = ValidationError("IntegrityError")
+    session.begin_nested = MagicMock()
+    session.flush.side_effect = IntegrityError("insert", {}, Exception("duplicate key"))
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(DuplicateResourceError):
         await register_student(
             telegram_id=999,
             username="testuser",
@@ -81,83 +84,74 @@ async def test_register_student_duplicate_raises_validation_error():
 
     # The exception propagates out; the transactional context manager's
     # __aexit__ is invoked (on a real session this triggers rollback).
+    session.begin_nested.assert_called_once()
     session.flush.assert_awaited()
 
 
 async def test_is_registered_returns_true_for_student():
     """Verify is_registered returns True when user exists and role is STUDENT."""
-    with patch("bot.student.service.async_session") as mock_session_factory:
-        session = AsyncMock()
-        mock_session_factory.return_value = session
+    session = AsyncMock()
 
-        user = MagicMock()
-        user.role = UserRole.STUDENT
+    user = MagicMock()
+    user.role = UserRole.STUDENT
 
-        row = MagicMock()
-        row.scalar_one_or_none.return_value = user
-        session.execute.return_value = row
+    row = MagicMock()
+    row.scalar_one_or_none.return_value = user
+    session.execute.return_value = row
 
-        assert await is_registered(telegram_id=999) is True
+    assert await is_registered(session, telegram_id=999) is True
 
 
 async def test_is_registered_returns_false_for_non_student():
     """Verify is_registered returns False when user exists but is not STUDENT."""
-    with patch("bot.student.service.async_session") as mock_session_factory:
-        session = AsyncMock()
-        mock_session_factory.return_value = session
+    session = AsyncMock()
 
-        user = MagicMock()
-        user.role = UserRole.DRIVER
+    user = MagicMock()
+    user.role = UserRole.DRIVER
 
-        row = MagicMock()
-        row.scalar_one_or_none.return_value = user
-        session.execute.return_value = row
+    row = MagicMock()
+    row.scalar_one_or_none.return_value = user
+    session.execute.return_value = row
 
-        assert await is_registered(telegram_id=999) is False
+    assert await is_registered(session, telegram_id=999) is False
 
 
 async def test_is_registered_returns_false_when_user_missing():
     """Verify is_registered returns False when no user is found."""
-    with patch("bot.student.service.async_session") as mock_session_factory:
-        session = AsyncMock()
-        mock_session_factory.return_value = session
+    session = AsyncMock()
 
-        row = MagicMock()
-        row.scalar_one_or_none.return_value = None
-        session.execute.return_value = row
+    row = MagicMock()
+    row.scalar_one_or_none.return_value = None
+    session.execute.return_value = row
 
-        assert await is_registered(telegram_id=999) is False
+    assert await is_registered(session, telegram_id=999) is False
 
 
 async def test_get_profile_returns_profile_when_exists():
     """Verify get_profile returns StudentProfile for valid user_id."""
-    with patch("bot.student.service.async_session") as mock_session_factory:
-        session = AsyncMock()
-        mock_session_factory.return_value = session
+    session = AsyncMock()
 
-        profile = MagicMock(spec=StudentProfile)
-        profile.user_id = 1
+    profile = MagicMock(spec=StudentProfile)
+    profile.user_id = 1
 
-        row = MagicMock()
-        row.scalar_one_or_none.return_value = profile
-        session.execute.return_value = row
+    row = MagicMock()
+    row.scalar_one_or_none.return_value = profile
+    session.execute.return_value = row
 
-        result = await get_profile(user_id=1)
-        assert result is profile
+    result = await get_profile(session, user_id=1)
+    assert result is profile
 
 
 async def test_get_profile_returns_none_when_missing():
     """Verify get_profile returns None when profile does not exist."""
-    with patch("bot.student.service.async_session") as mock_session_factory:
-        session = AsyncMock()
-        mock_session_factory.return_value = session
+    session = AsyncMock()
 
-        row = MagicMock()
-        row.scalar_one_or_none.return_value = None
-        session.execute.return_value = row
+    row = MagicMock()
+    row.scalar_one_or_none.return_value = None
+    session.execute.return_value = row
 
-        result = await get_profile(user_id=999)
-        assert result is None
+    result = await get_profile(session, user_id=999)
+    assert result is None
 
 
 # ============================================================================

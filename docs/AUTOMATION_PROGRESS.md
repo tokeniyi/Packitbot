@@ -5,6 +5,76 @@ Backlog source of truth: `docs/MAINTENANCE.md` (section 4). This file tracks wha
 
 ---
 
+## Run 2026-11-07 05:39 WAT (Africa/Lagos)
+
+**Branch:** `claude/daily-review-2026-11-07` (cut from `main` at `c982e51`; PR #29 was already merged, so no open `claude/daily-review` work existed)
+**PR:** opened against `main` at the end of this run (link in the PR list and in the final report).
+
+### Starting state
+- Open PRs on `tokeniyi/packitbot`: none. PR #29 (`claude/daily-review-2026-11-03`) is merged into `main`.
+- Standing issue #24 `Dev workflow requests`: six comments, all `[Claude run]` notes from earlier runs. No owner comments, so no owner requests this run.
+- Test environment: fresh sandbox. Python 3.12 venv at `.venv/` (git-ignored) with `requirements.txt` and `pytest-asyncio`. PostgreSQL 16 and Redis started; role `user` and database `packitbot_test` created (sandbox setup only, not a repo change).
+- Baseline on `main` before changes: **553 passed, 0 failed**.
+
+### Done this run
+- **P1 #17 stage 2c (driver-side HTML sites), per-site tests: done.** New `tests/unit/driver/test_html_escaping.py` (4 tests) drives `process_driver_accept` (driver message and student notification), `process_delivery_status_step` and `active_delivery_dashboard_handler` with a payload of `<b>pwned</b> & <a href>`, and asserts each site emits the escaped text. Fail-before: all 4 fail against the pre-fix handler (`git show 5f57002^:bot/driver/handler.py`).
+  - Files touched: `tests/unit/driver/test_html_escaping.py` (new).
+- **P1 #18 student service opens its own sessions: fixed.** Plan first in `docs/plans/student-service-sessions.md` (sites, callers, decisions, validation against the code). Implemented in one stage:
+  - `bot/student/service.py`: every function takes `session: AsyncSession` as its first, required argument. The fallback `async_session()` branches and the import are removed, so the module cannot open a second connection. `register_student` wraps its insert `flush()` in `begin_nested()` (SAVEPOINT, the #14 pattern) so a duplicate-ID `IntegrityError` rolls back only the insert. Added a flush before the profile refresh: a real-database test showed that refreshing a pending profile raises, which the old fallback path had avoided.
+  - `bot/student/handlers/registration.py`: `submit_registration` takes the middleware `session` and passes it to `register_student`. This was the one production caller that relied on the fallback.
+  - `bot/student/handlers/requests.py`, `bot/student/handlers/feedback.py`: `resolve_user_id(telegram_id, session)` calls reordered to `resolve_user_id(session, telegram_id)`, about 12 sites.
+  - Tests: `tests/unit/student/test_handler.py` and `test_student_phase9.py` updated to the new signatures; `is_registered` and `get_profile` tests pass a session directly instead of patching `async_session`; duplicate tests now raise `IntegrityError` and expect `DuplicateResourceError`, and assert the SAVEPOINT is used. `tests/unit/core/test_user_facing_errors.py` passes a session. New `test_student_service_has_no_session_factory` (fails on the old code, which imports `async_session`). New `tests/unit/student/test_register_student_real_session.py` (real `AsyncSession` on the SQLite fixture: register, then update through the same session).
+- **P1 #19 throttling: fixed.** `bot/core/middlewares/throttling.py` was effectively one update per second with no burst: the bucket started with one token and refilled with `int(elapsed * rate)`, which truncates to zero below one second. Now a real token bucket: `THROTTLE_BURST = 5` (new user starts full), fractional refill capped at the burst, buckets idle for more than 1 h evicted by a sweep at most once a minute, unused `_get_redis` and the `Redis` import removed. The `redis_url` setting is no longer read by this middleware (left in `bot/core/config.py`; not changed).
+  - Tests: new `tests/unit/core/test_throttling_bucket.py` (7 tests: burst, sixth update denied at default rate, fractional refill, refill cap, independent buckets, idle eviction, recent buckets kept). `tests/unit/core/test_middlewares.py`: the existing deny test was written for the old one-token bucket; it now checks that exactly `THROTTLE_BURST` updates pass at rate 0 and the next is denied.
+  - Fail-before: the new test module imports `THROTTLE_BURST`, which the old module does not define, so it errors at collection on the old code. That is not a behavioural fail-before. The old behaviour (second update in the same second denied) follows from the code and is what the burst test would catch.
+- **Dependency patch bump:** `typing-inspection` 0.4.4 → 0.4.5 in `requirements.txt` (pinned, patch). `pip check`: no broken requirements.
+- **Files touched:** `bot/student/service.py`; `bot/student/handlers/registration.py`; `bot/student/handlers/requests.py`; `bot/student/handlers/feedback.py`; `bot/core/middlewares/throttling.py`; `requirements.txt`; `tests/unit/driver/test_html_escaping.py` (new); `tests/unit/student/test_register_student_real_session.py` (new); `tests/unit/core/test_throttling_bucket.py` (new); `tests/unit/student/test_handler.py`; `tests/unit/student/test_student_phase9.py`; `tests/unit/core/test_user_facing_errors.py`; `tests/unit/core/test_middlewares.py`; `docs/plans/student-service-sessions.md` (new); `docs/MAINTENANCE.md` (#17, #18, #19 status, headline, backlog count, run log); `docs/AUTOMATION_PROGRESS.md` (this entry).
+
+### Owner requests received this run
+- None. Issue #24 has no owner comments.
+
+### Plan validation
+- `docs/plans/student-service-sessions.md` was checked against `bot/student/service.py`, `bot/core/middlewares/db_session.py` (session injected into handler data and committed or rolled back per update), every caller found by grep over `bot/` and `tests/`, and the existing test patch targets. The validation found one real defect that the plan had not anticipated: refreshing a new, unflushed profile fails on a real session (fixed with a flush, covered by the real-session test).
+- Throttling had no separate plan: the backlog gave two options (a real bucket, or deleting the dead code). The bucket was chosen because the backlog's own description of the defect (single token, no burst) is the one that matters for keyboard navigation. Choice recorded here for the owner to review.
+
+### Verification
+- `pytest` full suite (Python 3.12, local PostgreSQL 16, `packitbot_test`): **566 passed, 0 failed** (baseline 553; +4 driver escaping, +7 throttling, +1 no-session-factory, +1 real-session registration).
+- Fail-before/pass-after: driver escaping tests fail on the pre-fix handler (4 of 4). The no-session-factory test fails on the old service by construction. Throttling: see Done.
+- `python -m compileall -q bot tests`: clean.
+- `pip check`: no broken requirements.
+- No linter is configured in the repo, so none was run.
+- Not exercised: the duplicate-ID SAVEPOINT path only runs with mocks (the real-session test covers the insert and update paths on SQLite, not the `IntegrityError` race). Postgres-specific behaviour was not separately tested beyond the existing suite.
+
+### Multi-run task status
+- P0: all fixed.
+- P1: all fixed. #17 stage 2b (broadcast body escaping) is the only open decision; it needs the owner. #21 stage 3 is optional.
+
+### Outstanding (for next run, in suggested order)
+1. **P1 #17 stage 2b, admin broadcast body escaping: owner decision needed.** `bot/core/services/notification_service.py::send_broadcast_message` and the admin broadcast preview in `bot/admin/handler.py` send the body with `parse_mode="Markdown"` on purpose. Ask the owner (via `Dev workflow requests`) whether to escape it; if yes, a preview-time parse check is the safer option. Do not change without the answer.
+2. **Dependency major upgrade: `multidict` 6.7.1 → 7.2.1.** Not applied (major). Needs its own run with a full suite pass and a check that aiohttp/yarl still resolve.
+3. **Dependency pin conflict:** `pydantic` 2.14.3 / `pydantic_core` 2.50.4 blocked by `aiogram` 3.31.0 (requires `pydantic<2.14`). Re-check when aiogram relaxes it.
+4. **Alembic test isolation** (`tests/integration/db/test_alembic.py`): reset the schema at the start of the test. Deliberately not done because `DROP SCHEMA` against a developer's `DATABASE_URL` is destructive. Needs an owner decision on a dedicated test database.
+5. **P1 #21 stage 3 (optional):** the `if callback.message:` guards are unreachable after stage 1 but harmless. Decision recorded 2026-11-04; remove only if the owner wants the churn.
+6. **Minor follow-ups from #18 (low priority):** `bot/student/handlers/profile.py` handlers still declare `session=None`; the service now needs a real session, so the default can be removed. Also consider a real-Postgres test for the `IntegrityError` SAVEPOINT path using two concurrent sessions.
+7. **Minor follow-up from #19:** the throttling middleware no longer reads `settings.redis_url`. Consider whether the setting is still needed; it is config, so leave it unless the owner asks.
+
+### Found but not changed, and why
+- **Attribution session ID mismatch.** The stored prompt names `session_01VLAbn74n9b7QhQiKpdAp5k` for commit trailers, while this run's attribution reminder names `session_01VLAbn4xGvoqvt6szNbVgux`. This run used the stored prompt's ID, as earlier runs did, because the reminder defers to the owner's configured instruction. The owner should confirm which one to use.
+- **`.agents/rules/GEMINI.md` says "DO NOT RUN pytest".** It conflicts with this routine, which requires tests before commit. The routine's rule was followed. The owner should reconcile the two.
+- **Admin broadcast body** left unescaped on purpose (outstanding item 1).
+- **Stray root files** `PENDING` (empty), `pr16_review.md`, `pr17_review.md`, and the `.agents/` and `.hermes/` directories are left in place. Deleting files is outside this run's scope.
+- **`.env.example`, `Dockerfile`, `docker-compose.yml`** were not reviewed for secrets (out of scope under the hard rules).
+- **`pip` 24.0 → 26.3** is shown as outdated. It is not a project dependency, so not changed.
+
+### Dependency upgrades applied
+- Patch: `typing-inspection` 0.4.4 → 0.4.5.
+
+### Major dependency upgrades available
+- `multidict` 6.7.1 → 7.2.1 (major, not applied).
+- `pydantic` 2.14.3 is not applied: blocked by `aiogram` 3.31.0 (see outstanding item 3).
+
+---
+
 ## Run 2026-11-06 05:40 WAT (Africa/Lagos)
 
 **Branch:** `claude/daily-review-2026-11-03` (continued; same branch as open PR #29, so no new branch was cut)

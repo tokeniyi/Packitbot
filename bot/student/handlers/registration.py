@@ -5,6 +5,7 @@ from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.core.constants.messages import (
     ErrorMessages,
@@ -167,8 +168,12 @@ async def edit_phone(callback: CallbackQuery, state: FSMContext) -> None:
 
 
 @registration_router.callback_query(F.data == "review_submit")
-async def submit_registration(callback: CallbackQuery, state: FSMContext) -> None:
-    """Handle final submission of student registration."""
+async def submit_registration(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
+    """Handle final submission of student registration.
+
+    ``session`` is the update's DB session from ``DbSessionMiddleware``, so the
+    registration commits or rolls back with the rest of the update.
+    """
     await callback.answer()
     data = await state.get_data()
 
@@ -182,6 +187,7 @@ async def submit_registration(callback: CallbackQuery, state: FSMContext) -> Non
 
     try:
         await register_student(
+            session,
             telegram_id=callback.from_user.id,
             username=tg_username,
             full_name=full_name,
