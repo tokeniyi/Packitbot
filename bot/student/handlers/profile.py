@@ -5,6 +5,7 @@ from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.core.constants.commands import CMD_PROFILE
 from bot.core.constants.enums import AccountStatus, VerificationStatus
@@ -28,7 +29,7 @@ profile_router = Router()
 async def _show_profile(
     target: Message | CallbackQuery,
     state: FSMContext,
-    session=None,
+    session: AsyncSession,
     user_id: int | None = None,
 ) -> None:
     """Renders the student profile view with statistics."""
@@ -97,7 +98,7 @@ async def _show_profile(
 
 @profile_router.message(Command(CMD_PROFILE))
 @profile_router.message(F.text == BTN_MY_PROFILE)
-async def show_profile(message: Message, state: FSMContext, session=None) -> None:
+async def show_profile(message: Message, state: FSMContext, session: AsyncSession) -> None:
     """Show the student's profile."""
     await state.clear()
     await _show_profile(message, state, session=session)
@@ -125,7 +126,7 @@ async def profile_set_hall(callback: CallbackQuery, state: FSMContext) -> None:
 
 
 @profile_router.message(StudentProfileFSM.editing_phone)
-async def process_profile_phone_edit(message: Message, state: FSMContext, session=None) -> None:
+async def process_profile_phone_edit(message: Message, state: FSMContext, session: AsyncSession) -> None:
     """Validate and update the student's phone number."""
     try:
         phone = validate_phone(message.text)
@@ -150,7 +151,7 @@ async def process_profile_phone_edit(message: Message, state: FSMContext, sessio
 
 
 @profile_router.callback_query(StudentProfileFSM.editing_hall, F.data.startswith("req_hall:"))
-async def process_profile_hall_edit(callback: CallbackQuery, state: FSMContext, session=None) -> None:
+async def process_profile_hall_edit(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
     """Validate and update the student's default hall."""
     hall = callback.data.split(":", 1)[1]
     await callback.answer(f"Selected Hall: {hall}")

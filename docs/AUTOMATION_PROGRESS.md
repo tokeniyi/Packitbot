@@ -5,6 +5,64 @@ Backlog source of truth: `docs/MAINTENANCE.md` (section 4). This file tracks wha
 
 ---
 
+## Run 2026-11-08 05:40 WAT (Africa/Lagos)
+
+**Branch:** `claude/daily-review-2026-11-08` (cut from `main` at `dbde82c`; PR #30 was merged, and no `claude/daily-review` PR was open, so no prior branch was continued)
+**PR:** opened against `main` at the end of this run (link in the final report and the PR list).
+
+### Starting state
+- Open PRs on `tokeniyi/Packitbot`: none. PRs #26-#32 are all merged or closed.
+- Standing issue #24 `Dev workflow requests`: seven comments, all `[Claude run]` notes from earlier runs. No owner comments, so no owner requests this run.
+- Test environment: fresh sandbox. Python 3.12 venv at `.venv/` (git-ignored) with `requirements.txt`; PostgreSQL 16 and Redis started; role `user` and database `packitbot_test` created (sandbox setup only, not a repo change).
+- Baseline on `main` before changes: **566 passed, 0 failed**.
+
+### Done this run
+- **Outstanding item 6 from 2026-11-07 (student profile handlers still declare `session=None`): done.** `bot/student/handlers/profile.py`: `_show_profile`, `show_profile`, `process_profile_phone_edit` and `process_profile_hall_edit` now take a required `session: AsyncSession`. The `None` default would have passed `None` into the student service, which requires a real session since P1 #18. aiogram still injects the session from `DbSessionMiddleware`.
+  - New regression test `tests/unit/student/test_profile_handler_session.py` (4 cases, one per handler, checks that `session` has no default). Fail-before: 4 of 4 fail on the old handler file; pass after.
+- **P1 #11 status corrected in `docs/MAINTENANCE.md`: already fixed.** The dead admin-promotion block and `_ensure_admin_profile` are gone from `bot/core/middlewares/auth.py` (its docstring says so), and `tests/unit/core/test_middlewares.py::test_auth_middleware_does_not_promote_seed_admins` covers it. The backlog entry still said open; it is now marked fixed.
+- **Files touched:** `bot/student/handlers/profile.py`; `tests/unit/student/test_profile_handler_session.py` (new); `docs/MAINTENANCE.md` (#11 status); `docs/AUTOMATION_PROGRESS.md` (this entry).
+
+### Owner requests received this run
+- None. Issue #24 has no owner comments.
+
+### Plan validation
+- No multi-stage task this run. The profile change was checked against the service signatures in `bot/student/service.py` (`get_student_profile_with_stats`, `update_student_phone`, `update_student_hall` all take `session` first) and against the existing test suite, which calls none of the four handlers directly.
+
+### Verification
+- `pytest` full suite (Python 3.12, local PostgreSQL 16, `packitbot_test`): **570 passed, 0 failed** (baseline 566; +4 new session-requirement tests).
+- Fail-before/pass-after: new test module fails 4 of 4 with the old `profile.py` (stashed) and passes 4 of 4 with the fix.
+- `python -m compileall -q bot tests`: clean.
+- No linter is configured in the repo, so none was run.
+
+### Multi-run task status
+- P0: all fixed (#3 total_deliveries fixed 2026-10-31).
+- P1: all fixed except #17 stage 2b (admin broadcast body, owner decision) and #21 stage 3 (optional).
+
+### Outstanding (for next run, in suggested order)
+1. **P1 #17 stage 2b, admin broadcast body escaping: owner decision needed.** `bot/core/services/notification_service.py::send_broadcast_message` and the admin broadcast preview in `bot/admin/handler.py` send the body with `parse_mode="Markdown"` on purpose. Ask the owner (via `Dev workflow requests`) whether to escape it; if yes, a preview-time parse check is the safer option. Do not change without the answer.
+2. **Dependency major upgrade: `multidict` 6.7.1 → 7.2.1.** Not applied (major). Needs its own run with a full suite pass and a check that aiohttp/yarl still resolve.
+3. **Dependency pin conflict:** `pydantic` 2.13.4 → 2.14.3 and `pydantic-core` 2.46.4 → 2.50.4 are blocked by `aiogram` 3.31.0 (requires `pydantic<2.14`). Re-check when aiogram relaxes it.
+4. **Alembic test isolation** (`tests/integration/db/test_alembic.py`): reset the schema at the start of the test. Deliberately not done because `DROP SCHEMA` against a developer's `DATABASE_URL` is destructive. Needs an owner decision on a dedicated test database.
+5. **P1 #21 stage 3 (optional):** the `if callback.message:` guards are unreachable after stage 1 but harmless. Decision recorded 2026-11-04; remove only if the owner wants the churn.
+6. **Minor follow-up from #18 (low priority):** consider a real-Postgres test for the `IntegrityError` SAVEPOINT path using two concurrent sessions. The other `session=None` defaults in `bot/driver/`, `bot/student/handlers/requests.py`, `feedback.py`, `bot/common/start.py` and `bot/admin/handler.py` (about 20 handler signatures) follow the same pattern and could get the same treatment in a separate run, one module at a time, with a signature test per module.
+7. **Minor follow-up from #19:** the throttling middleware no longer reads `settings.redis_url`. Consider whether the setting is still needed; it is config, so leave it unless the owner asks.
+
+### Found but not changed, and why
+- **Attribution session ID mismatch.** The stored prompt names `session_01VLAbn74n9b7QhQiKpdAp5k` for commit trailers, while this run's attribution reminder names `session_01VLAbn6Xw221y18rXjbXqde`. This run used the stored prompt's ID, as earlier runs did, because the reminder defers to the owner's configured instruction. The owner should confirm which one to use.
+- **`.agents/rules/GEMINI.md` says "DO NOT RUN pytest".** It conflicts with this routine, which requires tests before commit. The routine's rule was followed. The owner should reconcile the two.
+- **Admin broadcast body** left unescaped on purpose (outstanding item 1).
+- **Stray root files** `PENDING` (empty), `pr16_review.md`, `pr17_review.md`, and the `.agents/` and `.hermes/` directories are left in place. Deleting files is outside this run's scope.
+- **`.env.example`, `Dockerfile`, `docker-compose.yml`** were not reviewed for secrets (out of scope under the hard rules).
+- **`RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited`** appears in `tests/unit/student/test_handler.py` and `test_student_phase9.py`. The tests pass; the warning comes from mocks on `session.add`, which is test noise and was not changed.
+
+### Dependency upgrades applied
+- None this run. `uv pip list --outdated` shows only `multidict` (major), and `pydantic`/`pydantic-core` (blocked by aiogram).
+
+### Major dependency upgrades available
+- `multidict` 6.7.1 → 7.2.1 (major, not applied).
+
+---
+
 ## Run 2026-11-07 05:39 WAT (Africa/Lagos)
 
 **Branch:** `claude/daily-review-2026-11-07` (cut from `main` at `c982e51`; PR #29 was already merged, so no open `claude/daily-review` work existed)
