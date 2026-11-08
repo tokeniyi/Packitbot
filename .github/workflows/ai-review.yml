@@ -54,7 +54,7 @@ jobs:
             const read = p => {
               try {
                 if (!safe(p)) return null;
-                const stat = fs.statSync(p);
+                const stat = fs.lstatSync(p);
                 if (!stat.isFile() || stat.size > 75000) return null;
                 const value = fs.readFileSync(p, 'utf8');
                 return value.includes('\0') ? null : value;
