@@ -243,7 +243,7 @@ prefixes to required roles, `PUBLIC_CALLBACK_PREFIXES` for always-allowed callba
 registration callbacks allow pre-authorized users without DRIVER role. 14 new tests
 added. Defence-in-depth for P0 #5.
 
-**#11 Dead admin-promotion block** — `bot/core/middlewares/auth.py:177-181` compares an
+**#11 ~~Dead admin-promotion block~~ — FIXED (block and `_ensure_admin_profile` removed from `auth.py`; no-promotion test in `tests/unit/core/test_middlewares.py`; status re-verified 2026-11-08)** — original note: `bot/core/middlewares/auth.py:177-181` compares an
 `int` against `str.split(",")`, which is always `False`. The block is unreachable; delete
 it and `_ensure_admin_profile` (88-111). `main.py::_seed_admins` already does this at boot.
 
