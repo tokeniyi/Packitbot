@@ -5,6 +5,81 @@ Backlog source of truth: `docs/MAINTENANCE.md` (section 4). This file tracks wha
 
 ---
 
+## Run 2026-11-09 05:44 WAT (Africa/Lagos)
+
+**Branch:** `claude/daily-review-2026-11-09` (cut from `main` at `ecd6bc4`; no `claude/daily-review` PR was open, so no prior branch was continued)
+**PR:** opened against `main` at the end of this run (link in the final report and the PR list).
+
+### Starting state
+- Open PRs on `tokeniyi/packitbot`: none. PR #33 (`claude/daily-review-2026-11-08`) merged 2026-11-08; PR #34 (`feat/kilo-contextual-pr-review`, owner's CI work) merged 2026-11-08.
+- Standing issue #24 `Dev workflow requests`: eight comments, all `[Claude run]` notes from earlier runs. No owner comments, so no owner requests this run.
+- Test environment: fresh sandbox. Python 3.12 venv at `.venv/` (git-ignored) with `requirements.txt` and `pytest-asyncio`; PostgreSQL 16 and Redis started; role `user` and database `packitbot_test` created (sandbox setup only, not a repo change).
+- Baseline on `main` before changes: **570 passed, 0 failed**.
+
+### Done this run
+- **Outstanding item 6 from 2026-11-08 (the `session=None` handler signatures, #18 follow-up): done for four of five modules.** The `session=None` default is removed and the parameter is required, with the `AsyncSession` import added where missing:
+  - `bot/driver/handler.py` (8 handlers). The unused `async_session` import inside `process_driver_accept` is removed.
+  - `bot/common/start.py` (`process_role_driver`).
+  - `bot/student/handlers/requests.py` (8 handlers; `show_my_requests_list` keeps its `page` default).
+  - `bot/student/handlers/feedback.py` (3 handlers).
+  - Left in place: the `if session is None:` guard branches. They are unreachable now and harmless, the same decision as the `callback.message` guards in #21.
+- **Newly found, fixed: `handle_confirm_driver_assignment` in `bot/admin/handler.py` opened its own `async_session()`.** That is a second connection outside the per-update transaction from `DbSessionMiddleware`, the same class of defect as P1 #18, and it was not in the backlog. The handler now takes the injected `session` (required) and no longer imports `async_session`. Behaviour is unchanged: it still calls `session.commit()` on success and `rollback()` on error.
+- **Test fixes forced by the change:**
+  - `tests/integration/handlers/test_driver_registration_flow.py::test_check_approval_status_for_approved_driver` called `check_approval_status(message)` with no session. It passed only because the `None` guard replied "session unavailable", and that reply was what the test asserted. The test now passes a session, and the approved-driver reply is what it checks.
+  - `tests/unit/admin/test_handler.py`: the two assignment tests now pass `session=` directly, not via a patched `async_session`.
+- **New regression tests (signature guards, one module each):**
+  - `tests/unit/driver/test_handler_session_required.py` (8 cases).
+  - `tests/unit/common/test_start_session_required.py` (1 case; new `tests/unit/common/` package).
+  - `tests/unit/student/test_request_feedback_handlers_session_required.py` (11 cases).
+  - `tests/unit/admin/test_handler.py::TestHandleConfirmDriverAssignmentSession` (2 cases: session is required; module has no `async_session`).
+- **Files touched:** `bot/admin/handler.py`; `bot/common/start.py`; `bot/driver/handler.py`; `bot/student/handlers/feedback.py`; `bot/student/handlers/requests.py`; `tests/integration/handlers/test_driver_registration_flow.py`; `tests/unit/admin/test_handler.py`; `tests/unit/driver/test_handler_session_required.py` (new); `tests/unit/common/__init__.py` and `tests/unit/common/test_start_session_required.py` (new); `tests/unit/student/test_request_feedback_handlers_session_required.py` (new); `docs/MAINTENANCE.md` (#18 follow-up note, headline, run log); `docs/AUTOMATION_PROGRESS.md` (this entry).
+
+### Owner requests received this run
+- None. Issue #24 has no owner comments since the 2026-11-08 run.
+
+### Plan validation
+- No multi-stage task this run, so no new plan file. Each signature change was checked against the aiogram wiring: `DbSessionMiddleware` is registered as an outer middleware on `dp.update` (`bot/main.py:450`), so every handler above receives `session` from the middleware and the default was never needed.
+- Checked every call site of the changed handlers with grep over `bot/` and `tests/`. Only the one integration test called a handler without a session.
+
+### Verification
+- `pytest` full suite (Python 3.12, local PostgreSQL 16, `packitbot_test`): **592 passed, 0 failed** (baseline 570; +22 signature/session tests).
+- Fail-before/pass-after: the 20 new signature cases for the four modules fail on the old code (`git stash` of `bot/`: 20 of 20 fail) and pass after. The 2 admin session tests fail on the old code and pass after.
+- `python -m compileall -q bot tests`: clean.
+- `pyflakes` on the changed modules reports only unused imports that were already there (`bot/admin/handler.py` lines 26, 59, 727; `bot/driver/handler.py` lines 55, 61; `bot/student/handlers/requests.py` line 44). Not touched, out of scope.
+- No linter is configured in the repo, so none was run beyond pyflakes.
+
+### Multi-run task status
+- P0: all fixed.
+- P1: all fixed except #17 stage 2b (admin broadcast body escaping, owner decision) and #21 stage 3 (optional). The #18 follow-up (handler sessions) is partly done; see Outstanding.
+
+### Outstanding (for next run, in suggested order)
+1. **P1 #17 stage 2b, admin broadcast body escaping: owner decision needed.** `bot/core/services/notification_service.py::send_broadcast_message` and the admin broadcast preview in `bot/admin/handler.py` send the body with `parse_mode="Markdown"` on purpose. Ask the owner (via `Dev workflow requests`) whether to escape it; if yes, a preview-time parse check is the safer option. Do not change without the answer.
+2. **#18 follow-up, admin handler signatures:** 26 `session: AsyncSession | None = None` parameters in `bot/admin/handler.py` (about lines 146-1287). Do one batch per run, as with the four modules this run: remove the default, add a signature test listing the handlers, and check the aiogram wiring is unchanged. `handle_confirm_driver_assignment` is already done.
+3. **#18 follow-up, `bot/driver/service.py::register_driver`:** it still opens its own `async_session()` when `session` is `None` (around line 149). Its only production caller (`process_submit_registration`) passes the middleware session, so the fallback can be removed and the parameter made required. Check the tests that call `register_driver` first.
+4. **Dead guards (cosmetic):** the `if session is None:` branches in the handlers changed this run are unreachable. Remove them only if the owner wants the churn.
+5. **Dependency major upgrade: `multidict` 6.7.1 → 7.2.1.** Not applied (major). Needs its own run with a full suite pass and a check that aiohttp/yarl still resolve.
+6. **Dependency pin conflict:** `pydantic` 2.13.4 → 2.14.3 and `pydantic-core` 2.46.4 → 2.50.4 are blocked by `aiogram` 3.31.0 (requires `pydantic<2.14`). Re-check when aiogram relaxes it.
+7. **Alembic test isolation** (`tests/integration/db/test_alembic.py`): reset the schema at the start of the test. Deliberately not done because `DROP SCHEMA` against a developer's `DATABASE_URL` is destructive. Needs an owner decision on a dedicated test database.
+8. **P1 #21 stage 3 (optional):** the `if callback.message:` guards are unreachable after stage 1 but harmless. Decision recorded 2026-11-04; remove only if the owner wants the churn.
+9. **Minor follow-up from #18:** a real-Postgres test for the `IntegrityError` SAVEPOINT path using two concurrent sessions.
+10. **Minor follow-up from #19:** the throttling middleware no longer reads `settings.redis_url`. Consider whether the setting is still needed; it is config, so leave it unless the owner asks.
+
+### Found but not changed, and why
+- **Attribution session ID mismatch.** The stored prompt names `session_01VLAbn74n9b7QhQiKpdAp5k` for commit trailers, while this run's attribution reminder names `session_01VLAbn6KPwze45dZGfv9CjV`. This run used the stored prompt's ID, as earlier runs did, because the owner's configured instruction takes precedence over the reminder. The owner should confirm which one to use.
+- **`.agents/rules/GEMINI.md` says "DO NOT RUN pytest".** It conflicts with this routine, which requires tests before commit. The routine's rule was followed. The owner should reconcile the two.
+- **Admin broadcast body** left unescaped on purpose (outstanding item 1).
+- **Stray root files** `PENDING` (empty), `pr16_review.md`, `pr17_review.md`, and the `.agents/` and `.hermes/` directories are left in place. Deleting files is outside this run's scope.
+- **`.env.example`, `Dockerfile`, `docker-compose.yml`** were not reviewed for secrets (out of scope under the hard rules).
+- **`RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited`** appears in `tests/unit/student/test_handler.py` and `test_student_phase9.py`. The tests pass; the warning is test noise and was not changed.
+- **Other self-managed sessions** outside the handler signatures: none found beyond outstanding items 2 and 3 (`grep -rn "async_session()" bot` shows `bot/driver/service.py` and `bot/admin/handler.py` only, plus the middleware's own factory).
+
+### Dependency upgrades applied
+- None this run. `pip list --outdated` shows only `multidict` (major), and `pydantic`/`pydantic-core` (blocked by aiogram). `pip` itself is not a project dependency.
+
+### Major dependency upgrades available
+- `multidict` 6.7.1 → 7.2.1 (major, not applied).
+- `pydantic` 2.14.3 and `pydantic-core` 2.50.4 are not applied: blocked by `aiogram` 3.31.0 (see outstanding item 6).
+
 ## Run 2026-11-08 05:40 WAT (Africa/Lagos)
 
 **Branch:** `claude/daily-review-2026-11-08` (cut from `main` at `dbde82c`; PR #30 was merged, and no `claude/daily-review` PR was open, so no prior branch was continued)

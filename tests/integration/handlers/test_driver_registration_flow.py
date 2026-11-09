@@ -94,7 +94,7 @@ class TestDriverRegistrationFlowIntegration:
             new_callable=AsyncMock,
             return_value=profile,
         ):
-            await check_approval_status(message)
+            await check_approval_status(message, session=AsyncMock())
 
         message.answer.assert_awaited_once()
 

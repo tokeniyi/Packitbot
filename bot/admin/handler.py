@@ -1,7 +1,6 @@
 # bot/admin/handler.py
 
 from bot.driver.repository import DriverRepository
-from bot.core.db.session import async_session
 from bot.core.constants.commands import CMD_DRIVERS
 import logging
 from aiogram import Router, F
@@ -313,6 +312,7 @@ async def handle_select_request_for_assignment(
 async def handle_confirm_driver_assignment(
     callback: CallbackQuery,
     callback_data: AdminAssign,
+    session: AsyncSession,
     user: User | None = None,
 ) -> None:
     """Executes driver assignment via RequestService and notifies the assigned driver."""
@@ -320,55 +320,54 @@ async def handle_confirm_driver_assignment(
         await callback.answer(ErrorMessages.ADMIN_ACCESS_REQUIRED, show_alert=True)
         return
 
-    async with async_session() as session:
-        try:
-            req_service = RequestService(session)
-            driver_repo = DriverRepository(session)
+    try:
+        req_service = RequestService(session)
+        driver_repo = DriverRepository(session)
 
-            driver_profile = await driver_repo.get_by_id(callback_data.driver_id)
-            if not driver_profile:
-                await callback.answer("❌ Driver profile not found.", show_alert=True)
-                return
+        driver_profile = await driver_repo.get_by_id(callback_data.driver_id)
+        if not driver_profile:
+            await callback.answer("❌ Driver profile not found.", show_alert=True)
+            return
 
-            # ``callback_data.driver_id`` is a ``DriverProfile`` primary key, but
-            # ``DeliveryRequest.driver_id`` is a foreign key to ``users.id``.
-            # Persist the owning user id, not the profile row id.
-            dto = AssignDriverDTO(
-                request_id=callback_data.request_id,
-                driver_id=driver_profile.user_id,
-                admin_id=user.id,
-            )
-            updated_req, event = await req_service.assign_driver(dto, driver_profile)
-            await session.commit()
+        # ``callback_data.driver_id`` is a ``DriverProfile`` primary key, but
+        # ``DeliveryRequest.driver_id`` is a foreign key to ``users.id``.
+        # Persist the owning user id, not the profile row id.
+        dto = AssignDriverDTO(
+            request_id=callback_data.request_id,
+            driver_id=driver_profile.user_id,
+            admin_id=user.id,
+        )
+        updated_req, event = await req_service.assign_driver(dto, driver_profile)
+        await session.commit()
 
-            # Notify driver
-            if driver_profile.user and driver_profile.user.telegram_id:
-                try:
-                    from bot.driver.keyboards import driver_assignment_response_keyboard
-                    await callback.bot.send_message(
-                        chat_id=driver_profile.user.telegram_id,
-                        text=f"{MSG_NOTIFY_DRIVER_ASSIGNED}\n\n📦 **Request #{updated_req.id}**\n📍 Pickup: {escape_markdown(updated_req.hall_of_residence)}\n🎯 Dropoff: {escape_markdown(updated_req.dropoff_address)}",
-                        reply_markup=driver_assignment_response_keyboard(updated_req.id),
-                        parse_mode="Markdown",
-                    )
-                except Exception as notif_err:
-                    logger.error("Failed to notify driver %s: %s", driver_profile.user.telegram_id, notif_err)
+        # Notify driver
+        if driver_profile.user and driver_profile.user.telegram_id:
+            try:
+                from bot.driver.keyboards import driver_assignment_response_keyboard
+                await callback.bot.send_message(
+                    chat_id=driver_profile.user.telegram_id,
+                    text=f"{MSG_NOTIFY_DRIVER_ASSIGNED}\n\n📦 **Request #{updated_req.id}**\n📍 Pickup: {escape_markdown(updated_req.hall_of_residence)}\n🎯 Dropoff: {escape_markdown(updated_req.dropoff_address)}",
+                    reply_markup=driver_assignment_response_keyboard(updated_req.id),
+                    parse_mode="Markdown",
+                )
+            except Exception as notif_err:
+                logger.error("Failed to notify driver %s: %s", driver_profile.user.telegram_id, notif_err)
 
-            await callback.message.edit_text(
-                f"✅ **Request #{updated_req.id} assigned successfully!**\n\n"
-                f"👤 **Driver ID:** {callback_data.driver_id}\n"
-                f"📌 **Status:** ASSIGNED",
-                parse_mode="Markdown",
-            )
-            await callback.answer("Driver assigned successfully!")
+        await callback.message.edit_text(
+            f"✅ **Request #{updated_req.id} assigned successfully!**\n\n"
+            f"👤 **Driver ID:** {callback_data.driver_id}\n"
+            f"📌 **Status:** ASSIGNED",
+            parse_mode="Markdown",
+        )
+        await callback.answer("Driver assigned successfully!")
 
-        except PackitbotError as e:
-            await session.rollback()
-            await callback.answer(str(e), show_alert=True)
-        except Exception as e:
-            await session.rollback()
-            logger.error("Error assigning driver: %s", e)
-            await callback.answer(MSG_SOMETHING_WENT_WRONG, show_alert=True)
+    except PackitbotError as e:
+        await session.rollback()
+        await callback.answer(str(e), show_alert=True)
+    except Exception as e:
+        await session.rollback()
+        logger.error("Error assigning driver: %s", e)
+        await callback.answer(MSG_SOMETHING_WENT_WRONG, show_alert=True)
 
 
 @admin_router.callback_query(F.data == "admin_pending_req_back")
