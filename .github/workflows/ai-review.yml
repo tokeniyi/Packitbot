@@ -171,10 +171,21 @@ jobs:
             });
             if (!response.ok) throw new Error(`Kilo gateway failed (HTTP ${response.status})`);
             const data = await response.json();
-            const raw = data.choices?.[0]?.message?.content;
+            const choice = data.choices?.[0];
+            const raw = choice?.message?.content;
             const review = typeof raw === 'string' ? raw.trim() : Array.isArray(raw)
-              ? raw.filter(p => p?.type === 'text').map(p => p.text).join('\n').trim() : '';
-            if (!review) throw new Error('Kilo returned no usable review text');
+              ? raw.filter(p => p?.type === 'text').map(p => p.text || '').join('\n').trim() : '';
+            if (!review) {
+              // Log response metadata only, never API credentials or model-generated content.
+              core.error('Kilo returned no usable review text');
+              core.info(`Model: ${data.model ?? 'unknown'}`);
+              core.info(`Finish reason: ${choice?.finish_reason ?? 'unknown'}`);
+              core.info(`Choices: ${data.choices?.length ?? 0}`);
+              core.info(`Prompt tokens: ${data.usage?.prompt_tokens ?? 'unknown'}`);
+              core.info(`Completion tokens: ${data.usage?.completion_tokens ?? 'unknown'}`);
+              core.info(`Content type: ${raw === null ? 'null' : typeof raw}`);
+              throw new Error('Kilo returned an empty review; inspect response metadata');
+            }
             const latest = await github.rest.pulls.get({owner,repo,pull_number});
             if (latest.data.head.sha !== pr.head.sha) {
               core.notice('PR changed while reviewing; suppressing stale results');
