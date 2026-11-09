@@ -5,6 +5,7 @@ from datetime import date
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
+from sqlalchemy.ext.asyncio import AsyncSession
 from aiogram.types import CallbackQuery, Message
 
 from bot.core.constants.commands import CMD_MY_REQUESTS, CMD_NEW_REQUEST
@@ -539,7 +540,7 @@ async def edit_request_field(callback: CallbackQuery, state: FSMContext) -> None
 
 
 @requests_router.callback_query(RequestCreateFSM.confirming_request, F.data == "req_submit")
-async def submit_request_creation(callback: CallbackQuery, state: FSMContext, session=None) -> None:
+async def submit_request_creation(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
     """Submit the completed delivery request creation form."""
     await callback.answer()
     data = await state.get_data()
@@ -593,7 +594,7 @@ async def submit_request_creation(callback: CallbackQuery, state: FSMContext, se
 
 @requests_router.message(F.text == BTN_MY_REQUESTS)
 @requests_router.message(Command(CMD_MY_REQUESTS))
-async def show_my_requests_list(message: Message, session=None, page: int = 1) -> None:
+async def show_my_requests_list(message: Message, session: AsyncSession, page: int = 1) -> None:
     """Display student's delivery requests history."""
     if session is None:
         await message.answer(MSG_EMPTY_STATE_REQUESTS, reply_markup=student_persistent_menu())
@@ -616,7 +617,7 @@ async def show_my_requests_list(message: Message, session=None, page: int = 1) -
 
 @requests_router.callback_query(F.data == "my_reqs_list")
 @requests_router.callback_query(F.data.startswith("my_reqs_page:"))
-async def my_requests_page_callback(callback: CallbackQuery, session=None) -> None:
+async def my_requests_page_callback(callback: CallbackQuery, session: AsyncSession) -> None:
     """Handle pagination callback for student requests list."""
     await callback.answer()
     page = 1
@@ -650,7 +651,7 @@ async def my_requests_page_callback(callback: CallbackQuery, session=None) -> No
 
 
 @requests_router.callback_query(F.data.startswith("my_req_detail:"))
-async def show_request_detail(callback: CallbackQuery, session=None) -> None:
+async def show_request_detail(callback: CallbackQuery, session: AsyncSession) -> None:
     """Display full details of a specific delivery request."""
     await callback.answer()
     req_id_str = callback.data.split(":")[1]
@@ -695,7 +696,7 @@ async def noop_callback(callback: CallbackQuery) -> None:
 # ==============================================================================
 
 @requests_router.callback_query(F.data.startswith("my_req_edit:"))
-async def start_request_edit(callback: CallbackQuery, state: FSMContext, session=None) -> None:
+async def start_request_edit(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
     """Initiate editing an existing PENDING request."""
     await callback.answer()
     req_id_str = callback.data.split(":")[1]
@@ -882,7 +883,7 @@ async def _store_field_change(
 
 
 @requests_router.callback_query(RequestUpdateFSM.confirming_update, F.data.startswith("req_update_confirm:"))
-async def confirm_request_update(callback: CallbackQuery, state: FSMContext, session=None) -> None:
+async def confirm_request_update(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
     """Apply the accumulated changes to the request via RequestService."""
     await callback.answer()
     data = await state.get_data()
@@ -939,7 +940,7 @@ async def confirm_request_update(callback: CallbackQuery, state: FSMContext, ses
 # ==============================================================================
 
 @requests_router.callback_query(F.data.startswith("my_req_cancel:"))
-async def prompt_cancel_request(callback: CallbackQuery, session=None) -> None:
+async def prompt_cancel_request(callback: CallbackQuery, session: AsyncSession) -> None:
     """Prompt the student for confirmation before cancelling a request."""
     await callback.answer()
     req_id_str = callback.data.split(":")[1]
@@ -979,7 +980,7 @@ async def prompt_cancel_request(callback: CallbackQuery, session=None) -> None:
 
 
 @requests_router.callback_query(F.data.startswith("my_req_cancel_confirm:"))
-async def confirm_cancel_request(callback: CallbackQuery, session=None) -> None:
+async def confirm_cancel_request(callback: CallbackQuery, session: AsyncSession) -> None:
     """Confirm and execute cancellation of a delivery request."""
     await callback.answer()
     req_id_str = callback.data.split(":")[1]

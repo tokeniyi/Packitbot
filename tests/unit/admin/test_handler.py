@@ -304,12 +304,6 @@ class TestHandleConfirmDriverAssignment:
                 return driver_profile
 
         class _FakeSession:
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *exc):
-                return False
-
             async def commit(self):
                 pass
 
@@ -317,11 +311,12 @@ class TestHandleConfirmDriverAssignment:
                 pass
 
         with (
-            patch("bot.admin.handler.async_session", return_value=_FakeSession()),
             patch("bot.admin.handler.RequestService", _FakeRequestService),
             patch("bot.admin.handler.DriverRepository", _FakeDriverRepository),
         ):
-            await handle_confirm_driver_assignment(callback, callback_data, user=user)
+            await handle_confirm_driver_assignment(
+                callback, callback_data, session=_FakeSession(), user=user
+            )
 
         assert captured["dto"].driver_id == 42
         assert captured["dto"].request_id == 5
@@ -332,7 +327,9 @@ class TestHandleConfirmDriverAssignment:
         student = MagicMock()
         student.role = UserRole.STUDENT
 
-        await handle_confirm_driver_assignment(callback, MagicMock(), user=student)
+        await handle_confirm_driver_assignment(
+            callback, MagicMock(), session=MagicMock(), user=student
+        )
 
         callback.answer.assert_awaited_once()
 
@@ -385,3 +382,26 @@ class TestDriverEditBackPayload:
         fetch.assert_not_awaited()
         cb.answer.assert_awaited_once_with(ErrorMessages.INVALID_INPUT, show_alert=True)
         cb.message.edit_text.assert_not_awaited()
+
+
+class TestHandleConfirmDriverAssignmentSession:
+    """The assignment handler must use the middleware session, not its own.
+
+    A handler that opens ``async_session()`` runs on a second connection outside
+    the per-update transaction managed by ``DbSessionMiddleware``. The session
+    must therefore be a required argument, and the module must not import the
+    session factory any more.
+    """
+
+    def test_session_is_required(self):
+        import inspect
+
+        from bot.admin import handler as admin_handler
+
+        param = inspect.signature(admin_handler.handle_confirm_driver_assignment).parameters["session"]
+        assert param.default is inspect.Parameter.empty
+
+    def test_module_does_not_open_own_session(self):
+        from bot.admin import handler as admin_handler
+
+        assert not hasattr(admin_handler, "async_session")

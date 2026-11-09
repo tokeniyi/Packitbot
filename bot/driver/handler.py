@@ -38,6 +38,7 @@ import logging
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
+from sqlalchemy.ext.asyncio import AsyncSession
 from aiogram.types import CallbackQuery, Message
 
 from bot.core.constants.enums import DriverAvailability, DriverStatus
@@ -110,7 +111,7 @@ async def _show_review_screen(target: Message | CallbackQuery, state: FSMContext
 
 @driver_router.message(Command("register_driver"))
 @driver_router.message(F.text == "🚘 Register as Driver")
-async def start_driver_registration(message: Message, state: FSMContext, session=None) -> None:
+async def start_driver_registration(message: Message, state: FSMContext, session: AsyncSession) -> None:
     """Initiate the driver registration flow or inform the user of their current status.
 
     Triggered by the ``/register_driver`` command or the "Register as Driver"
@@ -402,7 +403,7 @@ async def process_edit_field(callback: CallbackQuery, state: FSMContext) -> None
 
 
 @driver_router.callback_query(DriverRegistrationFSM.confirming_registration, F.data == "driver_submit_reg")
-async def process_submit_registration(callback: CallbackQuery, state: FSMContext, session=None) -> None:
+async def process_submit_registration(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
     """Persist the driver registration DTO and clear the FSM on success.
 
     Reads all collected fields from FSM data, constructs a
@@ -464,7 +465,7 @@ async def process_submit_registration(callback: CallbackQuery, state: FSMContext
 
 
 @driver_router.message(F.text == "🔄 Check Approval Status")
-async def check_approval_status(message: Message, session=None) -> None:
+async def check_approval_status(message: Message, session: AsyncSession) -> None:
     """Display the current approval status for the requesting driver.
 
     Triggered by the "Check Approval Status" text button. Looks up the
@@ -518,7 +519,7 @@ async def check_approval_status(message: Message, session=None) -> None:
 
 @driver_router.message(F.text.in_({"🟢 Go Available", "🔴 Go Offline"}))
 @driver_router.message(Command("toggle_availability"))
-async def toggle_availability_handler(message: Message, session=None) -> None:
+async def toggle_availability_handler(message: Message, session: AsyncSession) -> None:
     """Toggle the driver's availability between AVAILABLE and OFFLINE.
 
     Triggered by the "Go Available/Offline" text buttons or the
@@ -594,7 +595,7 @@ async def toggle_availability_handler(message: Message, session=None) -> None:
 
 
 @driver_router.callback_query(F.data.startswith("driver_accept:"))
-async def process_driver_accept(callback: CallbackQuery, session=None) -> None:
+async def process_driver_accept(callback: CallbackQuery, session: AsyncSession) -> None:
     """Handle a driver accepting an assigned delivery request.
 
     Parses the ``driver_accept:<request_id>`` callback, resolves the driver
@@ -628,7 +629,6 @@ async def process_driver_accept(callback: CallbackQuery, session=None) -> None:
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
     from bot.core.constants.enums import RequestStatus
-    from bot.core.db.session import async_session
     from bot.core.exceptions import PackitbotError
     from bot.core.models.delivery_request import DeliveryRequest
     from bot.core.models.user import User
@@ -716,7 +716,7 @@ async def process_driver_accept(callback: CallbackQuery, session=None) -> None:
 
 @driver_router.message(F.text == "📊 Active Delivery")
 @driver_router.message(Command("active_delivery"))
-async def active_delivery_dashboard_handler(message: Message, session=None) -> None:
+async def active_delivery_dashboard_handler(message: Message, session: AsyncSession) -> None:
     """Display the active delivery dashboard for the requesting driver.
 
     Finds the most recent delivery request in an active status (ACCEPTED,
@@ -806,7 +806,7 @@ async def active_delivery_dashboard_handler(message: Message, session=None) -> N
 
 
 @driver_router.callback_query(F.data.startswith("driver_step:"))
-async def process_delivery_status_step(callback: CallbackQuery, session=None) -> None:
+async def process_delivery_status_step(callback: CallbackQuery, session: AsyncSession) -> None:
     """Handle a delivery status progression step from the driver.
 
     Parses the ``driver_step:<action>:<request_id>`` callback (3 parts),
@@ -960,7 +960,7 @@ async def process_delivery_status_step(callback: CallbackQuery, session=None) ->
 
 
 @driver_router.callback_query(F.data.startswith("driver_reject:"))
-async def process_driver_reject(callback: CallbackQuery, session=None) -> None:
+async def process_driver_reject(callback: CallbackQuery, session: AsyncSession) -> None:
     """Handle a driver rejecting an assigned delivery request.
 
     Parses the ``driver_reject:<request_id>`` callback and hands the

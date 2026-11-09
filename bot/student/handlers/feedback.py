@@ -3,6 +3,7 @@
 import logging
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
+from sqlalchemy.ext.asyncio import AsyncSession
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy import func, select
 
@@ -58,7 +59,7 @@ async def _recalculate_driver_rating(session, driver_user_id: int) -> None:
 
 
 @feedback_router.callback_query(F.data.startswith("my_req_rate:"))
-async def prompt_feedback_rating(callback: CallbackQuery, state: FSMContext, session=None) -> None:
+async def prompt_feedback_rating(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
     """Prompt the student to rate a completed delivery request."""
     await callback.answer()
     req_id_str = callback.data.split(":")[1]
@@ -138,14 +139,14 @@ async def process_rating_selection(callback: CallbackQuery, state: FSMContext) -
 
 
 @feedback_router.callback_query(FeedbackFSM.entering_comment, F.data.startswith("feedback_skip_comment:"))
-async def process_feedback_skip_comment(callback: CallbackQuery, state: FSMContext, session=None) -> None:
+async def process_feedback_skip_comment(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
     """Handle skipping the optional comment step."""
     await callback.answer()
     await _finalize_feedback_submission(callback, state, session, comment=None)
 
 
 @feedback_router.message(FeedbackFSM.entering_comment)
-async def process_feedback_comment_message(message: Message, state: FSMContext, session=None) -> None:
+async def process_feedback_comment_message(message: Message, state: FSMContext, session: AsyncSession) -> None:
     """Handle the optional written comment and finalize submission."""
     comment = message.text.strip() if message.text else None
     await _finalize_feedback_submission(message, state, session, comment=comment)

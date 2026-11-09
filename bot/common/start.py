@@ -25,6 +25,7 @@ from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, StateFilter, or_f
 from aiogram.fsm.context import FSMContext
+from sqlalchemy.ext.asyncio import AsyncSession
 from aiogram.types import (
     BotCommand,
     BotCommandScopeChat,
@@ -208,7 +209,7 @@ async def process_role_student(callback: CallbackQuery, state: FSMContext) -> No
 
 
 @start_router.callback_query(F.data == "role:driver")
-async def process_role_driver(callback: CallbackQuery, state: FSMContext, session=None) -> None:
+async def process_role_driver(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
     """Handle the driver role selection callback."""
     await callback.answer()
     if session is None:
