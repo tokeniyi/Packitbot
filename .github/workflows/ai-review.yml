@@ -200,7 +200,7 @@ jobs:
               body: JSON.stringify({
                 model: process.env.KILO_MODEL,
                 messages: [{role:'system',content:system},{role:'user',content:prompt}],
-                max_tokens: 4000, temperature: 0.1
+                max_tokens: 12000, temperature: 0.1
               }),
               signal: AbortSignal.timeout(180000)
             });
