@@ -3,6 +3,12 @@ name: Kilo AI PR Review
 on:
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Pull request number to review'
+        required: true
+        type: number
 
 permissions:
   contents: read
@@ -11,21 +17,45 @@ permissions:
   actions: read
 
 concurrency:
-  group: kilo-review-${{ github.event.pull_request.number }}
+  group: kilo-review-${{ github.event.pull_request.number || inputs.pr_number }}
   cancel-in-progress: true
 
 jobs:
   review:
     if: >-
-      !github.event.pull_request.draft &&
-      github.event.pull_request.head.repo.full_name == github.repository
+      github.event_name == 'workflow_dispatch' ||
+      (!github.event.pull_request.draft &&
+      github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Resolve review target
+        id: target
+        uses: actions/github-script@v7
+        env:
+          TARGET_PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const pull_number = Number(process.env.TARGET_PR_NUMBER);
+            if (!Number.isSafeInteger(pull_number) || pull_number <= 0) {
+              throw new Error('A valid PR number is required');
+            }
+            const { owner, repo } = context.repo;
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number });
+            if (pr.state !== 'open' || pr.draft) {
+              throw new Error('The target PR must be open and ready for review');
+            }
+            if (pr.head.repo?.full_name !== `${owner}/${repo}`) {
+              throw new Error('Reviews are restricted to same-repository PRs');
+            }
+            core.setOutput('pr_number', pull_number);
+            core.setOutput('head_sha', pr.head.sha);
+
       - name: Checkout PR as read-only source data
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ steps.target.outputs.head_sha }}
           persist-credentials: false
 
       - name: Contextual review with Kilo AI
@@ -33,14 +63,19 @@ jobs:
         env:
           KILO_API_KEY: ${{ secrets.KILO_API_KEY }}
           KILO_MODEL: ${{ vars.KILO_MODEL || 'kilo-auto/free' }}
+          REVIEW_PR_NUMBER: ${{ steps.target.outputs.pr_number }}
+          REVIEW_HEAD_SHA: ${{ steps.target.outputs.head_sha }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('node:fs');
             const path = require('node:path');
             const { owner, repo } = context.repo;
-            const pr = context.payload.pull_request;
-            const pull_number = pr.number;
+            const pull_number = Number(process.env.REVIEW_PR_NUMBER);
+            const { data: pr } = await github.rest.pulls.get({owner,repo,pull_number});
+            if (pr.head.sha !== process.env.REVIEW_HEAD_SHA) {
+              throw new Error('PR head changed before review started; rerun against the latest commit');
+            }
             const marker = '<!-- kilo-ai-review -->';
             const key = process.env.KILO_API_KEY;
             if (!key) throw new Error('KILO_API_KEY repository secret is missing');
