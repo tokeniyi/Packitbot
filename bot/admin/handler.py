@@ -141,8 +141,8 @@ async def cmd_admin_portal(
 async def cmd_stats(
     message: Message,
     state: FSMContext,
+    session: AsyncSession,
     user: User | None = None,
-    session: AsyncSession | None = None,
 ) -> None:
     """Displays live delivery metrics and system statistics."""
     await state.clear()
@@ -193,8 +193,8 @@ async def cmd_stats(
 async def cmd_verify_drivers(
     message: Message,
     state: FSMContext,
+    session: AsyncSession,
     user: User | None = None,
-    session: AsyncSession | None = None,
 ) -> None:
     """Displays pending driver applications for review."""
     await state.clear()
@@ -221,8 +221,8 @@ async def cmd_verify_drivers(
 async def cmd_pending_requests(
     message: Message,
     state: FSMContext,
+    session: AsyncSession,
     user: User | None = None,
-    session: AsyncSession | None = None,
 ) -> None:
     """Lists PENDING delivery requests for driver assignment."""
     await state.clear()
@@ -247,8 +247,8 @@ async def cmd_pending_requests(
 @admin_router.callback_query(F.data.startswith("admin_req_page:"))
 async def handle_pending_requests_pagination(
     callback: CallbackQuery,
+    session: AsyncSession,
     user: User | None = None,
-    session: AsyncSession | None = None,
 ) -> None:
     """Handles pagination for pending requests list."""
     if not _is_admin(user):
@@ -277,8 +277,8 @@ async def handle_pending_requests_pagination(
 @admin_router.callback_query(F.data.startswith("admin_assign_req:"))
 async def handle_select_request_for_assignment(
     callback: CallbackQuery,
+    session: AsyncSession,
     user: User | None = None,
-    session: AsyncSession | None = None,
 ) -> None:
     """Displays available drivers ranked by average rating for selection."""
     if not _is_admin(user):
@@ -373,8 +373,8 @@ async def handle_confirm_driver_assignment(
 @admin_router.callback_query(F.data == "admin_pending_req_back")
 async def handle_back_to_pending_requests(
     callback: CallbackQuery,
+    session: AsyncSession,
     user: User | None = None,
-    session: AsyncSession | None = None,
 ) -> None:
     """Navigates back to the pending requests list."""
     if not _is_admin(user):
@@ -399,8 +399,8 @@ async def handle_back_to_pending_requests(
 async def handle_view_driver_detail(
     callback: CallbackQuery,
     callback_data: AdminDriverApproval,
+    session: AsyncSession,
     user: User | None = None,
-    session: AsyncSession | None = None,
 ) -> None:
     """Displays driver application details and approval buttons."""
     if not _is_admin(user):
@@ -435,8 +435,8 @@ async def handle_view_driver_detail(
 async def handle_approve_driver(
     callback: CallbackQuery,
     callback_data: AdminDriverApproval,
+    session: AsyncSession,
     user: User | None = None,
-    session: AsyncSession | None = None,
 ) -> None:
     """Handles driver approval action."""
     if not _is_admin(user):
@@ -476,8 +476,8 @@ async def handle_approve_driver(
 async def handle_reject_driver(
     callback: CallbackQuery,
     callback_data: AdminDriverApproval,
+    session: AsyncSession,
     user: User | None = None,
-    session: AsyncSession | None = None,
 ) -> None:
     """Handles driver rejection action."""
     if not _is_admin(user):
@@ -515,8 +515,8 @@ async def handle_reject_driver(
 @admin_router.callback_query(F.data == "admin_pending_drivers_back")
 async def handle_back_to_pending_list(
     callback: CallbackQuery,
+    session: AsyncSession,
     user: User | None = None,
-    session: AsyncSession | None = None,
 ) -> None:
     """Navigates back to the pending drivers list."""
     if not _is_admin(user):
@@ -541,8 +541,8 @@ async def handle_back_to_pending_list(
 async def cmd_drivers(
     message: Message,
     state: FSMContext,
+    session: AsyncSession,
     user: User | None = None,
-    session: AsyncSession | None = None,
 ) -> None:
     """Lists all driver records for admin management."""
     await state.clear()
@@ -567,8 +567,8 @@ async def cmd_drivers(
 @admin_router.callback_query(F.data.startswith("admin_drv_page:"))
 async def handle_drivers_pagination(
     callback: CallbackQuery,
+    session: AsyncSession,
     user: User | None = None,
-    session: AsyncSession | None = None,
 ) -> None:
     """Handles pagination for the drivers list."""
     if not _is_admin(user):
@@ -598,8 +598,8 @@ async def handle_drivers_pagination(
 async def handle_view_driver_detail_manage(
     callback: CallbackQuery,
     callback_data: AdminDriverManage,
+    session: AsyncSession,
     user: User | None = None,
-    session: AsyncSession | None = None,
 ) -> None:
     """Displays driver record details for management."""
     if not _is_admin(user):
@@ -694,8 +694,8 @@ async def handle_driver_field_select(
 async def handle_driver_field_input(
     message: Message,
     state: FSMContext,
+    session: AsyncSession,
     user: User | None = None,
-    session: AsyncSession | None = None,
 ) -> None:
     """Processes the new field value and updates the driver record."""
     if not _is_admin(user):
@@ -754,8 +754,8 @@ async def handle_driver_field_input(
 async def handle_remove_driver_confirm(
     callback: CallbackQuery,
     callback_data: AdminDriverManage,
+    session: AsyncSession,
     user: User | None = None,
-    session: AsyncSession | None = None,
 ) -> None:
     """Shows removal confirmation for a driver record."""
     if not _is_admin(user):
@@ -782,8 +782,8 @@ async def handle_remove_driver_confirm(
 async def handle_remove_driver_execute(
     callback: CallbackQuery,
     callback_data: AdminDriverRemove,
+    session: AsyncSession,
     user: User | None = None,
-    session: AsyncSession | None = None,
 ) -> None:
     """Executes driver record removal."""
     if not _is_admin(user):
@@ -814,8 +814,8 @@ async def handle_remove_driver_execute(
 async def handle_remove_driver_cancel(
     callback: CallbackQuery,
     callback_data: AdminDriverRemove,
+    session: AsyncSession,
     user: User | None = None,
-    session: AsyncSession | None = None,
 ) -> None:
     """Cancels driver removal and returns to driver detail."""
     if not _is_admin(user):
@@ -855,8 +855,8 @@ async def handle_remove_driver_cancel(
 @admin_router.callback_query(F.data.startswith("admin_driver_detail_back:"))
 async def handle_driver_edit_back(
     callback: CallbackQuery,
+    session: AsyncSession,
     user: User | None = None,
-    session: AsyncSession | None = None,
 ) -> None:
     """Navigates back to driver detail from edit menu."""
     if not _is_admin(user):
@@ -900,8 +900,8 @@ async def handle_driver_edit_back(
 @admin_router.callback_query(F.data == "admin_drivers_back")
 async def handle_drivers_back(
     callback: CallbackQuery,
+    session: AsyncSession,
     user: User | None = None,
-    session: AsyncSession | None = None,
 ) -> None:
     """Navigates back to the first page of the drivers list."""
     if not _is_admin(user):
@@ -945,8 +945,8 @@ async def cmd_user_management(
 async def process_user_search(
     message: Message,
     state: FSMContext,
+    session: AsyncSession,
     user: User | None = None,
-    session: AsyncSession | None = None,
 ) -> None:
     """Processes user search input and displays user profile with action buttons."""
     if not _is_admin(user):
@@ -1015,8 +1015,8 @@ async def handle_ban_user_init(
 async def process_ban_reason(
     message: Message,
     state: FSMContext,
+    session: AsyncSession,
     user: User | None = None,
-    session: AsyncSession | None = None,
 ) -> None:
     """Executes user ban with recorded reason."""
     if not _is_admin(user):
@@ -1060,8 +1060,8 @@ async def process_ban_reason(
 async def handle_unban_user(
     callback: CallbackQuery,
     callback_data: AdminUserAction,
+    session: AsyncSession,
     user: User | None = None,
-    session: AsyncSession | None = None,
 ) -> None:
     """Executes user unban action."""
     if not _is_admin(user):
@@ -1092,8 +1092,8 @@ async def handle_unban_user(
 async def handle_promote_admin(
     callback: CallbackQuery,
     callback_data: AdminUserAction,
+    session: AsyncSession,
     user: User | None = None,
-    session: AsyncSession | None = None,
 ) -> None:
     """Executes admin promotion action."""
     if not _is_admin(user):
@@ -1218,8 +1218,8 @@ async def process_broadcast_content(
 async def execute_broadcast(
     callback: CallbackQuery,
     state: FSMContext,
+    session: AsyncSession,
     user: User | None = None,
-    session: AsyncSession | None = None,
 ) -> None:
     """Executes bulk dispatching of broadcast message via notification_service."""
     if not _is_admin(user):
@@ -1282,8 +1282,8 @@ async def cancel_broadcast(
 async def cmd_add_driver(
     message: Message,
     state: FSMContext,
+    session: AsyncSession,
     user: User | None = None,
-    session=None,
 ) -> None:
     """Add a Telegram user to the pre-approved authorized driver list.
 

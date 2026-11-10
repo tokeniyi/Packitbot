@@ -115,7 +115,7 @@ class TestAdminApprovalFlowIntegration:
                 "bot.admin.handler.notify_driver_approval_status",
                 new_callable=AsyncMock,
             ) as mock_notify:
-                await handle_approve_driver(callback, MagicMock(), user=user)
+                await handle_approve_driver(callback, MagicMock(), session=AsyncMock(), user=user)
                 mock_notify.assert_awaited_once_with(
                     bot=callback.bot, telegram_id=123456789, approved=True
                 )
@@ -135,7 +135,7 @@ class TestAdminApprovalFlowIntegration:
                 "bot.admin.handler.notify_driver_approval_status",
                 new_callable=AsyncMock,
             ) as mock_notify:
-                await handle_reject_driver(callback, MagicMock(), user=user)
+                await handle_reject_driver(callback, MagicMock(), session=AsyncMock(), user=user)
                 mock_notify.assert_awaited_once_with(
                     bot=callback.bot, telegram_id=123456789, approved=False
                 )
@@ -152,7 +152,7 @@ class TestAdminApprovalFlowIntegration:
             new_callable=AsyncMock,
             return_value=(drivers, 1),
         ):
-            await cmd_verify_drivers(message, state, user=user)
+            await cmd_verify_drivers(message, state, session=AsyncMock(), user=user)
 
         message.answer.assert_awaited_once()
 
