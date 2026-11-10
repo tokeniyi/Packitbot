@@ -85,7 +85,7 @@ async def test_driver_detail_escapes_name_username_and_plate():
         new_callable=AsyncMock,
         return_value=detail,
     ):
-        await handle_view_driver_detail(callback, MagicMock(), user=_admin())
+        await handle_view_driver_detail(callback, MagicMock(), session=MagicMock(), user=_admin())
 
     sent = callback.message.edit_text.call_args.args[0]
     assert "a\\_b\\*c\\`d\\[e" in sent

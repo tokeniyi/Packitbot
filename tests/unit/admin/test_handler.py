@@ -103,7 +103,7 @@ class TestCmdStats:
             new_callable=AsyncMock,
             return_value=stats,
         ):
-            await cmd_stats(message, state, user=user)
+            await cmd_stats(message, state, session=AsyncMock(), user=user)
 
         state.clear.assert_awaited_once()
         message.answer.assert_awaited_once()
@@ -114,7 +114,7 @@ class TestCmdStats:
         student = MagicMock()
         student.role = UserRole.STUDENT
 
-        await cmd_stats(message, state, user=student)
+        await cmd_stats(message, state, session=AsyncMock(), user=student)
 
         message.answer.assert_awaited_once()
 
@@ -135,7 +135,7 @@ class TestCmdVerifyDrivers:
             new_callable=AsyncMock,
             return_value=(drivers, 1),
         ):
-            await cmd_verify_drivers(message, state, user=user)
+            await cmd_verify_drivers(message, state, session=AsyncMock(), user=user)
 
         message.answer.assert_awaited_once()
 
@@ -149,7 +149,7 @@ class TestCmdVerifyDrivers:
             new_callable=AsyncMock,
             return_value=([], 1),
         ):
-            await cmd_verify_drivers(message, state, user=user)
+            await cmd_verify_drivers(message, state, session=AsyncMock(), user=user)
 
         message.answer.assert_awaited_once()
 
@@ -159,7 +159,7 @@ class TestCmdVerifyDrivers:
         student = MagicMock()
         student.role = UserRole.STUDENT
 
-        await cmd_verify_drivers(message, state, user=student)
+        await cmd_verify_drivers(message, state, session=AsyncMock(), user=student)
 
         message.answer.assert_awaited_once()
 
@@ -184,7 +184,7 @@ class TestHandleViewDriverDetail:
             new_callable=AsyncMock,
             return_value=detail,
         ):
-            await handle_view_driver_detail(callback, MagicMock(), user=user)
+            await handle_view_driver_detail(callback, MagicMock(), session=AsyncMock(), user=user)
 
         callback.message.edit_text.assert_awaited_once()
 
@@ -193,7 +193,7 @@ class TestHandleViewDriverDetail:
         student = MagicMock()
         student.role = UserRole.STUDENT
 
-        await handle_view_driver_detail(callback, MagicMock(), user=student)
+        await handle_view_driver_detail(callback, MagicMock(), session=AsyncMock(), user=student)
 
         callback.answer.assert_awaited_once()
 
@@ -215,10 +215,13 @@ class TestHandleApproveDriver:
                 "bot.admin.handler.notify_driver_approval_status",
                 new_callable=AsyncMock,
             ) as mock_notify:
-                await handle_approve_driver(callback, MagicMock(), user=user)
+                injected_session = AsyncMock()
+                await handle_approve_driver(
+                    callback, MagicMock(), session=injected_session, user=user
+                )
 
                 mock_approve.assert_awaited_once()
-                assert mock_approve.call_args.kwargs["session"] is None
+                assert mock_approve.call_args.kwargs["session"] is injected_session
                 assert mock_approve.call_args.kwargs["dto"].admin_user_id == user.id
                 mock_notify.assert_awaited_once()
                 callback.message.edit_text.assert_awaited_once()
@@ -228,7 +231,7 @@ class TestHandleApproveDriver:
         student = MagicMock()
         student.role = UserRole.STUDENT
 
-        await handle_approve_driver(callback, MagicMock(), user=student)
+        await handle_approve_driver(callback, MagicMock(), session=AsyncMock(), user=student)
 
         callback.answer.assert_awaited_once()
 
@@ -249,10 +252,13 @@ class TestHandleRejectDriver:
                 "bot.admin.handler.notify_driver_approval_status",
                 new_callable=AsyncMock,
             ) as mock_notify:
-                await handle_reject_driver(callback, MagicMock(), user=user)
+                injected_session = AsyncMock()
+                await handle_reject_driver(
+                    callback, MagicMock(), session=injected_session, user=user
+                )
 
                 mock_reject.assert_awaited_once()
-                assert mock_reject.call_args.kwargs["session"] is None
+                assert mock_reject.call_args.kwargs["session"] is injected_session
                 assert mock_reject.call_args.kwargs["dto"].admin_user_id == user.id
                 mock_notify.assert_awaited_once()
                 callback.message.edit_text.assert_awaited_once()
@@ -262,7 +268,7 @@ class TestHandleRejectDriver:
         student = MagicMock()
         student.role = UserRole.STUDENT
 
-        await handle_reject_driver(callback, MagicMock(), user=student)
+        await handle_reject_driver(callback, MagicMock(), session=AsyncMock(), user=student)
 
         callback.answer.assert_awaited_once()
 
@@ -346,7 +352,7 @@ class TestHandleBackToPendingList:
             new_callable=AsyncMock,
             return_value=(drivers, 1),
         ):
-            await handle_back_to_pending_list(callback, user=user)
+            await handle_back_to_pending_list(callback, session=AsyncMock(), user=user)
 
         callback.message.edit_text.assert_awaited_once()
 
@@ -355,7 +361,7 @@ class TestHandleBackToPendingList:
         student = MagicMock()
         student.role = UserRole.STUDENT
 
-        await handle_back_to_pending_list(callback, user=student)
+        await handle_back_to_pending_list(callback, session=AsyncMock(), user=student)
 
         callback.answer.assert_awaited_once()
 
