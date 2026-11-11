@@ -20,17 +20,6 @@ from bot.driver.states import DriverRegistrationFSM
 from bot.driver.schemas import RegisterDriverDTO
 
 
-class _AsyncSessionCtx:
-    def __init__(self, session):
-        self._session = session
-
-    async def __aenter__(self):
-        return self._session
-
-    async def __aexit__(self, exc_type, exc, tb):
-        return False
-
-
 def _make_message(text: str = "", user_id: int = 1) -> MagicMock:
     msg = MagicMock()
     msg.text = text
@@ -120,45 +109,42 @@ class TestDriverRegistrationFlowIntegration:
                 mock_set.assert_awaited_once()
 
     async def test_registration_service_with_duplicate_plate_raises(self):
-        with patch("bot.driver.service.async_session") as mock_session_factory:
-            session = AsyncMock()
-            ctx = _AsyncSessionCtx(session)
-            mock_session_factory.return_value = ctx
+        session = AsyncMock()
 
-            user_row = MagicMock()
-            user_row.scalar_one_or_none.return_value = None
-            dp_row = MagicMock()
-            dp_row.scalar_one_or_none.return_value = None
+        user_row = MagicMock()
+        user_row.scalar_one_or_none.return_value = None
+        dp_row = MagicMock()
+        dp_row.scalar_one_or_none.return_value = None
 
-            def execute_side_effect(stmt):
-                if "User" in str(stmt):
-                    return user_row
-                return dp_row
+        def execute_side_effect(stmt):
+            if "User" in str(stmt):
+                return user_row
+            return dp_row
 
-            session.execute.side_effect = execute_side_effect
-            session.add.return_value = None
+        session.execute.side_effect = execute_side_effect
+        session.add.return_value = None
 
-            flush_call_count = 0
+        flush_call_count = 0
 
-            async def _raise_on_second_flush(*args, **kwargs):
-                nonlocal flush_call_count
-                flush_call_count += 1
-                if flush_call_count == 2:
-                    from sqlalchemy.exc import IntegrityError as IE
-                    raise IE("duplicate key", None, None)
+        async def _raise_on_second_flush(*args, **kwargs):
+            nonlocal flush_call_count
+            flush_call_count += 1
+            if flush_call_count == 2:
+                from sqlalchemy.exc import IntegrityError as IE
+                raise IE("duplicate key", None, None)
 
-            session.flush = AsyncMock(side_effect=_raise_on_second_flush)
+        session.flush = AsyncMock(side_effect=_raise_on_second_flush)
 
-            dto = RegisterDriverDTO(
-                telegram_id=123,
-                full_name="John Doe",
-                phone_number="08023456789",
-                vehicle_type="sedan",
-                plate_number="ABC-123DE",
-                license_number="DL-987654",
-            )
+        dto = RegisterDriverDTO(
+            telegram_id=123,
+            full_name="John Doe",
+            phone_number="08023456789",
+            vehicle_type="sedan",
+            plate_number="ABC-123DE",
+            license_number="DL-987654",
+        )
 
-            from bot.core.exceptions import DuplicateResourceError
+        from bot.core.exceptions import DuplicateResourceError
 
-            with pytest.raises(DuplicateResourceError):
-                await register_driver(dto, session=session)
+        with pytest.raises(DuplicateResourceError):
+            await register_driver(dto, session=session)

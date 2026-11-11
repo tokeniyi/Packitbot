@@ -22,17 +22,6 @@ from bot.driver.service import (
 )
 
 
-class _AsyncSessionCtx:
-    def __init__(self, session):
-        self._session = session
-
-    async def __aenter__(self):
-        return self._session
-
-    async def __aexit__(self, exc_type, exc, tb):
-        return False
-
-
 VALID_DTO = RegisterDriverDTO(
     telegram_id=123456789,
     full_name="Jane Doe",
@@ -46,152 +35,130 @@ VALID_DTO = RegisterDriverDTO(
 
 class TestRegisterDriver:
     async def test_creates_new_user_and_driver_profile(self):
-        with patch("bot.driver.service.async_session") as mock_session_factory:
-            session = AsyncMock()
-            mock_session_factory.return_value = session
+        session = AsyncMock()
 
-            user_row = MagicMock()
-            user_row.scalar_one_or_none.return_value = None
-            dp_row = MagicMock()
-            dp_row.scalar_one_or_none.return_value = None
+        user_row = MagicMock()
+        user_row.scalar_one_or_none.return_value = None
+        dp_row = MagicMock()
+        dp_row.scalar_one_or_none.return_value = None
 
-            def execute_side_effect(stmt):
-                if "User" in str(stmt):
-                    return user_row
-                return dp_row
+        def execute_side_effect(stmt):
+            if "User" in str(stmt):
+                return user_row
+            return dp_row
 
-            session.execute.side_effect = execute_side_effect
-            session.flush.return_value = None
+        session.execute.side_effect = execute_side_effect
+        session.flush.return_value = None
 
-            result = await register_driver(VALID_DTO, session=session)
+        result = await register_driver(VALID_DTO, session=session)
 
-            assert isinstance(result, DriverProfile)
-            assert session.add.call_count == 2
+        assert isinstance(result, DriverProfile)
+        assert session.add.call_count == 2
 
     async def test_returns_existing_pending_profile(self):
-        with patch("bot.driver.service.async_session") as mock_session_factory:
-            session = AsyncMock()
-            mock_session_factory.return_value = session
+        session = AsyncMock()
 
-            existing_user = MagicMock(spec=User)
-            existing_user.id = 1
-            existing_user.role = UserRole.DRIVER
+        existing_user = MagicMock(spec=User)
+        existing_user.id = 1
+        existing_user.role = UserRole.DRIVER
 
-            existing_dp = MagicMock(spec=DriverProfile)
-            existing_dp.status = DriverStatus.PENDING_APPROVAL
-            existing_dp.id = 1
+        existing_dp = MagicMock(spec=DriverProfile)
+        existing_dp.status = DriverStatus.PENDING_APPROVAL
+        existing_dp.id = 1
 
-            user_row = MagicMock()
-            user_row.scalar_one_or_none.return_value = existing_user
-            dp_row = MagicMock()
-            dp_row.scalar_one_or_none.return_value = existing_dp
+        user_row = MagicMock()
+        user_row.scalar_one_or_none.return_value = existing_user
+        dp_row = MagicMock()
+        dp_row.scalar_one_or_none.return_value = existing_dp
 
-            def execute_side_effect(stmt):
-                if "User" in str(stmt):
-                    return user_row
-                return dp_row
+        def execute_side_effect(stmt):
+            if "User" in str(stmt):
+                return user_row
+            return dp_row
 
-            session.execute.side_effect = execute_side_effect
-            session.get.return_value = existing_dp
-            session.flush.return_value = None
+        session.execute.side_effect = execute_side_effect
+        session.get.return_value = existing_dp
+        session.flush.return_value = None
 
-            result = await register_driver(VALID_DTO, session=session)
+        result = await register_driver(VALID_DTO, session=session)
 
-            assert result is existing_dp
-            assert existing_dp.status == DriverStatus.PENDING_APPROVAL
+        assert result is existing_dp
+        assert existing_dp.status == DriverStatus.PENDING_APPROVAL
 
     async def test_raises_when_already_approved(self):
-        with patch("bot.driver.service.async_session") as mock_session_factory:
-            session = AsyncMock()
-            mock_session_factory.return_value = session
+        session = AsyncMock()
 
-            existing_user = MagicMock(spec=User)
-            existing_user.id = 1
-            existing_user.role = UserRole.DRIVER
+        existing_user = MagicMock(spec=User)
+        existing_user.id = 1
+        existing_user.role = UserRole.DRIVER
 
-            existing_dp = MagicMock(spec=DriverProfile)
-            existing_dp.status = DriverStatus.APPROVED
+        existing_dp = MagicMock(spec=DriverProfile)
+        existing_dp.status = DriverStatus.APPROVED
 
-            user_row = MagicMock()
-            user_row.scalar_one_or_none.return_value = existing_user
-            dp_row = MagicMock()
-            dp_row.scalar_one_or_none.return_value = existing_dp
+        user_row = MagicMock()
+        user_row.scalar_one_or_none.return_value = existing_user
+        dp_row = MagicMock()
+        dp_row.scalar_one_or_none.return_value = existing_dp
 
-            def execute_side_effect(stmt):
-                if "User" in str(stmt):
-                    return user_row
-                return dp_row
+        def execute_side_effect(stmt):
+            if "User" in str(stmt):
+                return user_row
+            return dp_row
 
-            session.execute.side_effect = execute_side_effect
+        session.execute.side_effect = execute_side_effect
 
-            with pytest.raises(PackitbotError, match="already approved"):
-                await register_driver(VALID_DTO, session=session)
+        with pytest.raises(PackitbotError, match="already approved"):
+            await register_driver(VALID_DTO, session=session)
 
     async def test_raises_on_duplicate_plate_or_license(self):
-        with patch("bot.driver.service.async_session") as mock_session_factory:
-            session = AsyncMock()
-            mock_session_factory.return_value = session
+        session = AsyncMock()
 
-            user_row = MagicMock()
-            user_row.scalar_one_or_none.return_value = None
-            dp_row = MagicMock()
-            dp_row.scalar_one_or_none.return_value = None
+        user_row = MagicMock()
+        user_row.scalar_one_or_none.return_value = None
+        dp_row = MagicMock()
+        dp_row.scalar_one_or_none.return_value = None
 
-            def execute_side_effect(stmt):
-                if "User" in str(stmt):
-                    return user_row
-                return dp_row
+        def execute_side_effect(stmt):
+            if "User" in str(stmt):
+                return user_row
+            return dp_row
 
-            session.execute.side_effect = execute_side_effect
-            session.add.return_value = None
+        session.execute.side_effect = execute_side_effect
+        session.add.return_value = None
 
-            flush_call_count = 0
+        flush_call_count = 0
 
-            async def _raise_on_second_flush(*args, **kwargs):
-                nonlocal flush_call_count
-                flush_call_count += 1
-                if flush_call_count == 2:
-                    from sqlalchemy.exc import IntegrityError as IE
-                    raise IE("duplicate key", None, None)
+        async def _raise_on_second_flush(*args, **kwargs):
+            nonlocal flush_call_count
+            flush_call_count += 1
+            if flush_call_count == 2:
+                from sqlalchemy.exc import IntegrityError as IE
+                raise IE("duplicate key", None, None)
 
-            session.flush = AsyncMock(side_effect=_raise_on_second_flush)
+        session.flush = AsyncMock(side_effect=_raise_on_second_flush)
 
-            dto = RegisterDriverDTO(
-                telegram_id=123,
-                full_name="John Doe",
-                phone_number="08023456789",
-                vehicle_type="sedan",
-                plate_number="ABC-123DE",
-                license_number="DL-987654",
-            )
+        dto = RegisterDriverDTO(
+            telegram_id=123,
+            full_name="John Doe",
+            phone_number="08023456789",
+            vehicle_type="sedan",
+            plate_number="ABC-123DE",
+            license_number="DL-987654",
+        )
 
-            with pytest.raises(DuplicateResourceError):
-                await register_driver(dto, session=session)
+        with pytest.raises(DuplicateResourceError):
+            await register_driver(dto, session=session)
 
-    async def test_without_session_creates_own_transaction(self):
-        with patch("bot.driver.service.async_session") as mock_session_factory:
-            session = AsyncMock()
-            ctx = _AsyncSessionCtx(session)
-            mock_session_factory.return_value = ctx
+    def test_session_is_required_and_not_opened_internally(self):
+        # The session is injected by DbSessionMiddleware; the service must
+        # never open its own scope (P1 #18 follow-up).
+        import inspect
 
-            # session.begin() must return a real async context manager,
-            # not a coroutine (AsyncMock.begin() returns a coroutine).
-            begin_cm = MagicMock()
-            begin_cm.__aenter__ = AsyncMock(return_value=session)
-            begin_cm.__aexit__ = AsyncMock(return_value=False)
-            session.begin = MagicMock(return_value=begin_cm)
+        import bot.driver.service as driver_service
 
-            result_mock = MagicMock()
-            result_mock.scalar_one_or_none.return_value = None
-            session.execute.side_effect = lambda stmt: result_mock
-            session.flush.return_value = None
-            session.add.return_value = None
-
-            result = await register_driver(VALID_DTO)
-
-            assert isinstance(result, DriverProfile)
-            assert session.add.call_count == 2
-            mock_session_factory.assert_called_once()
+        param = inspect.signature(register_driver).parameters["session"]
+        assert param.default is inspect.Parameter.empty
+        assert not hasattr(driver_service, "async_session")
 
 
 class TestGetDriverProfileByTelegramId:

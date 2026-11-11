@@ -5,6 +5,66 @@ Backlog source of truth: `docs/MAINTENANCE.md` (section 4). This file tracks wha
 
 ---
 
+## Run 2026-11-11 05:40 WAT (Africa/Lagos)
+
+**Branch:** `claude/daily-review-2026-11-11` (cut from `main` at `957961e`; PR #36 for 2026-11-10 was merged into `main`, and no `claude/daily-review` PR was open, so no prior branch was continued)
+**PR:** opened against `main` at the end of this run (link in the final report).
+
+### Starting state
+- Open PRs on `tokeniyi/packitbot`: none. Remote branches: `main` only.
+- Standing issue #24 `Dev workflow requests`: no owner comments. Only `[Claude run]` notes, which are ignored as instructions.
+- Test environment: fresh sandbox. Python 3.12 venv at `.venv/` (git-ignored) with `requirements.txt`, `pytest` and `pytest-asyncio`. PostgreSQL is not running, so the three Postgres-only alembic tests cannot run here.
+- Baseline on `main` before changes (alembic tests deselected): **592 passed**.
+
+### Done this run
+- **Outstanding item 1, `register_driver` session fallback (#18 follow-up): done.** `bot/driver/service.py::register_driver` now takes a required `session: AsyncSession`. The `async_session()` fallback, the nested `_execute` helper and the `async_session` import are removed, so the function runs directly on the injected session. Its only production caller (`bot/driver/handler.py`, `process_submit_registration`) already passes `session=session`, so no behaviour changes. The `Optional` import stays because `get_driver_profile_by_telegram_id` still uses it.
+- **Tests updated (behaviour unchanged):**
+  - `tests/unit/driver/test_service.py`: removed the `patch("bot.driver.service.async_session")` wrappers from `TestRegisterDriver`. `test_without_session_creates_own_transaction` is replaced by `test_session_is_required_and_not_opened_internally`, which asserts that the `session` parameter has no default and that the module has no `async_session` name. Removed the unused `_AsyncSessionCtx` helper.
+  - `tests/integration/handlers/test_driver_registration_flow.py`: removed the `async_session` patch from `test_registration_service_with_duplicate_plate_raises` and the unused `_AsyncSessionCtx` helper.
+- **Files touched:** `bot/driver/service.py`; `tests/unit/driver/test_service.py`; `tests/integration/handlers/test_driver_registration_flow.py`; `docs/AUTOMATION_PROGRESS.md` (this entry); `docs/MAINTENANCE.md` (#18 note).
+
+### Owner requests received this run
+- None. Issue #24 has no owner comments. A `[Claude run]` comment was posted on #24 to report this run and to repeat the open owner decisions (outstanding items 2 and the session-ID question).
+
+### Plan validation
+- No multi-stage task this run, so no new plan file. Grep check over `bot/` after the change: the only remaining `async_session()` call outside the middleware is `bot/core/middlewares/db_session.py`, which is the middleware itself and is correct. No `session: ... = None` defaults remain in `bot/`.
+
+### Verification
+- `pytest` (Python 3.12 venv, `--deselect tests/integration/db/test_alembic.py`): **592 passed, 0 failed** after the change. The count matches the baseline; the replaced test is a signature test, not an extra case.
+- `python -c "import bot.driver.service"` succeeds.
+- The 3 alembic tests need a live PostgreSQL on 127.0.0.1:5432 and were not run here.
+- No linter is configured in `pyproject.toml` or CI, so no lint was run.
+
+### Multi-run task status
+- Admin handler signatures (#18 follow-up): done 2026-11-10. `register_driver` fallback: done this run. The #18 follow-up is now fully closed.
+
+### Outstanding (for next run, in suggested order)
+1. **P1 #17 stage 2b, admin broadcast body escaping: owner decision needed.** Unchanged. `bot/core/services/notification_service.py::send_broadcast_message` and the admin broadcast preview in `bot/admin/handler.py` send the body with `parse_mode="Markdown"` on purpose. Asked on #24 on 2026-11-10. Do not change without the answer.
+2. **Dead guards (cosmetic):** the `if session is None:` branches in the driver/student/common handlers are unreachable. Remove them only if the owner wants the churn.
+3. **Dependency major upgrade: `multidict` 6.7.1 → 7.2.1.** Not applied (major). Needs its own run with a full suite pass and a check that aiohttp/yarl still resolve.
+4. **Dependency pin conflict:** `pydantic` 2.13.4 → 2.14.3 and `pydantic-core` 2.46.4 → 2.50.4 are blocked by `aiogram` 3.31.0 (requires `pydantic<2.14`). Re-check when aiogram relaxes it.
+5. **Alembic test isolation** (`tests/integration/db/test_alembic.py`): reset the schema at the start of the test. Deliberately not done because `DROP SCHEMA` against a developer's `DATABASE_URL` is destructive. Needs an owner decision on a dedicated test database.
+6. **P1 #21 stage 3 (optional):** the `if callback.message:` guards are unreachable after stage 1 but harmless. Remove only if the owner wants the churn.
+7. **Minor follow-up from #18:** a real-Postgres test for the `IntegrityError` SAVEPOINT path using two concurrent sessions. Needs a Postgres server, so it can only run in CI or on a dev machine.
+8. **Minor follow-up from #19:** the throttling middleware no longer reads `settings.redis_url`. Consider whether the setting is still needed; it is config, so leave it unless the owner asks.
+9. **Session-ID question:** the stored prompt and the attribution reminder name different session IDs for commit trailers. This run used the stored prompt's ID, as earlier runs did. The owner should confirm which one to use.
+
+### Found but not changed, and why
+- **`.agents/rules/GEMINI.md` says "DO NOT RUN pytest".** It conflicts with this routine, which requires tests before commit. The routine's rule was followed. The owner should reconcile the two.
+- **Admin broadcast body** left unescaped on purpose (outstanding item 1).
+- **Stray root files** `PENDING` (empty), `pr16_review.md`, `pr17_review.md`, and the `.agents/` and `.hermes/` directories are left in place. Deleting files is outside this run's scope.
+- **`RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited`** appears in `tests/unit/student/`. The tests pass; the warning is test noise and was not changed.
+- **`_AsyncSessionCtx` helper** still exists in `tests/unit/request/test_service.py`. It is unrelated to this change and was left alone.
+
+### Dependency upgrades applied
+- None this run. `pip check` is clean.
+
+### Major dependency upgrades available
+- `multidict` 6.7.1 → 7.2.1 (major, not applied).
+- `pydantic` 2.14.3 and `pydantic-core` 2.50.4 are not applied: blocked by `aiogram` 3.31.0.
+
+---
+
 ## Run 2026-11-10 05:39 WAT (Africa/Lagos)
 
 **Branch:** `claude/daily-review-2026-11-10` (cut from `main` at `6e3a047`; PR #35 for 2026-11-09 was merged, and no `claude/daily-review` PR was open, so no prior branch was continued)
