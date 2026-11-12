@@ -393,7 +393,7 @@ an `if callback.message:` guard does not protect against the real failure: an
 ## 6. Documentation gaps
 
 - `README.md` links a MIT badge; **no `LICENSE` file exists**.
-- README claims "job claiming" and Redis-backed rate limiting — neither is implemented.
+- ~~README claims "job claiming" and Redis-backed rate limiting — neither is implemented.~~ — **Resolved 2026-11-12:** README no longer mentions job claiming; the throttling middleware is in-memory (#19), and Redis is documented only as FSM storage (README stack list and `Settings.redis_url` docstring corrected).
 - The state machine is undocumented outside Python — it is the product's core.
 - `.agents/rules/GEMINI.md` is actively misleading (see #39).
 
