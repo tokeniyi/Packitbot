@@ -33,7 +33,7 @@
 - **Language:** Python 3.12
 - **Telegram Bot Framework:** [Aiogram 3.x](https://docs.aiogram.dev/)
 - **Database Engine:** PostgreSQL 16 (via SQLAlchemy 2.0 Async & `asyncpg`)
-- **FSM & Caching:** Redis 7 (`redis-py` async)
+- **FSM Storage:** Redis 7 (`redis-py` async, via aiogram's `RedisStorage`)
 - **Migrations:** Alembic
 - **Testing:** Pytest & `pytest-asyncio`
 - **Containerization:** Docker & Docker Compose

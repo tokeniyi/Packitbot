@@ -5,6 +5,67 @@ Backlog source of truth: `docs/MAINTENANCE.md` (section 4). This file tracks wha
 
 ---
 
+## Run 2026-11-12 05:40 WAT (Africa/Lagos)
+
+**Branch:** `claude/daily-review-2026-11-12` (cut from `main` at `957961e`; PR #37 for 2026-11-11 was merged, and no `claude/daily-review` PR was open, so no prior branch was continued)
+**PR:** opened against `main` at the end of this run (link in the final report).
+
+### Starting state
+- Open PRs on `tokeniyi/packitbot`: none. Remote branches: `main` only. PR #37 is merged.
+- Standing issue #24 `Dev workflow requests`: no owner comments since the 2026-11-11 run. Only `[Claude run]` notes, which are ignored as instructions.
+- Test environment: fresh sandbox. Python 3.12.3 venv at `.venv/` (git-ignored, created with `uv`) with `requirements.txt`, `pytest` and `pytest-asyncio`. PostgreSQL is not running, so the three Postgres-only alembic tests were deselected.
+- Baseline on `main` before changes (alembic tests deselected): **592 passed**.
+- Backlog review (`docs/MAINTENANCE.md` section 4): every P0 item is fixed. Of the P1 items, only #17 stage 2b (needs owner decision) and #21 stage 2/3 cosmetic guards remain open. Documentation gaps (section 6) were the clearest remaining work.
+
+### Owner requests received this run
+- None. Issue #24 has no owner comments since 2026-11-09. A `[Claude run]` comment was posted on #24 to report this run and to repeat the open owner decisions (outstanding items 1 and 9).
+
+### Done this run
+- **Documentation drift fixed (section 6 of MAINTENANCE.md):** the README stack list said "FSM & Caching: Redis", but Redis is only used for aiogram FSM storage (rate limiting moved to an in-memory token bucket in #19). It now reads "FSM Storage: Redis (`redis-py` async, via aiogram's `RedisStorage`)". The README no longer mentions job claiming, so that part of the section 6 claim is marked resolved.
+- **Docstring fixed:** `bot/core/config.py::Settings.redis_url` said Redis was used for "caching / rate limiting". It now says "FSM state storage". No code or behaviour change.
+- **Files touched:** `README.md`; `bot/core/config.py` (docstring only); `docs/MAINTENANCE.md` (section 6 bullet); `docs/AUTOMATION_PROGRESS.md` (this entry).
+
+### Plan validation
+- No multi-stage task this run, so no new plan file.
+
+### Verification
+- `pytest -q --deselect tests/integration/db/test_alembic.py`: **592 passed, 0 failed**, both before and after the change. The count matches the baseline.
+- `python -c "import bot.core.config"` succeeds.
+- The 3 alembic tests need a live PostgreSQL on 127.0.0.1:5432 and were not run here.
+- No linter is configured in `pyproject.toml` or CI, so no lint was run.
+
+### Multi-run task status
+- No multi-stage task in progress.
+
+### Outstanding (for next run, in suggested order)
+1. **P1 #17 stage 2b, admin broadcast body escaping: owner decision needed.** Unchanged. `bot/core/services/notification_service.py::send_broadcast_message` and the admin broadcast preview in `bot/admin/handler.py` send the body with `parse_mode="Markdown"` on purpose. Asked on #24 on 2026-11-10 and again 2026-11-11. Do not change without the answer.
+2. **Session-ID question for commit trailers: owner decision needed.** This run used the session ID from the attribution reminder (`session_01VLAbn5xXLcyjtcbeMxriCv`), which is the more recent guidance. The stored prompt names `session_01VLAbn74n9b7QhQiKpdAp5k`. Both are recorded here until the owner picks one.
+3. **Dead guards (cosmetic):** the `if session is None:` branches in the driver/student/common handlers are unreachable. Remove them only if the owner wants the churn.
+4. **Dependency major upgrade: `multidict` 6.7.1 → 7.2.1.** Not applied (major). Needs its own run with a full suite pass and a check that aiohttp/yarl still resolve.
+5. **Dependency pin conflict:** `pydantic` 2.13.4 → 2.14.3 and `pydantic-core` 2.46.4 → 2.50.4 are blocked by `aiogram` 3.31.0 (requires `pydantic<2.14`). Re-check when aiogram relaxes it.
+6. **Alembic test isolation** (`tests/integration/db/test_alembic.py`): reset the schema at the start of the test. Deliberately not done because `DROP SCHEMA` against a developer's `DATABASE_URL` is destructive. Needs an owner decision on a dedicated test database.
+7. **P1 #21 stage 3 (optional):** the `if callback.message:` guards are unreachable after stage 1 but harmless. Remove only if the owner wants the churn.
+8. **Minor follow-up from #18:** a real-Postgres test for the `IntegrityError` SAVEPOINT path using two concurrent sessions. Needs a Postgres server, so it can only run in CI or on a dev machine.
+9. **Minor follow-up from #19:** the throttling middleware no longer reads `settings.redis_url`. Consider whether the setting is still needed; it is config, so leave it unless the owner asks.
+10. **Missing LICENSE file:** the README links to `LICENSE` (MIT badge and section) but no such file exists. Adding a license is a legal decision for the owner. Needs owner confirmation of the copyright holder before a file is added.
+
+### Found but not changed, and why
+- **`.agents/rules/GEMINI.md` says "DO NOT RUN pytest".** It conflicts with this routine, which requires tests before commit. The routine's rule was followed. The owner should reconcile the two.
+- **Admin broadcast body** left unescaped on purpose (outstanding item 1).
+- **Missing `LICENSE`** left alone (outstanding item 10).
+- **Stray root files** `PENDING` (empty), `pr16_review.md`, `pr17_review.md`, and the `.agents/` and `.hermes/` directories are left in place. Deleting files is outside this run's scope.
+- **`RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited`** appears in `tests/unit/student/`. The tests pass; the warning is test noise and was not changed.
+- **`_AsyncSessionCtx` helper** still exists in `tests/unit/request/test_service.py`. It is unrelated to this run's change and was left alone.
+
+### Dependency upgrades applied
+- None this run. `pip check` was not re-run; no dependency files changed.
+
+### Major dependency upgrades available
+- `multidict` 6.7.1 → 7.2.1 (major, not applied).
+- `pydantic` 2.14.3 and `pydantic-core` 2.50.4 are not applied: blocked by `aiogram` 3.31.0.
+
+---
+
 ## Run 2026-11-11 05:40 WAT (Africa/Lagos)
 
 **Branch:** `claude/daily-review-2026-11-11` (cut from `main` at `957961e`; PR #36 for 2026-11-10 was merged into `main`, and no `claude/daily-review` PR was open, so no prior branch was continued)

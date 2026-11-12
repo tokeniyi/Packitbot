@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     Attributes:
         bot_token (str): The Telegram Bot API token.
         database_url (str): The asynchronous database connection URL.
-        redis_url (str): The Redis connection URL used for caching / rate limiting.
+        redis_url (str): The Redis connection URL used for FSM state storage.
         seed_admin_telegram_ids (str): Comma-separated Telegram user IDs for
             initial admin seeding. Defaults to an empty string.
         max_request_lead_days (int): Maximum number of days in advance a ride
