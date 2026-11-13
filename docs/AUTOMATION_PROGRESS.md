@@ -5,6 +5,69 @@ Backlog source of truth: `docs/MAINTENANCE.md` (section 4). This file tracks wha
 
 ---
 
+## Run 2026-11-13 05:40 WAT (Africa/Lagos)
+
+**Branch:** `claude/daily-review-2026-11-13` (cut from `main` at `1006845`; PR #38 for 2026-11-12 is merged, and no `claude/daily-review` PR was open, so no prior branch was continued)
+**PR:** opened against `main` at the end of this run (link in the final report).
+
+### Starting state
+- Open PRs on `tokeniyi/packitbot`: none. PR #38 is merged. Old `origin/claude/daily-review-*` branches are merged and stale.
+- Standing issue #24 `Dev workflow requests`: no owner comments since the 2026-11-12 run. Only `[Claude run]` notes, which are ignored as instructions.
+- Test environment: fresh sandbox. Python 3.12 venv at `.venv/` (git-ignored, created with `uv`) with `requirements.txt`. **A local PostgreSQL 16 cluster was started in the sandbox** (`pg_ctlcluster 16 main start`) with a throwaway `packitbot` role and database. Setting `DATABASE_URL` to it lets the three alembic tests run for the first time in these runs.
+- Baseline on `main` before changes: **592 passed** with `--deselect tests/integration/db/test_alembic.py`; **595 passed** with the alembic tests against the local Postgres.
+
+### Owner requests received this run
+- None. Issue #24 has no owner comments. A `[Claude run]` comment was posted on #24 to report this run and to repeat the open owner decisions.
+
+### Done this run
+- **P1 #14 follow-up, real-DB SAVEPOINT test:** new `tests/unit/request/test_create_request_savepoint_real_db.py` (2 tests, real temporary SQLite database). A `NOT NULL` violation inside `RequestService.create_request` becomes `ValidationError`, the outer session stays usable, and earlier work is kept. Tripwire verified: with the `begin_nested()` removed, the second test fails with `PendingRollbackError`; `bot/request/service.py` was restored with `git checkout`.
+- **Documentation gap closed (MAINTENANCE section 6):** new `docs/STATE_MACHINE.md` documents the statuses, the allowed transitions from `bot/request/state_machine.py`, and which entry point drives each transition. `docs/MAINTENANCE.md` marks the gap resolved.
+- **Files touched:** `tests/unit/request/test_create_request_savepoint_real_db.py` (new); `docs/STATE_MACHINE.md` (new); `docs/MAINTENANCE.md` (section 6 bullet, #9 and #14 follow-ups); `docs/AUTOMATION_PROGRESS.md` (this entry).
+
+### Plan validation
+- No multi-stage task this run, so no new plan file.
+
+### Found during review, not changed (needs owner decision)
+- **Driver rejection statistic is always zero.** A driver hand-back goes `ASSIGNED → PENDING` (`RequestService.reject_assignment`). Production code never writes `REJECTED_BY_DRIVER`, but `admin/service.py::get_stats` counts `rejected_by_driver_requests` from the current status. The rejection is recorded in `RequestStatusLog`, which the count does not read. The P1 #9 entry said the statistic was fixed; that is only partly true. Options are in outstanding item 11. Not changed because it changes either the statistic or the queue behaviour.
+
+### Verification
+- `pytest -q` against the local Postgres (`DATABASE_URL=postgresql+asyncpg://packitbot:packitbot@127.0.0.1:5432/packitbot`): **597 passed, 0 failed**. This covers the 592 baseline, the 2 new tests and the 3 alembic tests.
+- `pytest -q` without a database: alembic tests fail with connection errors, as expected in CI-like environments without Postgres. Not a regression.
+- No linter is configured in `pyproject.toml` or CI, so no lint was run.
+
+### Multi-run task status
+- No multi-stage task in progress.
+
+### Outstanding (for next run, in suggested order)
+1. **P1 #17 stage 2b, admin broadcast body escaping: owner decision needed.** Unchanged. `bot/core/services/notification_service.py::send_broadcast_message` and the admin broadcast preview in `bot/admin/handler.py` send the body with `parse_mode="Markdown"` on purpose. Asked on #24 on 2026-11-10, 11-11 and 11-12. Do not change without the answer.
+2. **Session-ID question for commit trailers: owner decision needed.** The attribution reminder and the stored prompt name different session IDs. This run used the reminder's ID (`session_01VLAbn55m8ZqkAP7jihn9LA`); the stored prompt names `session_01VLAbn74n9b7QhQiKpdAp5k`. Both are recorded until the owner picks one.
+3. **Dead guards (cosmetic):** the `if session is None:` branches in the handlers are unreachable. Remove them only if the owner wants the churn.
+4. **Dependency major upgrade: `multidict` 6.7.1 → 7.2.1.** Not applied (major). Needs its own run with a full suite pass and a check that aiohttp/yarl still resolve.
+5. **Dependency pin conflict:** `pydantic` 2.13.4 → 2.14.3 and `pydantic-core` 2.46.4 → 2.50.4 are blocked by `aiogram` 3.31.0 (requires `pydantic<2.14`). Re-check when aiogram relaxes it.
+6. **Alembic test isolation** (`tests/integration/db/test_alembic.py`): reset the schema at the start of the test. Deliberately not done because `DROP SCHEMA` against a developer's `DATABASE_URL` is destructive. Needs an owner decision on a dedicated test database.
+7. **P1 #21 stage 3 (optional):** the `if callback.message:` guards are unreachable after stage 1 but harmless. Remove only if the owner wants the churn.
+8. **Minor follow-up from #18 (partly done 2026-11-13):** the SQLite SAVEPOINT test exists. Still open: a two-session concurrency test on real Postgres for the `IntegrityError` path. The local Postgres (see Starting state) can run it, but CI has no Postgres service, so the test must skip when no database is configured.
+9. **Minor follow-up from #19:** the throttling middleware no longer reads `settings.redis_url`. Consider whether the setting is still needed; it is config, so leave it unless the owner asks.
+10. **Missing LICENSE file:** the README links to `LICENSE` (MIT badge and section) but no such file exists. Adding a license is a legal decision for the owner. Needs owner confirmation of the copyright holder before a file is added.
+11. **Driver rejection statistic (new 2026-11-13): owner decision needed.** Choose one: (a) keep `ASSIGNED → PENDING` for the queue and change `get_stats` to count `RequestStatusLog` rows with `old_status = ASSIGNED` and `new_status = PENDING` from the driver path (needs the status log note or a new marker to tell driver hand-backs from other PENDING returns); or (b) write `REJECTED_BY_DRIVER` on driver rejection and change the admin queue to include it. Then add a test that a driver rejection shows in the stats.
+12. **`.agents/rules/GEMINI.md` conflict (#39 in MAINTENANCE):** it says "DO NOT RUN pytest", which conflicts with this routine. Owner should reconcile.
+
+### Found but not changed, and why
+- **Driver rejection statistic** (outstanding item 11).
+- **Admin broadcast body** left unescaped on purpose (outstanding item 1).
+- **Missing `LICENSE`** left alone (outstanding item 10).
+- **Stray root files** `PENDING` (empty), `pr16_review.md`, `pr17_review.md`, and the `.agents/` and `.hermes/` directories are left in place. Deleting files is outside this run's scope.
+- **`RuntimeWarning` noise** in `tests/unit/student/` (`AsyncMockMixin._execute_mock_call` never awaited) and the pytest-asyncio fixture-loop-scope deprecation warning. Tests pass; left alone.
+
+### Dependency upgrades applied
+- None this run. No dependency files changed.
+
+### Major dependency upgrades available
+- `multidict` 6.7.1 → 7.2.1 (major, not applied).
+- `pydantic` 2.14.3 and `pydantic-core` 2.50.4 are not applied: blocked by `aiogram` 3.31.0.
+
+---
+
 ## Run 2026-11-12 05:40 WAT (Africa/Lagos)
 
 **Branch:** `claude/daily-review-2026-11-12` (cut from `main` at `957961e`; PR #37 for 2026-11-11 was merged, and no `claude/daily-review` PR was open, so no prior branch was continued)

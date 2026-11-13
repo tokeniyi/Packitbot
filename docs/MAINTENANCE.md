@@ -195,6 +195,7 @@ with `DriverProfile.id`, and lookups treat it as a `DriverProfile` PK. Items **#
   is reported at `main.py:339`.
 
 **#9 ~~`process_driver_reject` bypasses the FSM and the audit log~~ — FIXED 2026-10-04 (PR #12, `fix/driver-reject-bypasses-fsm`)**
+- **2026-11-13 follow-up (found, not changed; owner decision):** a driver hand-back now goes `ASSIGNED → PENDING`, so `REJECTED_BY_DRIVER` is never written by production code. `admin/service.py` `get_stats` counts `rejected_by_driver_requests` from current status, so that statistic is always 0. The rejections are in `RequestStatusLog`, which the statistic does not read. Options: count `ASSIGNED → PENDING` rows from the status log, or write `REJECTED_BY_DRIVER` on driver rejection and accept the queue change. See `docs/STATE_MACHINE.md`.
 - **Problem (confirmed by reading the code, not just the doc):**
   `bot/driver/handler.py` mutated the request through `RequestRepository.update`
   directly. Four concrete defects followed:
@@ -300,6 +301,7 @@ it and `_ensure_admin_profile` (88-111). `main.py::_seed_admins` already does th
 slice (`requests.py:603-609, 637-644`). `total_pages` was always 1, Next never rendered, and page ≥ 2 returned fewer or no rows. Fixed by removing the redundant handler-side pagination and letting the repository be the single source of truth for paging.
 
 **#14 ~~`IntegrityError` → `ValidationError` never reaches the user~~ — FIXED 2026-10-13 (PR #19, `fix/integrity-error-savepoint`)**
+- **2026-11-13 follow-up:** `tests/unit/request/test_create_request_savepoint_real_db.py` runs the SAVEPOINT against a real SQLite database. A `NOT NULL` violation is translated to `ValidationError`, the outer session stays usable, and earlier work is kept. Tripwire: with the `begin_nested()` removed, the test fails with `PendingRollbackError`. Still open: a two-session concurrency test on real Postgres.
 - `request/service.py:139,179,243,298,362,415` (7 methods). The `except IntegrityError` blocks ran inside an open transaction; `DbSessionMiddleware` rolled back and re-raised, so the domain `ValidationError` never reached the `PackitbotError` branch at `main.py:231`. The user always got `MSG_SOMETHING_WENT_WRONG`.
 - **Fix:** Wrapped all 7 mutating methods in `RequestService` (`create_request`, `update_request`, `assign_driver`, `transition_status`, `reject_assignment`, `cancel_request`, `submit_feedback`) with `session.begin_nested()` (SAVEPOINT). Constraint violations now roll back to the savepoint, leaving the outer transaction clean for the `ValidationError` to propagate through the middleware to the global error handler.
 - **Tests:** Updated `tests/unit/request/test_service.py` to mock `session.begin_nested()` as an async context manager (same pattern as `tests/unit/driver/test_service.py`).
@@ -394,7 +396,7 @@ an `if callback.message:` guard does not protect against the real failure: an
 
 - `README.md` links a MIT badge; **no `LICENSE` file exists**.
 - ~~README claims "job claiming" and Redis-backed rate limiting — neither is implemented.~~ — **Resolved 2026-11-12:** README no longer mentions job claiming; the throttling middleware is in-memory (#19), and Redis is documented only as FSM storage (README stack list and `Settings.redis_url` docstring corrected).
-- The state machine is undocumented outside Python — it is the product's core.
+- ~~The state machine is undocumented outside Python — it is the product's core.~~ — **Resolved 2026-11-13:** `docs/STATE_MACHINE.md` documents the statuses, the allowed transitions, and which entry point drives each one. It also records that `REJECTED_BY_DRIVER` is never written (see #9 follow-up).
 - `.agents/rules/GEMINI.md` is actively misleading (see #39).
 
 ---
