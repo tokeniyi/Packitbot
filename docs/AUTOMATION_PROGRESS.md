@@ -5,6 +5,199 @@ Backlog source of truth: `docs/MAINTENANCE.md` (section 4). This file tracks wha
 
 ---
 
+## Run 2026-11-16 05:40 WAT (Africa/Lagos)
+
+**Branch:** `claude/daily-review-2026-11-14` (continued; PR #40 was still open at the start of this run, so no new branch was cut)
+**PR:** #40, its description rewritten at the end of this run to match what the branch actually contains.
+
+### Starting state
+- Open PRs on `tokeniyi/packitbot`: PR #40 (`claude/daily-review-2026-11-14`), the only open PR from this workflow. Continued on that branch at `5a0ba2b`.
+- Standing issue #24 `Dev workflow requests`: no owner comments since the 2026-11-13 run. Only `[Claude run]` notes, which are ignored as instructions.
+- Automated Kilo AI review on PR #40 (bot account, not the owner, so information only): six findings. Checked each one below.
+- Test environment: fresh sandbox. Python 3.12.3 venv at `.venv/` (git-ignored) with `requirements.txt`. Local PostgreSQL 16 cluster started (`pg_ctlcluster 16 main start`), with a `packitbot` role and database created for this run.
+
+### Owner requests received this run
+- None. Issue #24 has no owner comments since 2026-11-13. A `[Claude run]` comment was posted on #24 to report this run and to repeat the open owner decisions.
+
+### Done this run
+- Verification and review of PR #40. No production code or test code was changed, because none of the Kilo findings held up on inspection (see below).
+- **Kilo finding 1 (PR description says "verification run only"): valid.** The PR description was rewritten to list the real changes: the new Postgres test file, the two `requirements.txt` bumps and the `docs/MAINTENANCE.md` updates.
+- **Files touched:** `docs/AUTOMATION_PROGRESS.md` (this entry). PR #40 description updated on GitHub.
+
+### Kilo AI review findings checked on PR #40 (head `5a0ba2b`)
+- **#2, `schema_name` fixture: skip turns into an error. Not reproduced.** `pytest.skip()` is called inside the first `try/except`, which is before the second `try: yield / finally`. The `finally` never runs on the skip path. Run with `DATABASE_URL` pointing at a closed port (`127.0.0.1:5999`): both new tests are reported as **2 skipped**, with the reason "PostgreSQL not usable for this test: Connect call failed".
+- **#3, missing `@pytest.mark.asyncio` markers: not a defect.** `pyproject.toml` sets `asyncio_mode = "auto"`, and the existing async tests in the repo rely on that too. The suite collects and runs the new async tests (599 passed).
+- **#4, `schema_translate_map` may not apply to `create_all`: not a defect.** Checked directly with a scratch script (outside the repo). `Base.metadata.create_all` run through an engine with `schema_translate_map={None: <schema>}` creates `users` and `delivery_requests` in the throwaway schema. The FK-violation test passes against those tables, which confirms the translation is in effect.
+- **#5, `pytest-asyncio` 1.4.1.post1 → 1.5.0 could change async collection: no failure seen.** The full suite passes on 1.5.0 with `asyncio_mode = auto`. Left as is.
+- **#6, hardcoded `STUDENT_ID = 1`: no action.** Each test has its own schema, so the IDs cannot collide.
+- **Kilo's own coverage note, that `bot/request/service.py` and the model definitions were not visible to it: noted.** This run checked both directly, and the SAVEPOINT tripwire from the 2026-11-14 entry is still in place.
+
+### Plan validation
+- No multi-stage task this run, so no plan file was added or changed.
+
+### Multi-run task status
+- No multi-stage task in progress.
+
+### Verification
+- `pytest -q` with `DATABASE_URL=postgresql+asyncpg://packitbot:packitbot@127.0.0.1:5432/packitbot` on `5a0ba2b`: **599 passed, 0 failed**, 17 warnings. The warnings are the known `AsyncMockMixin` "never awaited" messages in `tests/unit/student/`.
+- `pytest -q tests/integration/db/test_request_savepoint_postgres.py` with `DATABASE_URL` pointing at a closed port: **2 skipped**, no errors. This is the check for Kilo finding 2.
+- `create_all` placement check (scratch script in the session scratchpad, not committed): tables created under the `schema_translate_map` schema. This is the check for Kilo finding 4.
+- No linter is configured in `pyproject.toml` or CI, so no lint was run.
+
+### Outstanding (for next run, in suggested order)
+Every item below is blocked on an owner decision. Nothing was started without an answer.
+1. **P1 #17 stage 2b, admin broadcast body escaping: owner decision needed.** `bot/core/services/notification_service.py::send_broadcast_message` and the admin broadcast preview in `bot/admin/handler.py` send the body with `parse_mode="Markdown"` on purpose. Asked on #24 on 2026-11-10 through 2026-11-15. Do not change without the answer.
+2. **Session-ID question for commit trailers: owner decision needed.** The attribution reminder and the stored prompt name different session IDs. This run used the reminder's ID (`session_01VLAbn3sXQ2S2Yz6dceCrVj`), as earlier runs did. The stored prompt names `session_01VLAbn74n9b7QhQiKpdAp5k`. Both are recorded until the owner picks one.
+3. **Driver rejection statistic: owner decision needed.** Choose (a) or (b) as in the 2026-11-14 entry: (a) count `RequestStatusLog` driver hand-backs in `get_stats` (needs a marker to tell them from other PENDING returns), or (b) write `REJECTED_BY_DRIVER` on driver rejection and include it in the admin queue. Then add a test that a driver rejection shows in the stats.
+4. **Missing `LICENSE` file: owner decision needed.** The README links to `LICENSE`, but none exists. Needs the copyright holder confirmed before a file is added.
+5. **`.agents/rules/GEMINI.md` conflict: owner decision needed.** It says "DO NOT RUN pytest", which conflicts with this routine.
+6. **Dependency major upgrade: `multidict` 6.7.1 → 7.2.1.** Not applied (major). Needs its own run with a full suite pass and a check that aiohttp and yarl still resolve.
+7. **Dependency pin conflict:** `pydantic` 2.13.4 → 2.14.3 and `pydantic-core` 2.46.4 → 2.50.4 are blocked by `aiogram` 3.31.0 (requires `pydantic<2.14`). Re-check when aiogram relaxes the pin.
+8. **Alembic test isolation** (`tests/integration/db/test_alembic.py`): reset the schema at the start of the test. Not done because `DROP SCHEMA` against a developer's `DATABASE_URL` is destructive. Needs an owner decision on a dedicated test database. Note: the new Postgres test file uses its own throwaway schema and does not depend on this.
+9. **Dead guards (cosmetic):** the `if session is None:` branches in the handlers and the `if callback.message:` guards (P1 #21 stage 3) are unreachable but harmless. Remove only if the owner wants the churn.
+10. **Minor follow-up from #19:** the throttling middleware no longer reads `settings.redis_url`. Config, so leave it unless the owner asks.
+11. **Open question on PR #40:** whether to merge it is the owner's call. This workflow never merges. The PR is ready for review once the owner has read the corrected description.
+
+### Found but not changed, and why
+- **Driver rejection statistic** (outstanding item 3). Changes either the statistic or queue behaviour, so it needs the owner's choice.
+- **Admin broadcast body** left unescaped on purpose (outstanding item 1).
+- **Missing `LICENSE`** left alone (outstanding item 4).
+- **Stray root files** `PENDING` (empty), `pr16_review.md`, `pr17_review.md`, and the `.agents/` and `.hermes/` directories are left in place. Deleting files is outside this run's scope.
+- **`RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited`** in `tests/unit/student/`. The tests pass; the warning comes from test mocks, not production code.
+
+### Dependency upgrades applied
+- None this run.
+
+### Major dependency upgrades available
+- `multidict` 6.7.1 → 7.2.1 (major, not applied).
+- `pydantic` 2.14.3 and `pydantic-core` 2.50.4 are not applied: blocked by `aiogram` 3.31.0.
+
+---
+
+## Run 2026-11-15 05:39 WAT (Africa/Lagos)
+
+**Branch:** `claude/daily-review-2026-11-14` (continued; PR #40 was still open at the start of this run, so no new branch was cut)
+**PR:** #40, updated with this run's entry at the end of the run.
+
+### Starting state
+- Open PRs on `tokeniyi/packitbot`: PR #40 (`claude/daily-review-2026-11-14`), the only open PR from this workflow. Continued on that branch.
+- Standing issue #24 `Dev workflow requests`: 14 comments. All owner-visible comments are `[Claude run]` notes from earlier runs, which are ignored as instructions. No comment from the owner has been posted since the 2026-11-14 run.
+- Test environment: fresh sandbox. Python 3.12 venv at `.venv/` (git-ignored) with `requirements.txt`, `pytest` and `pytest-asyncio`. Local PostgreSQL 16 cluster started (`pg_ctlcluster 16 main start`) with a throwaway `packitbot` role and database.
+- Without `DATABASE_URL`: 594 passed, 2 skipped, 3 failed (the three alembic tests need a live database, as in earlier runs).
+
+### Owner requests received this run
+- None. Issue #24 has no owner comments since 2026-11-13. A `[Claude run]` comment was posted on #24 to report this run and to repeat the open owner decisions.
+
+### Done this run
+- Verification only. No code, test, dependency or documentation changes were made. The branch was checked out from `origin/claude/daily-review-2026-11-14` (head `6deab1b`) and was not rewritten.
+
+### Plan validation
+- No multi-stage task this run, so no plan file was added or changed. The three existing plans in `docs/plans/` (callback-message-guards, markdown-escaping, student-service-sessions) are all recorded as done in earlier runs.
+
+### Multi-run task status
+- No multi-stage task in progress.
+
+### Verification
+- `pytest -q` with `DATABASE_URL=postgresql+asyncpg://packitbot:packitbot@127.0.0.1:5432/packitbot` on `6deab1b`: **599 passed, 0 failed, 0 skipped**.
+- `pytest -q` without a database: 594 passed, 2 skipped (Postgres-only tests), 3 failed (alembic tests need a live database). Not a regression.
+- No linter is configured in `pyproject.toml` or CI, so no lint was run.
+
+### Outstanding (for next run, in suggested order)
+Every item below is blocked on an owner decision. No item was started without an answer.
+1. **P1 #17 stage 2b, admin broadcast body escaping: owner decision needed.** `bot/core/services/notification_service.py::send_broadcast_message` and the admin broadcast preview in `bot/admin/handler.py` send the body with `parse_mode="Markdown"` on purpose. Asked on #24 on 2026-11-10 through 2026-11-14. Do not change without the answer.
+2. **Session-ID question for commit trailers: owner decision needed.** The attribution reminder and the stored prompt name different session IDs. This run used the reminder's ID (`session_01VLAbn6YGcTYMwi8HtqJBTw`), as earlier runs did. The stored prompt names `session_01VLAbn74n9b7QhQiKpdAp5k`. Both are recorded until the owner picks one.
+3. **Driver rejection statistic: owner decision needed.** Choose (a) or (b) as in the 2026-11-14 entry: (a) count `RequestStatusLog` driver hand-backs in `get_stats` (needs a marker to tell them from other PENDING returns), or (b) write `REJECTED_BY_DRIVER` on driver rejection and include it in the admin queue. Then add a test that a driver rejection shows in the stats.
+4. **Missing `LICENSE` file: owner decision needed.** The README links to `LICENSE`, but none exists. Needs the copyright holder confirmed before a file is added.
+5. **`.agents/rules/GEMINI.md` conflict: owner decision needed.** It says "DO NOT RUN pytest", which conflicts with this routine.
+6. **Dependency major upgrade: `multidict` 6.7.1 → 7.2.1.** Not applied (major). Needs its own run with a full suite pass and a check that aiohttp and yarl still resolve.
+7. **Dependency pin conflict:** `pydantic` 2.13.4 → 2.14.3 and `pydantic-core` 2.46.4 → 2.50.4 are blocked by `aiogram` 3.31.0 (requires `pydantic<2.14`). Re-check when aiogram relaxes the pin.
+8. **Alembic test isolation** (`tests/integration/db/test_alembic.py`): reset the schema at the start of the test. Not done because `DROP SCHEMA` against a developer's `DATABASE_URL` is destructive. Needs an owner decision on a dedicated test database.
+9. **Dead guards (cosmetic):** the `if session is None:` branches in the handlers and the `if callback.message:` guards (P1 #21 stage 3) are unreachable but harmless. Remove only if the owner wants the churn.
+10. **Minor follow-up from #19:** the throttling middleware no longer reads `settings.redis_url`. Config, so leave it unless the owner asks.
+
+### Found but not changed, and why
+- **Driver rejection statistic** (outstanding item 3). Changes either the statistic or queue behaviour, so it needs the owner's choice.
+- **Admin broadcast body** left unescaped on purpose (outstanding item 1).
+- **Missing `LICENSE`** left alone (outstanding item 4).
+- **Stray root files** `PENDING` (empty), `pr16_review.md`, `pr17_review.md`, and the `.agents/` and `.hermes/` directories are left in place. Deleting files is outside this run's scope.
+- **`RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited`** in `tests/unit/student/` and `bot/student/service.py:111`. The tests pass; the warning comes from test mocks, not production code.
+
+### Dependency upgrades applied
+- None this run.
+
+### Major dependency upgrades available
+- `multidict` 6.7.1 → 7.2.1 (major, not applied).
+- `pydantic` 2.14.3 and `pydantic-core` 2.50.4 are not applied: blocked by `aiogram` 3.31.0.
+
+---
+
+## Run 2026-11-14 05:39 WAT (Africa/Lagos)
+
+**Branch:** `claude/daily-review-2026-11-14` (cut from `main` at `5a33573`, the merge of PR #39; no `claude/daily-review` PR was open, so no prior branch was continued)
+**PR:** opened against `main` at the end of this run (link in the final report).
+
+### Starting state
+- Open PRs on `tokeniyi/packitbot`: none. PR #39 (2026-11-13) is merged.
+- Standing issue #24 `Dev workflow requests`: no owner comments since the 2026-11-13 run. Only `[Claude run]` notes, which are ignored as instructions.
+- Test environment: fresh sandbox. Python 3.12 venv at `.venv/` (git-ignored) with `requirements.txt`. A local PostgreSQL 16 cluster was started (`pg_ctlcluster 16 main start`) with a throwaway `packitbot` role and database, so the alembic tests and the new Postgres tests could run.
+- Baseline on `main` before changes: **597 passed** with `DATABASE_URL` pointing at the local Postgres.
+
+### Owner requests received this run
+- None. Issue #24 has no owner comments since 2026-11-13. A `[Claude run]` comment was posted on #24 to report this run and to repeat the open owner decisions.
+
+### Done this run
+- **Outstanding item 8 (P1 #14 follow-up): real-PostgreSQL SAVEPOINT test, done.** New `tests/integration/db/test_request_savepoint_postgres.py` (2 tests). It runs against PostgreSQL only: a foreign-key violation (`student_id` that points at no user) inside `RequestService.create_request` becomes `ValidationError`, the session stays usable, and a second session on another connection can still write and read. Each test uses its own throwaway schema (via `schema_translate_map`), dropped afterwards, so it does not touch the Alembic tables. The tests skip when `DATABASE_URL` is not PostgreSQL or the server is unreachable, so the suite passes without a database. Tripwire verified: with the `begin_nested()` removed, the first test fails with `PendingRollbackError`; `bot/request/service.py` was restored and `git diff` on it is empty.
+- **Minor/patch dependency bumps (requirements.txt):** `pydantic-settings` 2.16.2 → 2.16.3 (patch); `pytest-asyncio` 1.4.1.post1 → 1.5.0 (minor). `uv pip check` reports all installed packages compatible.
+- **Docs:** `docs/MAINTENANCE.md` #14 follow-up now says the Postgres test exists; #17 stage 2c line corrected from "(open)" to done on 2026-11-08 (it was done in that run; the tests are in `tests/unit/driver/test_html_escaping.py`); 2026-11-14 row added to the section 7 run log.
+- **Files touched:** `tests/integration/db/test_request_savepoint_postgres.py` (new); `requirements.txt`; `docs/MAINTENANCE.md`; `docs/AUTOMATION_PROGRESS.md` (this entry).
+
+### Plan validation
+- No multi-stage task this run, so no new plan file.
+
+### Found during review, not changed (needs owner decision)
+- Same as the 2026-11-13 run: driver rejection statistic (outstanding item 11), admin broadcast body escaping (item 1), and the LICENSE file (item 10).
+- **Repo convention conflict:** `.agents/rules/GEMINI.md` says "DO NOT RUN pytest". This routine requires the tests to be run, and every run since 2026-10-28 has run them. Not changed; the owner should reconcile (item 12).
+
+### Verification
+- `pytest -q` with `DATABASE_URL=postgresql+asyncpg://packitbot:packitbot@127.0.0.1:5432/packitbot` after all changes: **599 passed, 0 failed** (597 baseline + 2 new). Includes the 3 alembic tests.
+- New Postgres tests with no database reachable (`DATABASE_URL` pointing at a closed port): **2 skipped**, as designed.
+- Tripwire for the new test: fails without SAVEPOINT (see above).
+- `uv pip check`: all installed packages compatible.
+- No linter is configured in `pyproject.toml` or CI, so no lint was run.
+
+### Multi-run task status
+- No multi-stage task in progress.
+
+### Outstanding (for next run, in suggested order)
+1. **P1 #17 stage 2b, admin broadcast body escaping: owner decision needed.** Unchanged. `bot/core/services/notification_service.py::send_broadcast_message` and the admin broadcast preview in `bot/admin/handler.py` send the body with `parse_mode="Markdown"` on purpose. Asked on #24 on 2026-11-10 through 11-13. Do not change without the answer.
+2. **Session-ID question for commit trailers: owner decision needed.** The attribution reminder and the stored prompt name different session IDs. This run used the reminder's ID (`session_01VLAbn5SJuXfsVpQggxbnoA`); the stored prompt names `session_01VLAbn74n9b7QhQiKpdAp5k`. Both are recorded until the owner picks one.
+3. **Dead guards (cosmetic):** the `if session is None:` branches in the handlers are unreachable. Remove them only if the owner wants the churn.
+4. **Dependency major upgrade: `multidict` 6.7.1 → 7.2.1.** Not applied (major). Needs its own run with a full suite pass and a check that aiohttp/yarl still resolve.
+5. **Dependency pin conflict:** `pydantic` 2.13.4 → 2.14.3 and `pydantic-core` 2.46.4 → 2.50.4 are blocked by `aiogram` 3.31.0 (requires `pydantic<2.14`). Re-check when aiogram relaxes it.
+6. **Alembic test isolation** (`tests/integration/db/test_alembic.py`): reset the schema at the start of the test. Deliberately not done because `DROP SCHEMA` against a developer's `DATABASE_URL` is destructive. Needs an owner decision on a dedicated test database. (The new Postgres test file uses its own schema and does not depend on this.)
+7. **P1 #21 stage 3 (optional):** the `if callback.message:` guards are unreachable after stage 1 but harmless. Remove only if the owner wants the churn.
+8. **Minor follow-up from #19:** the throttling middleware no longer reads `settings.redis_url`. Consider whether the setting is still needed; it is config, so leave it unless the owner asks.
+9. **Missing LICENSE file:** the README links to `LICENSE` but no such file exists. Adding a license is a legal decision for the owner. Needs owner confirmation of the copyright holder before a file is added.
+10. **Driver rejection statistic: owner decision needed.** Choose one: (a) keep `ASSIGNED → PENDING` for the queue and change `get_stats` to count `RequestStatusLog` rows for driver hand-backs (needs a marker to tell them from other PENDING returns); or (b) write `REJECTED_BY_DRIVER` on driver rejection and change the admin queue to include it. Then add a test that a driver rejection shows in the stats.
+11. **`.agents/rules/GEMINI.md` conflict:** it says "DO NOT RUN pytest", which conflicts with this routine. Owner should reconcile.
+
+### Found but not changed, and why
+- **Driver rejection statistic** (outstanding item 10).
+- **Admin broadcast body** left unescaped on purpose (outstanding item 1).
+- **Missing `LICENSE`** left alone (outstanding item 9).
+- **Stray root files** `PENDING` (empty), `pr16_review.md`, `pr17_review.md`, and the `.agents/` and `.hermes/` directories are left in place. Deleting files is outside this run's scope.
+- **`RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited`** in `tests/unit/student/` and the pytest-asyncio fixture-loop-scope deprecation warning. Tests pass; left alone, the warnings come from test mocks, not production code.
+
+### Dependency upgrades applied
+- `pydantic-settings` 2.16.2 → 2.16.3 (patch) in `requirements.txt`.
+- `pytest-asyncio` 1.4.1.post1 → 1.5.0 (minor) in `requirements.txt`.
+
+### Major dependency upgrades available
+- `multidict` 6.7.1 → 7.2.1 (major, not applied).
+- `pydantic` 2.14.3 and `pydantic-core` 2.50.4 are not applied: blocked by `aiogram` 3.31.0.
+
+---
+
 ## Run 2026-11-13 05:40 WAT (Africa/Lagos)
 
 **Branch:** `claude/daily-review-2026-11-13` (cut from `main` at `1006845`; PR #38 for 2026-11-12 is merged, and no `claude/daily-review` PR was open, so no prior branch was continued)
