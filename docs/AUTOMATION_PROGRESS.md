@@ -5,6 +5,68 @@ Backlog source of truth: `docs/MAINTENANCE.md` (section 4). This file tracks wha
 
 ---
 
+## Run 2026-11-17 05:40 WAT (Africa/Lagos)
+
+**Branch:** `claude/daily-review-2026-11-17` (cut from `main` at `6354bd9`, the merge of PR #40; no `claude/daily-review` PR was open and no other such branch remained on the remote, so no prior branch was continued)
+**PR:** opened against `main` at the end of this run (link in the final report).
+
+### Starting state
+- Open PRs on `tokeniyi/packitbot`: none. PR #40 is merged.
+- Standing issue #24 `Dev workflow requests`: no comment from the owner since the 2026-11-01 run. Every comment on the issue is a `[Claude run]` note, which is ignored as an instruction.
+- Test environment: fresh sandbox. Python 3.12.3 venv at `.venv/` (git-ignored) with `requirements.txt` (`pip check` clean). Local PostgreSQL 16 cluster started (`pg_ctlcluster 16 main start`) with a `packitbot` role and database.
+- Baseline on `main` before changes, with `DATABASE_URL` pointing at the local Postgres: **599 passed, 0 failed**.
+
+### Owner requests received this run
+- None. A `[Claude run]` comment was posted on #24 to report this run and to repeat the owner decisions still open.
+
+### Done this run
+- **P3 #35 dead-class sweep (MAINTENANCE.md section 4, cleanup of `NavHome`'s prefix collision).** Grep of `bot/` showed that ten `CallbackData` factories in `bot/core/utils/callback_data.py` have no production caller: `RequestAction`, `RequestEditField`, `DriverStatusUpdate`, `ConfirmChoice`, `SelectOption`, `HallConfirm`, `DateQuickPick`, `AddressQuickPick`, `ReviewFieldEdit`, `NavHome`. They were deleted, with their 15 tests in `tests/unit/core/test_utils.py` (10 prefix parametrisations, 5 round-trips). The module docstring now lists only the classes that exist and the modules that really import them. The 7 factories still in use are kept: `AdminAssign`, `AdminDriverApproval`, `AdminDriverManage`, `AdminDriverEdit`, `AdminDriverRemove`, `AdminUserAction`, `PaginationNav`.
+- The `test_nav_home_prefix_is_unique` test was renamed `test_callback_data_prefixes_are_unique`. It still checks that no two factories share a prefix, and its comment no longer names the deleted class.
+- **Files touched:** `bot/core/utils/callback_data.py`, `tests/unit/core/test_utils.py`, `tests/unit/admin/test_pagination_routing.py`, `docs/MAINTENANCE.md` (section 7 row and a resolved note under `PaginationNav`), `docs/AUTOMATION_PROGRESS.md` (this entry).
+
+### Plan validation
+- No multi-stage task this run, so no plan file was added or changed.
+
+### Multi-run task status
+- No multi-stage task in progress.
+
+### Verification
+- `pytest -q` with `DATABASE_URL=postgresql+asyncpg://packitbot:packitbot@127.0.0.1:5432/packitbot`: **584 passed, 0 failed** (599 baseline minus the 15 removed tests; no test was weakened to get there).
+- `python -m compileall bot`: ok. `pyflakes bot/core/utils/callback_data.py`: clean. `pyflakes tests/unit/core/test_utils.py`: 11 warnings before and after the change (pre-existing unused imports, not touched).
+- `pip check`: no broken requirements.
+- No linter is configured in `pyproject.toml` or CI, so no project lint was run.
+
+### Outstanding (for next run, in suggested order)
+Every item below is blocked on an owner decision or on a dependency release that is too new to apply yet.
+1. **P1 #17 stage 2b, admin broadcast body escaping: owner decision needed.** `bot/core/services/notification_service.py::send_broadcast_message` and the admin broadcast preview in `bot/admin/handler.py` send the body with `parse_mode="Markdown"` on purpose. Asked on #24 since 2026-11-10. Do not change without the answer.
+2. **Session-ID question for commit trailers: owner decision needed.** The attribution reminder and the stored prompt name different session IDs. This run used the reminder's ID (`session_01VLAbn4x2nfMmtwE8kMurLB`), as earlier runs did. The stored prompt names `session_01VLAbn74n9b7QhQiKpdAp5k`.
+3. **Driver rejection statistic: owner decision needed.** Option (a) or (b) as in the 2026-11-14 entry. Then add a test that a driver rejection shows in the stats.
+4. **Missing `LICENSE` file: owner decision needed.** The README links to `LICENSE`, but none exists.
+5. **`.agents/rules/GEMINI.md` conflict: owner decision needed.** It says "DO NOT RUN pytest", which conflicts with this routine.
+6. **Dependency major upgrade: `multidict` 6.7.1 → 7.2.1.** Not applied (major). Needs its own run with a full suite pass and a check that aiohttp and yarl still resolve.
+7. **Dependency pin chain for pydantic (re-check next run).** `aiogram` 3.32.0 (minor, uploaded 2026-11-15) relaxes its pin to `pydantic<2.15`, so `pydantic` 2.14.3 and `pydantic-core` 2.50.4 may become possible with it. Not applied this run because aiogram 3.32.0 is only two days old. Next run: if it is still fine, bump `aiogram` 3.31.0 → 3.32.0, then `pydantic` 2.13.4 → 2.14.3 and `pydantic-core` 2.46.4 → 2.50.4 together, and run the full suite.
+8. **`SQLAlchemy` 2.1.8 → 2.1.9 (patch, uploaded 2026-11-16).** Not applied: one day old. Next run: apply it if the suite passes, in the same way as the other patch bumps.
+9. **Alembic test isolation** (`tests/integration/db/test_alembic.py`): reset the schema at the start of the test. Not done because `DROP SCHEMA` against a developer's `DATABASE_URL` is destructive. Needs an owner decision on a dedicated test database.
+10. **Dead guards (cosmetic):** the `if session is None:` branches in the handlers and the `if callback.message:` guards (P1 #21 stage 3) are unreachable but harmless. Remove only if the owner wants the churn.
+11. **Minor follow-up from #19:** the throttling middleware no longer reads `settings.redis_url`. Config, so leave it unless the owner asks.
+12. **Test-utils unused imports:** `tests/unit/core/test_utils.py` has 11 pre-existing unused imports (pyflakes). Harmless; a cleanup could be folded into a later test-touching run.
+
+### Found but not changed, and why
+- **Driver rejection statistic** (outstanding item 3). Changes either the statistic or queue behaviour, so it needs the owner's choice.
+- **Admin broadcast body** left unescaped on purpose (outstanding item 1).
+- **Missing `LICENSE`** left alone (outstanding item 4).
+- **Dependency bumps `aiogram` 3.32.0 and `SQLAlchemy` 2.1.9** held back as too fresh (outstanding items 7 and 8).
+- **Stray root files** `PENDING` (empty), `pr16_review.md`, `pr17_review.md`, and the `.agents/` and `.hermes/` directories are left in place. Deleting files is outside this run's scope.
+- **`RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited`** in `tests/unit/student/`. The tests pass; the warning comes from test mocks, not production code.
+
+### Dependency upgrades applied
+- None this run.
+
+### Major dependency upgrades available
+- `multidict` 6.7.1 → 7.2.1 (major, not applied).
+
+---
+
 ## Run 2026-11-16 05:40 WAT (Africa/Lagos)
 
 **Branch:** `claude/daily-review-2026-11-14` (continued; PR #40 was still open at the start of this run, so no new branch was cut)

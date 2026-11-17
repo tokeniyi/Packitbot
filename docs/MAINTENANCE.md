@@ -429,6 +429,7 @@ an `if callback.message:` guard does not protect against the real failure: an
 | 2026-11-03 | `claude/daily-review-2026-11-03` | P1 #21 stage 1: `CallbackMessageGuardMiddleware` blocks callbacks with an `InaccessibleMessage` or `None` message (plan in `docs/plans/callback-message-guards.md`). Fixed `test_routes_rejection_through_service` (patch target). Minor/patch dependency bumps; P0 #7 Alembic tests verified green on a fresh `packitbot_test`. | see `docs/AUTOMATION_PROGRESS.md` | **Fix + tests.** Suite: 532 passed. |
 | 2026-10-30 | `fix/driver-callback-error-message` | P1 #22 completion: `bot/driver/handler.py` returned hardcoded `"Invalid callback data."` instead of `ErrorMessages.INVALID_INPUT` (4 sites), failing 4 `test_callback_int_parsing.py` tests. Also `RequestService` was imported locally inside 3 handler functions, so `test_routes_rejection_through_service`'s `patch("bot.driver.handler.RequestService")` target silently no-opped. Fixed both: module-level import + `ErrorMessages.INVALID_INPUT` at all 4 sites. | #26 | **Fixed.** Suite: 502 passed, 10 failed (was 497 passed, 15 failed). 5 tests fixed, 0 regressions. |
 | 2026-11-14 | `claude/daily-review-2026-11-14` | #14 follow-up: real-PostgreSQL SAVEPOINT test (FK violation, two sessions; skips without PostgreSQL). Minor/patch bumps: `pydantic-settings` 2.16.3, `pytest-asyncio` 1.5.0. Stage 2c status corrected to done. | see `docs/AUTOMATION_PROGRESS.md` | **Tests + deps.** Suite 599 passed (597 + 2). |
+| 2026-11-17 | `claude/daily-review-2026-11-17` | P3 #35 dead-class sweep: removed 10 unused `CallbackData` factories from `bot/core/utils/callback_data.py` (`RequestAction`, `RequestEditField`, `DriverStatusUpdate`, `ConfirmChoice`, `SelectOption`, `HallConfirm`, `DateQuickPick`, `AddressQuickPick`, `ReviewFieldEdit`, `NavHome`) and their 15 round-trip/prefix tests. No production caller existed (grep-verified). | see `docs/AUTOMATION_PROGRESS.md` | **Fixed.** Suite 584 passed (599 − 15 removed tests). |
 
 **Remaining backlog:** 0 × P0 (all fixed; #6 was not a bug), 0 × P1 (#21 stage 3 optional; #17 stage 2b broadcast escaping awaits an owner decision), 12 × P2, 7 × P3 = **19 open items**.
 
@@ -469,6 +470,7 @@ an `if callback.message:` guard does not protect against the real failure: an
   from `origin/fix/driver-reject-bypasses-fsm`. **Do not merge task branches
   out of order** — PR #13 carries the doc as of 2026-10-05, but PRs
   #4–#12 each carry an older copy.
+- **Resolved 2026-11-17 (P3 #35 sweep):** the unused `NavHome` factory is deleted. `PaginationNav` is still used by `bot/admin/keyboards.py`, so it is kept. Original note follows.
 - **Discovered, not fixed:** `PaginationNav` is now referenced **only** by
   `tests/unit/core/test_utils.py` — no production code uses it. It survives as
   the `nav` prefix that `NavHome` used to collide with. Fold its removal into

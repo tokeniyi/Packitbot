@@ -212,19 +212,17 @@ def test_single_page_still_renders_no_navigation(build):
 
 
 # ---------------------------------------------------------------------------
-# Latent collision called out by the same backlog entry: NavHome shares the
-# "nav" prefix with PaginationNav but declares a different required field.
+# Prefix collisions between CallbackData factories. The unused ``NavHome``
+# factory (which shared the ``nav`` prefix with ``PaginationNav``) was removed
+# in the P3 #35 dead-class sweep; this guard stops a new factory from reusing
+# an existing prefix.
 # ---------------------------------------------------------------------------
 
 
-def test_nav_home_prefix_is_unique():
-    """``NavHome`` and ``PaginationNav`` must not share a prefix.
+def test_callback_data_prefixes_are_unique():
+    """Every CallbackData factory in the module must have its own prefix.
 
-    Both packed to a leading ``nav:`` while requiring different fields, so
-    ``PaginationNav.unpack("nav:home")`` and ``NavHome.unpack("nav:2:next")``
-    were ambiguous. ``NavHome`` has no production call site, so its prefix was
-    moved to ``nav_home`` rather than deleting the class (backlog P1 #12; the
-    dead-class sweep is P3 #35).
+    Two factories sharing a prefix make ``unpack`` ambiguous (backlog P1 #12).
     """
     from bot.core.utils import callback_data as cb_module
 

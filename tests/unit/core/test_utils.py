@@ -16,17 +16,7 @@ from bot.core.utils.callback_data import (
     AdminAssign,
     AdminDriverApproval,
     AdminUserAction,
-    AddressQuickPick,
-    ConfirmChoice,
-    DateQuickPick,
-    DriverStatusUpdate,
-    HallConfirm,
-    NavHome,
     PaginationNav,
-    RequestAction,
-    RequestEditField,
-    ReviewFieldEdit,
-    SelectOption,
 )
 from bot.core.utils.formatters import (
     format_account_status,
@@ -316,20 +306,10 @@ def test_format_request_summary():
 
 # --- callback data round-trip ---
 @pytest.mark.parametrize("factory,expected_prefix", [
-    (RequestAction, "req_action"),
-    (RequestEditField, "req_edit"),
-    (DriverStatusUpdate, "driver_status"),
     (AdminAssign, "admin_assign"),
     (AdminDriverApproval, "admin_driver"),
     (AdminUserAction, "admin_user"),
-    (ConfirmChoice, "confirm"),
-    (SelectOption, "select"),
     (PaginationNav, "nav"),
-    (HallConfirm, "hall_confirm"),
-    (DateQuickPick, "date_pick"),
-    (AddressQuickPick, "addr_pick"),
-    (ReviewFieldEdit, "review_edit"),
-    (NavHome, "nav_home"),
 ])
 def test_callback_data_factory_prefix(factory, expected_prefix):
     assert factory.__prefix__ == expected_prefix
@@ -341,43 +321,6 @@ def test_pagination_nav_roundtrip():
     unpacked = PaginationNav.unpack(data)
     assert unpacked.page == 2
     assert unpacked.direction == "next"
-
-
-def test_hall_confirm_roundtrip():
-    cb = HallConfirm(action="use_profile_hall")
-    data = cb.pack()
-    unpacked = HallConfirm.unpack(data)
-    assert unpacked.action == "use_profile_hall"
-
-
-def test_date_quick_pick_roundtrip():
-    cb = DateQuickPick(choice="tomorrow")
-    data = cb.pack()
-    unpacked = DateQuickPick.unpack(data)
-    assert unpacked.choice == "tomorrow"
-
-
-def test_address_quick_pick_roundtrip():
-    cb = AddressQuickPick(choice="frequent_1", address_index=0)
-    data = cb.pack()
-    unpacked = AddressQuickPick.unpack(data)
-    assert unpacked.choice == "frequent_1"
-    assert unpacked.address_index == 0
-
-
-def test_review_field_edit_roundtrip():
-    cb = ReviewFieldEdit(context="req_create", field="pickup_detail")
-    data = cb.pack()
-    unpacked = ReviewFieldEdit.unpack(data)
-    assert unpacked.context == "req_create"
-    assert unpacked.field == "pickup_detail"
-
-
-def test_nav_home_roundtrip():
-    cb = NavHome(action="home")
-    data = cb.pack()
-    unpacked = NavHome.unpack(data)
-    assert unpacked.action == "home"
 
 
 # --- pagination ---
