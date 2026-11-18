@@ -5,6 +5,69 @@ Backlog source of truth: `docs/MAINTENANCE.md` (section 4). This file tracks wha
 
 ---
 
+## Run 2026-11-18 05:45 WAT (Africa/Lagos)
+
+**Branch:** `claude/daily-review-2026-11-18` (cut from `main` at `7a02b16`, the merge of PR #41; no `claude/daily-review` PR was open at the start of this run, so no prior branch was continued)
+**PR:** opened against `main` at the end of this run (link in the final report).
+
+### Starting state
+- Open PRs on `tokeniyi/Packitbot`: none. PR #41 (`claude/daily-review-2026-11-17`) is merged. PR #40 is merged.
+- Standing issue #24 `Dev workflow requests`: no owner comment since 2026-11-01. Every comment on the issue is a `[Claude run]` note, which is ignored as an instruction.
+- Test environment: fresh sandbox. Python 3.12.3 venv at `.venv/` (git-ignored) with `requirements.txt` (`pip check` clean). Local PostgreSQL 16 cluster started (`pg_ctlcluster 16 main start`) with a `packitbot` role and database.
+- Baseline on `main` before changes, with `DATABASE_URL` pointing at the local Postgres: **584 passed, 0 failed**.
+
+### Owner requests received this run
+- None. A `[Claude run]` comment was posted on #24 to report this run and to repeat the owner decisions still open.
+
+### Done this run
+- **Dependency bumps (the chain planned in the 2026-11-17 entry, items 7 and 8).** `aiogram` 3.31.0 → 3.32.0 (minor; uploaded 2026-11-15). This relaxes aiogram's pin to `pydantic<2.15`, which unblocks `pydantic` 2.13.4 → 2.14.3 and `pydantic_core` 2.46.4 → 2.50.4 (both uploaded 2026-11-05). `SQLAlchemy` 2.1.8 → 2.1.9 (patch; uploaded 2026-11-16). Applied together in one commit because the pydantic bumps depend on the aiogram bump.
+  - Age note for the owner: aiogram 3.32.0 and SQLAlchemy 2.1.9 were about three and two days old when applied. The pydantic and pydantic_core releases are two weeks old.
+- **Files touched:** `requirements.txt` (4 pin lines), `docs/AUTOMATION_PROGRESS.md` (this entry).
+
+### Plan validation
+- No multi-stage task this run, so no plan file was added or changed.
+
+### Multi-run task status
+- No multi-stage task in progress.
+
+### Verification
+- Before the bump: `pytest -q` with `DATABASE_URL=postgresql+asyncpg://packitbot:packitbot@127.0.0.1:5432/packitbot`: **584 passed, 0 failed**.
+- After the bump: `pip install -r requirements.txt` clean, `pip check`: no broken requirements. `pytest -q` (same DB URL): **584 passed, 0 failed**, 17 warnings (the known `AsyncMockMixin` "never awaited" messages in `tests/unit/student/`).
+- No linter is configured in `pyproject.toml` or CI, so no lint was run.
+
+### Outstanding (for next run, in suggested order)
+Every item below is blocked on an owner decision or on a major upgrade that needs its own run. Nothing was started without an answer.
+1. **P1 #17 stage 2b, admin broadcast body escaping: owner decision needed.** `bot/core/services/notification_service.py::send_broadcast_message` and the admin broadcast preview in `bot/admin/handler.py` send the body with `parse_mode="Markdown"` on purpose. Asked on #24 since 2026-11-10. Do not change without the answer.
+2. **Session-ID question for commit trailers: owner decision needed.** The attribution reminder and the stored prompt name different session IDs. This run used the reminder's ID (`session_01VLAbn5FoddSz2YuBMdSVLt`), as earlier runs did. The stored prompt names `session_01VLAbn74n9b7QhQiKpdAp5k`.
+3. **Driver rejection statistic: owner decision needed.** Option (a) or (b) as in the 2026-11-14 entry. Then add a test that a driver rejection shows in the stats.
+4. **Missing `LICENSE` file: owner decision needed.** The README links to `LICENSE`, but none exists.
+5. **`.agents/rules/GEMINI.md` conflict: owner decision needed.** It says "DO NOT RUN pytest", which conflicts with this routine.
+6. **Dependency major upgrade: `multidict` 6.7.1 → 7.2.1.** Not applied (major). Needs its own run with a full suite pass and a check that aiohttp and yarl still resolve.
+7. **Alembic test isolation** (`tests/integration/db/test_alembic.py`): reset the schema at the start of the test. Not done because `DROP SCHEMA` against a developer's `DATABASE_URL` is destructive. Needs an owner decision on a dedicated test database.
+8. **Dead guards (cosmetic):** the `if session is None:` branches in the handlers and the `if callback.message:` guards (P1 #21 stage 3) are unreachable but harmless. Remove only if the owner wants the churn.
+9. **Minor follow-up from #19:** the throttling middleware no longer reads `settings.redis_url`. Config, so leave it unless the owner asks.
+10. **Test-utils unused imports:** `tests/unit/core/test_utils.py` has 11 pre-existing unused imports (pyflakes). Harmless; a cleanup could be folded into a later test-touching run.
+11. **Lockfile:** `uv.lock` is a 132-byte stub that does not reflect `requirements.txt`. Left alone; the owner may want to say whether it should be regenerated or removed.
+
+### Found but not changed, and why
+- **Driver rejection statistic** (outstanding item 3). Changes either the statistic or queue behaviour, so it needs the owner's choice.
+- **Admin broadcast body** left unescaped on purpose (outstanding item 1).
+- **Missing `LICENSE`** left alone (outstanding item 4).
+- **`multidict` 7.x** left alone (major, outstanding item 6).
+- **Stray root files** `PENDING` (empty), `pr16_review.md`, `pr17_review.md`, and the `.agents/` and `.hermes/` directories are left in place. Deleting files is outside this run's scope.
+- **`RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited`** in `tests/unit/student/`. The tests pass; the warning comes from test mocks, not production code.
+
+### Dependency upgrades applied
+- `aiogram` 3.31.0 → 3.32.0 (minor)
+- `pydantic` 2.13.4 → 2.14.3 (minor)
+- `pydantic_core` 2.46.4 → 2.50.4 (minor)
+- `SQLAlchemy` 2.1.8 → 2.1.9 (patch)
+
+### Major dependency upgrades available
+- `multidict` 6.7.1 → 7.2.1 (major, not applied).
+
+---
+
 ## Run 2026-11-17 05:40 WAT (Africa/Lagos)
 
 **Branch:** `claude/daily-review-2026-11-17` (cut from `main` at `6354bd9`, the merge of PR #40; no `claude/daily-review` PR was open and no other such branch remained on the remote, so no prior branch was continued)
