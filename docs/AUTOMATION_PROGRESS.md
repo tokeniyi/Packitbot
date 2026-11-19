@@ -5,10 +5,10 @@ Backlog source of truth: `docs/MAINTENANCE.md` (section 4). This file tracks wha
 
 ---
 
-## Run 2026-11-19 (Africa/Lagos)
+## Run 2026-11-19 05:41 WAT (Africa/Lagos)
 
 **Branch:** `claude/daily-review-2026-11-19` (cut from `main` at `c21ead0`, the merge of PR #42; no `claude/daily-review` PR was open and no unmerged daily-review branch was left to continue, so no prior work was picked up)
-**PR:** docs-only, opened against `main` at the end of this run (link in the final report).
+**PR:** #43 (`claude/daily-review-2026-11-19`), docs-only, against `main`.
 
 ### Starting state
 - Open PRs on `tokeniyi/Packitbot`: none. PRs #40, #41, #42 are merged.
@@ -29,11 +29,11 @@ Backlog source of truth: `docs/MAINTENANCE.md` (section 4). This file tracks wha
 
 ### Verification
 - `pytest -q` with the local Postgres: **584 passed, 0 failed**, 17 warnings (pre-existing).
+- No project linter is configured. Item 11 below comes from a one-off `pyflakes` run, not from a project lint step.
 - Bug confirmed by reading `bot/main.py::_run_webhook` and by loading `Settings`: `Settings` has no `webhook_secret` or `port` attribute (`hasattr` returns False with `WEBHOOK_URL` set). `_run_webhook` reads both.
-- No linter is configured, so no lint was run.
 
 ### Outstanding (for next run, in suggested order)
-1. **NEW, P1, owner decision needed: webhook mode crashes at startup.** `bot/main.py::_run_webhook` (lines ~399 and ~408) reads `settings.webhook_secret` and `settings.port`, but `bot/core/config.py::Settings` defines neither. Whenever `WEBHOOK_URL` is set, `bot.set_webhook(...)` runs first (line ~397), then `AttributeError` is raised when the `SimpleRequestHandler` is built. The process exits, but Telegram keeps the webhook registered, so updates go to a URL with no server. Proposed fix (needs owner sign-off because it adds a secret-bearing env var): add `webhook_secret: str | None = None` (env `WEBHOOK_SECRET`, passed as Telegram's `secret_token`) and `port: int = 8080` (confirm the port the deployment expects) to `Settings`, then add a test that `Settings` exposes both and a test for `_run_webhook` wiring with mocks. Also decide whether the bot should refuse to start in webhook mode without a secret. Do not add this without the answer.
+1. **NEW, P1, owner decision needed: webhook mode crashes at startup.** `bot/main.py::_run_webhook` (lines ~399 and ~408) reads `settings.webhook_secret` and `settings.port`, but `bot/core/config.py::Settings` defines neither. Whenever `WEBHOOK_URL` is set, `bot.set_webhook(...)` runs first (line ~397), then `AttributeError` is raised when the `SimpleRequestHandler` is built. The process exits, but Telegram keeps the webhook registered, so updates go to a URL with no server. Proposed fix (needs owner sign-off because it adds a secret-bearing env var): add `webhook_secret: str | None = None` (env `WEBHOOK_SECRET`) and `port: int = 8080` (confirm the port the deployment expects) to `Settings`. The secret must reach both `set_webhook(secret_token=...)` and `SimpleRequestHandler(secret_token=...)`; the handler is what checks the `X-Telegram-Bot-Api-Secret-Token` header on incoming POSTs, so passing it only to `set_webhook` would leave the endpoint unauthenticated. Telegram accepts 1-256 characters from `A-Za-z0-9_-`. Never log the value; add a placeholder to `.env.example` and nothing else. Reorder `_run_webhook` so that every object that can fail (handler, app, runner setup) is built before `set_webhook` is called, so a startup failure cannot leave a dangling webhook registered with Telegram. Add a test that `Settings` exposes both fields and a test for `_run_webhook` ordering with mocks. Also decide whether the bot should refuse to start in webhook mode without a secret. Do not add this without the answer.
 2. **P1 #17 stage 2b, admin broadcast body escaping: owner decision needed.** `bot/core/services/notification_service.py::send_broadcast_message` and the admin broadcast preview in `bot/admin/handler.py` send the body with `parse_mode="Markdown"` on purpose. Asked on #24 since 2026-11-10. Do not change without the answer.
 3. **Session-ID question for commit trailers: owner decision needed.** The attribution reminder and the stored prompt name different session IDs. This run used the reminder's ID (`session_01VLAbn4TUKJzpNrdGacwRUS`), as earlier runs did. The stored prompt names `session_01VLAbn74n9b7QhQiKpdAp5k`.
 4. **Driver rejection statistic: owner decision needed.** Option (a) or (b) as in the 2026-11-14 entry. Then add a test that a driver rejection shows in the stats.
