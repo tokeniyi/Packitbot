@@ -5,6 +5,64 @@ Backlog source of truth: `docs/MAINTENANCE.md` (section 4). This file tracks wha
 
 ---
 
+## Run 2026-11-19 (Africa/Lagos)
+
+**Branch:** `claude/daily-review-2026-11-19` (cut from `main` at `c21ead0`, the merge of PR #42; no `claude/daily-review` PR was open and no unmerged daily-review branch was left to continue, so no prior work was picked up)
+**PR:** docs-only, opened against `main` at the end of this run (link in the final report).
+
+### Starting state
+- Open PRs on `tokeniyi/Packitbot`: none. PRs #40, #41, #42 are merged.
+- Standing issue #24 `Dev workflow requests`: no comment from the owner since 2026-11-01. Every comment on it is a `[Claude run]` note, ignored as an instruction.
+- Test environment: fresh sandbox. Python 3.12 venv at `.venv/` (git-ignored) with `requirements.txt`. Local PostgreSQL 16 cluster started with a `packitbot` role and database.
+- Baseline on `main` with `DATABASE_URL` pointing at the local Postgres: **584 passed, 0 failed** (17 known `AsyncMockMixin` warnings).
+
+### Owner requests received this run
+- None. A `[Claude run]` comment was posted on #24 to report this run and to repeat the open owner decisions.
+
+### Done this run
+- No code, test or dependency changes. Every item in Outstanding is blocked on an owner decision.
+- Review found one real bug (item 1 below). The fix touches secret handling (`WEBHOOK_SECRET`), so it is recorded for the owner rather than applied.
+- **Files touched:** `docs/AUTOMATION_PROGRESS.md` (this entry).
+
+### Plan validation
+- No multi-stage task this run.
+
+### Verification
+- `pytest -q` with the local Postgres: **584 passed, 0 failed**, 17 warnings (pre-existing).
+- Bug confirmed by reading `bot/main.py::_run_webhook` and by loading `Settings`: `Settings` has no `webhook_secret` or `port` attribute (`hasattr` returns False with `WEBHOOK_URL` set). `_run_webhook` reads both.
+- No linter is configured, so no lint was run.
+
+### Outstanding (for next run, in suggested order)
+1. **NEW, P1, owner decision needed: webhook mode crashes at startup.** `bot/main.py::_run_webhook` (lines ~399 and ~408) reads `settings.webhook_secret` and `settings.port`, but `bot/core/config.py::Settings` defines neither. Whenever `WEBHOOK_URL` is set, `bot.set_webhook(...)` runs first (line ~397), then `AttributeError` is raised when the `SimpleRequestHandler` is built. The process exits, but Telegram keeps the webhook registered, so updates go to a URL with no server. Proposed fix (needs owner sign-off because it adds a secret-bearing env var): add `webhook_secret: str | None = None` (env `WEBHOOK_SECRET`, passed as Telegram's `secret_token`) and `port: int = 8080` (confirm the port the deployment expects) to `Settings`, then add a test that `Settings` exposes both and a test for `_run_webhook` wiring with mocks. Also decide whether the bot should refuse to start in webhook mode without a secret. Do not add this without the answer.
+2. **P1 #17 stage 2b, admin broadcast body escaping: owner decision needed.** `bot/core/services/notification_service.py::send_broadcast_message` and the admin broadcast preview in `bot/admin/handler.py` send the body with `parse_mode="Markdown"` on purpose. Asked on #24 since 2026-11-10. Do not change without the answer.
+3. **Session-ID question for commit trailers: owner decision needed.** The attribution reminder and the stored prompt name different session IDs. This run used the reminder's ID (`session_01VLAbn4TUKJzpNrdGacwRUS`), as earlier runs did. The stored prompt names `session_01VLAbn74n9b7QhQiKpdAp5k`.
+4. **Driver rejection statistic: owner decision needed.** Option (a) or (b) as in the 2026-11-14 entry. Then add a test that a driver rejection shows in the stats.
+5. **Missing `LICENSE` file: owner decision needed.** The README links to `LICENSE`, but none exists.
+6. **`.agents/rules/GEMINI.md` conflict: owner decision needed.** It says "DO NOT RUN pytest", which conflicts with this routine.
+7. **Dependency major upgrade: `multidict` 6.7.1 → 7.2.1.** Not applied (major). Needs its own run with a full suite pass and a check that aiohttp and yarl still resolve.
+8. **Alembic test isolation** (`tests/integration/db/test_alembic.py`): reset the schema at the start of the test. Not done because `DROP SCHEMA` against a developer's `DATABASE_URL` is destructive. Needs an owner decision on a dedicated test database.
+9. **Dead guards (cosmetic):** the `if session is None:` branches in the handlers and the `if callback.message:` guards (P1 #21 stage 3) are unreachable but harmless. Remove only if the owner wants the churn.
+10. **Minor follow-up from #19:** the throttling middleware no longer reads `settings.redis_url`. Config, so leave it unless the owner asks.
+11. **Test-utils unused imports:** `tests/unit/core/test_utils.py` has 11 pre-existing unused imports (pyflakes). Harmless; a cleanup could be folded into a later test-touching run.
+12. **Lockfile:** `uv.lock` is a 132-byte stub that does not reflect `requirements.txt`. Left alone; the owner may want to say whether it should be regenerated or removed.
+
+### Found but not changed, and why
+- **Webhook startup crash** (outstanding item 1). Its fix adds a secret setting, so it waits for the owner.
+- **Admin broadcast body** left unescaped on purpose (outstanding item 2).
+- **Driver rejection statistic** (outstanding item 4). Changes either the statistic or queue behaviour.
+- **Missing `LICENSE`** (outstanding item 5).
+- **`multidict` 7.x** (major, outstanding item 7).
+- **Stray root files** `PENDING` (empty), `pr16_review.md`, `pr17_review.md`, and the `.agents/` and `.hermes/` directories are left in place. Deleting files is outside this run's scope.
+- **`RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited`** in `tests/unit/student/`. The tests pass; the warning comes from test mocks, not production code.
+
+### Dependency upgrades applied
+- None this run.
+
+### Major dependency upgrades available
+- `multidict` 6.7.1 → 7.2.1 (major, not applied).
+
+---
+
 ## Run 2026-11-18 05:45 WAT (Africa/Lagos)
 
 **Branch:** `claude/daily-review-2026-11-18` (cut from `main` at `7a02b16`, the merge of PR #41; no `claude/daily-review` PR was open at the start of this run, so no prior branch was continued)
