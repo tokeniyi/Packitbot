@@ -120,7 +120,7 @@ with `DriverProfile.id`, and lookups treat it as a `DriverProfile` PK. Items **#
   "Telegram ID of the admin" while the signature says `admin_user_id` — every other
   admin function uses `User.id`). Add a test.
 
-**#2 Driver assignment writes `DriverProfile.id` into a `users.id` column** — *handler fix present on `main` (`bot/admin/handler.py:337` persists `driver_profile.user_id`, verified 2026-10-27); no regression test confirmed yet — `AvailableDriverDTO.driver_id=dp.id` still exists in `admin/service.py`, check it is never persisted*
+**#2 Driver assignment writes `DriverProfile.id` into a `users.id` column** — *handler fix present on `main` (`bot/admin/handler.py:337` persists `driver_profile.user_id`, verified 2026-10-27). Regression tests exist and pass (re-verified 2026-11-21): `tests/unit/request/test_service.py::test_assign_driver_rejects_driver_profile_id` and `::test_assign_driver_persists_users_id`, and `tests/unit/admin/test_handler.py::test_assigns_using_users_id_not_profile_id`. `AvailableDriverDTO.driver_id=dp.id` still exists, but the only consumer that persists it (`bot/admin/handler.py:327-333`) resolves the `DriverProfile` and passes `user_id` on.*
 - `bot/admin/keyboards.py:433` → `bot/admin/handler.py:294-304` → `bot/request/service.py:226`;
   model at `bot/core/models/delivery_request.py:111`
 - `AvailableDriverDTO` carries **both** `driver_id=dp.id` and `user_id=user.id`
@@ -140,7 +140,7 @@ with `DriverProfile.id`, and lookups treat it as a `DriverProfile` PK. Items **#
   `user_id`. Separately, `total_deliveries` counts `Feedback` rows (feedback.py:33-41) —
   it must count `DeliveryRequest` where `status == DELIVERED`.
 
-**#4 `MissingGreenlet` on "view request detail"** — *FIXED on `main`, re-verified 2026-10-28:* the handler loads via `RequestRepository.get_by_id_with_driver` (`bot/request/repository.py:63`), which uses `selectinload` for both hops. Regression test not confirmed (tests could not be run in the sandbox).
+**#4 `MissingGreenlet` on "view request detail"** — *FIXED on `main`, re-verified 2026-10-28:* the handler loads via `RequestRepository.get_by_id_with_driver` (`bot/request/repository.py:63`), which uses `selectinload` for both hops. Regression tests exist and pass (re-verified 2026-11-21): `tests/unit/request/test_request_detail_eager_load.py`.
 - `bot/student/handlers/requests.py:668` (load) and `:141-147` (lazy access)
 - `req.driver` / `req.driver.driver_profile` lazy-load outside an awaited context →
   `MissingGreenlet` (a subclass of `InvalidRequestError`, **not** `PackitbotError`),
@@ -377,18 +377,22 @@ an `if callback.message:` guard does not protect against the real failure: an
 
 - ~500 tests across 30+ files under `tests/` (conftest.py, PR #8, provisions real
   in-memory SQLite; `tests/fixtures/__init__.py` is empty).
-- 4 "integration" handler flow files are still AsyncMock-based; none starts
-  Postgres, Redis, or a Dispatcher. The 7 failures in those files stem from
-  AsyncMock not supporting `session.begin_nested()` as an async context manager.
-- 3 alembic tests require a real PostgreSQL instance (connection refused in CI).
+- The "integration" handler flow files (`tests/integration/handlers/`) are still AsyncMock-based;
+  none starts Postgres, Redis, or a Dispatcher. The `begin_nested()` failures that used to come from
+  them were fixed on 2026-10-31 (test harness only).
+- 3 alembic tests require a real PostgreSQL instance (connection refused in CI). The
+  SAVEPOINT tests in `tests/unit/request/` skip without PostgreSQL.
 - **P1 #22 fully completed 2026-10-30:** the 5 failures (4 `test_callback_int_parsing.py`
   tests + `test_routes_rejection_through_service`) are now FIXED. The driver handler's
   4 hardcoded `"Invalid callback data."` strings were replaced with `ErrorMessages.INVALID_INPUT`,
   and `RequestService` was moved from a local to a module-level import so the test's
   `patch("bot.driver.handler.RequestService")` target resolves correctly.
-- **Baseline: 502 passed, 10 failed.** The 10 failures are pre-existing
-  (3 PostgreSQL-dependent + 7 AsyncMock integration) and unrelated to this run.
-  Before this run's change: 497 passed, 15 failed. The 5-test delta is the P1 #22 completion.
+- **Baseline (2026-11-21): 584 passed, 0 failed** with `DATABASE_URL` pointing at a local
+  PostgreSQL 16. The suite has 17 `RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was
+  never awaited` warnings. They come from unit-test sessions built with `AsyncMock()`, where
+  `session.add(...)` (a sync method on the real `AsyncSession`) is mocked as async. The tests pass;
+  the fix would be a sync `MagicMock` for `add` in those fixtures (not done yet, test-only).
+- Historical: 502 passed, 10 failed on 2026-10-30 (3 PostgreSQL-dependent + 7 AsyncMock integration).
 
 ---
 
