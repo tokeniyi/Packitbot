@@ -32,6 +32,8 @@ def _make_request(
 
 async def test_request_repository_get_pending_returns_only_pending():
     session = AsyncMock()
+    # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+    session.add = MagicMock()
     row = MagicMock()
     row.scalar_one_or_none.return_value = None
 
@@ -50,6 +52,8 @@ async def test_request_repository_get_pending_returns_only_pending():
 
 async def test_request_repository_get_active_for_driver_returns_one():
     session = AsyncMock()
+    # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+    session.add = MagicMock()
     driver_req = _make_request(id=1, status=RequestStatus.ASSIGNED, driver_id=7)
     result_mock = MagicMock()
     result_mock.scalars.return_value.first.return_value = driver_req
@@ -65,6 +69,8 @@ async def test_request_repository_get_active_for_driver_returns_one():
 
 async def test_request_repository_get_active_for_driver_returns_none():
     session = AsyncMock()
+    # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+    session.add = MagicMock()
     result_mock = MagicMock()
     result_mock.scalars.return_value.first.return_value = None
     session.execute.return_value = result_mock
@@ -77,6 +83,8 @@ async def test_request_repository_get_active_for_driver_returns_none():
 
 async def test_request_repository_get_history_for_student():
     session = AsyncMock()
+    # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+    session.add = MagicMock()
     req = _make_request(id=1, student_id=42)
     result_mock = MagicMock()
     result_mock.scalars.return_value.all.return_value = [req]
@@ -96,6 +104,8 @@ async def test_request_repository_get_history_for_student():
 
 async def test_request_repository_get_dropoff_address_history():
     session = AsyncMock()
+    # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+    session.add = MagicMock()
     result_mock = MagicMock()
     result_mock.all.return_value = [("123 Lagos Street",), ("456 Abuja Road",)]
     session.execute.return_value = result_mock
@@ -109,6 +119,8 @@ async def test_request_repository_get_dropoff_address_history():
 
 async def test_status_log_repository_create():
     session = AsyncMock()
+    # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+    session.add = MagicMock()
     repo = StatusLogRepository(session)
 
     log_entry = MagicMock(spec=RequestStatusLog)
@@ -122,6 +134,8 @@ async def test_status_log_repository_create():
 
 async def test_status_log_repository_get_for_request():
     session = AsyncMock()
+    # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+    session.add = MagicMock()
     log1 = MagicMock(spec=RequestStatusLog)
     log1.id = 1
     log1.request_id = 42
@@ -143,6 +157,8 @@ async def test_status_log_repository_get_for_request():
 
 async def test_status_log_repository_get_for_request_returns_empty():
     session = AsyncMock()
+    # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+    session.add = MagicMock()
     result_mock = MagicMock()
     result_mock.scalars.return_value.all.return_value = []
     session.execute.return_value = result_mock
@@ -155,6 +171,8 @@ async def test_status_log_repository_get_for_request_returns_empty():
 
 async def test_feedback_repository_get_for_request_found():
     session = AsyncMock()
+    # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+    session.add = MagicMock()
     feedback = MagicMock(spec=Feedback)
     feedback.id = 1
     feedback.request_id = 42
@@ -171,6 +189,8 @@ async def test_feedback_repository_get_for_request_found():
 
 async def test_feedback_repository_get_for_request_not_found():
     session = AsyncMock()
+    # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+    session.add = MagicMock()
     result_mock = MagicMock()
     result_mock.scalar_one_or_none.return_value = None
     session.execute.return_value = result_mock
@@ -183,6 +203,8 @@ async def test_feedback_repository_get_for_request_not_found():
 
 async def test_request_repository_get_pending_pagination():
     session = AsyncMock()
+    # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+    session.add = MagicMock()
     req = _make_request(id=1, status=RequestStatus.PENDING)
     result_mock = MagicMock()
     result_mock.scalars.return_value.all.return_value = [req]
@@ -198,6 +220,8 @@ async def test_request_repository_get_pending_pagination():
 
 async def test_request_repository_list_returns_all():
     session = AsyncMock()
+    # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+    session.add = MagicMock()
     req1 = _make_request(id=1, status=RequestStatus.PENDING)
     req2 = _make_request(id=2, status=RequestStatus.ASSIGNED)
     result_mock = MagicMock()

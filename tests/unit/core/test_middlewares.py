@@ -71,6 +71,8 @@ def _make_fake_session():
         An AsyncMock session with execute, commit, rollback, close, flush, and add methods.
     """
     session = AsyncMock()
+    # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+    session.add = MagicMock()
     session.in_transaction = MagicMock(return_value=True)
     session.close = AsyncMock()
     session.rollback = AsyncMock()

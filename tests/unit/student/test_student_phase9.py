@@ -42,6 +42,8 @@ def test_register_student_dto_fields():
 async def test_register_student_creates_user_and_profile():
     """Verify register_student creates User + StudentProfile atomically."""
     session = AsyncMock()
+    # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+    session.add = MagicMock()
     row = MagicMock()
     row.scalar_one_or_none.return_value = None
     session.execute.return_value = row
@@ -64,6 +66,8 @@ async def test_register_student_creates_user_and_profile():
 async def test_register_student_duplicate_raises_validation_error():
     """Verify registration failure raises error and rolls back."""
     session = AsyncMock()
+    # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+    session.add = MagicMock()
     row = MagicMock()
     # For the duplicate test, user doesn't exist (so we try to create),
     # and flush() raises to simulate a unique constraint violation.
@@ -91,7 +95,8 @@ async def test_register_student_duplicate_raises_validation_error():
 async def test_is_registered_returns_true_for_student():
     """Verify is_registered returns True when user exists and role is STUDENT."""
     session = AsyncMock()
-
+    # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+    session.add = MagicMock()
     user = MagicMock()
     user.role = UserRole.STUDENT
 
@@ -105,7 +110,8 @@ async def test_is_registered_returns_true_for_student():
 async def test_is_registered_returns_false_for_non_student():
     """Verify is_registered returns False when user exists but is not STUDENT."""
     session = AsyncMock()
-
+    # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+    session.add = MagicMock()
     user = MagicMock()
     user.role = UserRole.DRIVER
 
@@ -119,7 +125,8 @@ async def test_is_registered_returns_false_for_non_student():
 async def test_is_registered_returns_false_when_user_missing():
     """Verify is_registered returns False when no user is found."""
     session = AsyncMock()
-
+    # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+    session.add = MagicMock()
     row = MagicMock()
     row.scalar_one_or_none.return_value = None
     session.execute.return_value = row
@@ -130,7 +137,8 @@ async def test_is_registered_returns_false_when_user_missing():
 async def test_get_profile_returns_profile_when_exists():
     """Verify get_profile returns StudentProfile for valid user_id."""
     session = AsyncMock()
-
+    # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+    session.add = MagicMock()
     profile = MagicMock(spec=StudentProfile)
     profile.user_id = 1
 
@@ -145,7 +153,8 @@ async def test_get_profile_returns_profile_when_exists():
 async def test_get_profile_returns_none_when_missing():
     """Verify get_profile returns None when profile does not exist."""
     session = AsyncMock()
-
+    # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+    session.add = MagicMock()
     row = MagicMock()
     row.scalar_one_or_none.return_value = None
     session.execute.return_value = row

@@ -5,6 +5,67 @@ Backlog source of truth: `docs/MAINTENANCE.md` (section 4). This file tracks wha
 
 ---
 
+## Run 2026-11-22 05:40 WAT (Africa/Lagos)
+
+**Branch:** `claude/daily-review-2026-11-19` (continued; PR #43 is still the only open daily-review PR, so this run adds a commit there)
+**PR:** #43, against `main`.
+
+### Starting state
+- Open PRs on `tokeniyi/Packitbot`: #43 only (`claude/daily-review-2026-11-19`, head `c0e7878` at start).
+- Standing issue #24 `Dev workflow requests`: no comment from the owner (`tokeniyi`) since the 2026-11-01 run notes. Every comment on it is a `[Claude run]` note, ignored as an instruction.
+- Test environment: fresh sandbox. Python 3.13.18 venv at `.venv/` (git-ignored) with `requirements.txt` and pytest, `pip check` clean. Local PostgreSQL 16 cluster started with a `packitbot` role and database.
+- Baseline before changes, with `DATABASE_URL` pointing at the local Postgres: **584 passed, 0 failed, 17 warnings**.
+
+### Owner requests received this run
+- None. No owner comment on #24 or #43. Open owner decisions from the Outstanding list are unchanged and are repeated in a `[Claude run]` note on #24.
+
+### Done this run
+- **Outstanding item 10: AsyncMock `session.add` warnings removed (test-only).** SQLAlchemy's `Session.add` is synchronous, but several test sessions were built as `AsyncMock()`, so every `session.add(...)` call created a coroutine that was never awaited. Each `session = AsyncMock()` in the affected tests is now followed by `session.add = MagicMock()`. No production code changed. The sites are the ones that produced the RuntimeWarnings (`bot/student/service.py:87,111`, `bot/admin/service.py:403,492`, `bot/core/repositories/base_repository.py:39`).
+  - Files touched: `tests/integration/handlers/test_admin_approval_flow.py`, `tests/integration/handlers/test_driver_registration_flow.py`, `tests/integration/handlers/test_request_flow.py`, `tests/unit/core/test_middlewares.py`, `tests/unit/driver/test_service.py`, `tests/unit/request/test_repository.py`, `tests/unit/student/test_handler.py`, `tests/unit/student/test_student_phase9.py`.
+  - Warnings went from 17 to 4. The 4 that remain are unrelated: an alembic `autoincrement` UserWarning, a `datetime.utcnow()` DeprecationWarning in `tests/unit/core/test_middlewares.py:59`, and two pytest-asyncio deprecation notices about the unset fixture loop scope.
+- **Files touched this run:** the 8 test files above, `docs/AUTOMATION_PROGRESS.md` (this entry).
+
+### Plan validation
+- No multi-stage task this run.
+
+### Verification
+- `pip check`: no broken requirements.
+- `pytest -q` with `DATABASE_URL=postgresql+asyncpg://packitbot:packitbot@127.0.0.1:5432/packitbot`: **584 passed, 0 failed, 4 warnings** after the change (baseline 584 passed, 17 warnings).
+- `pytest -q` without `DATABASE_URL`: 579 passed, 3 failed, 2 skipped. The 3 failures are `tests/integration/db/test_alembic.py`, which needs Postgres. The same 3 fail on `main` without the variable, confirmed with `git stash`, so the change adds no new failure.
+- No project linter is configured in `pyproject.toml` or CI, so none was run.
+
+### Outstanding (for next run, in suggested order)
+1. **P1, owner decision needed: webhook mode crashes at startup.** `bot/main.py::_run_webhook` (lines ~399 and ~408) reads `settings.webhook_secret` and `settings.port`, which `bot/core/config.py::Settings` does not define. `bot.set_webhook(...)` runs first, so Telegram keeps a registration pointing at a server that never starts. Proposed fix (needs owner sign-off because it adds a secret-bearing env var): add `webhook_secret: str | None = None` (env `WEBHOOK_SECRET`) and `port: int = 8080`, pass the secret to both `set_webhook(secret_token=...)` and `SimpleRequestHandler(secret_token=...)`, and build the handler and app before `set_webhook` is called. Open question for the owner: refuse to start in webhook mode without a secret? Add tests for the `Settings` fields and for `_run_webhook` ordering with mocks. Do not log the value. Do not add this without the answer.
+2. **P1 #17 stage 2b, admin broadcast body escaping: owner decision needed.** `bot/core/services/notification_service.py::send_broadcast_message` and the admin broadcast preview in `bot/admin/handler.py` send the body with `parse_mode="Markdown"` on purpose. Asked on #24 since 2026-11-10.
+3. **Session-ID question for commit trailers: owner decision needed.** The attribution reminder and the stored prompt name different session IDs. This run used the reminder's ID (`session_01VLAbn3eoS3rb5oZ6W8EgXH`). The stored prompt names `session_01VLAbn74n9b7QhQiKpdAp5k`.
+4. **Driver rejection statistic: owner decision needed.** `docs/MAINTENANCE.md` P1 #9 follow-up: `get_stats` counts `REJECTED_BY_DRIVER` rows, which are never written. Option (a) count `ASSIGNED → PENDING` rows in the status log, or (b) write `REJECTED_BY_DRIVER` and accept the queue change. Then add a test that a driver rejection shows in the stats.
+5. **Missing `LICENSE` file: owner decision needed.** The README badge and link point to `LICENSE`, but none exists.
+6. **`.agents/rules/GEMINI.md` conflict: owner decision needed.** It says "DO NOT RUN pytest", which conflicts with this routine.
+7. **Dependency major upgrade: `multidict` 6.7.1 → 7.2.1.** Not applied (major). Needs its own run with a full suite pass and a check that aiohttp and yarl still resolve.
+8. **Alembic test isolation** (`tests/integration/db/test_alembic.py`): reset the schema at the start of the test. Not done because `DROP SCHEMA` against a developer's `DATABASE_URL` is destructive. Needs an owner decision on a dedicated test database.
+9. **Dead guards (cosmetic):** the `if session is None:` branches and the `if callback.message:` guards (P1 #21 stage 3) are unreachable but harmless. Remove only if the owner wants the churn.
+10. ~~AsyncMock `session.add` warnings~~ **Done this run** (see Done).
+11. **Minor follow-up from #19:** the throttling middleware no longer reads `settings.redis_url`. Config, so leave it unless the owner asks.
+12. **Lockfile:** `uv.lock` is a 132-byte stub that does not reflect `requirements.txt`. Left alone; the owner may want to say whether it should be regenerated or removed.
+13. **MAINTENANCE.md section 1.4 says the suite needs Python 3.12 and the system Python is 3.11.** `pyproject.toml` pins `>=3.12,<3.13`, but this sandbox ran the suite on 3.13 without problems. Confirm the supported version with the owner before editing `pyproject.toml`.
+14. **MAINTENANCE.md P2 and P3 items:** the backlog summary counts 12 P2 and 7 P3 open items, but their bodies are not in the file (only P0 and P1 are). The owner may want them restored from an older copy or the count corrected.
+
+### Found but not changed, and why
+- **Webhook startup crash** (outstanding item 1). Its fix adds a secret setting, so it waits for the owner. A partial fix would leave the handler reading a missing `webhook_secret`, so it is not started alone.
+- **Admin broadcast body** left unescaped on purpose (outstanding item 2).
+- **Driver rejection statistic** (outstanding item 4). Changes either the statistic or queue behaviour.
+- **Missing `LICENSE`** (outstanding item 5). Creating a license is a legal choice for the owner.
+- **`multidict` 7.x** (major, outstanding item 7).
+- **Stray root files** `PENDING` (empty), `pr16_review.md`, `pr17_review.md`, and the `.agents/` and `.hermes/` directories are left in place. Deleting files is outside this run's scope.
+
+### Dependency upgrades applied
+- None this run.
+
+### Major dependency upgrades available
+- `multidict` 6.7.1 → 7.2.1 (major, not applied).
+
+---
+
 ## Run 2026-11-21 05:40 WAT (Africa/Lagos)
 
 **Branch:** `claude/daily-review-2026-11-19` (continued; PR #43 is still the only open daily-review PR, so this run adds a commit there)

@@ -46,6 +46,8 @@ class _SavepointCM:
 def _make_session():
     """AsyncMock session whose ``begin_nested()`` is a usable async context manager."""
     session = AsyncMock()
+    # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+    session.add = MagicMock()
     session.begin_nested = MagicMock(side_effect=lambda: _SavepointCM())
     return session
 

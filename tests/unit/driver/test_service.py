@@ -36,7 +36,8 @@ VALID_DTO = RegisterDriverDTO(
 class TestRegisterDriver:
     async def test_creates_new_user_and_driver_profile(self):
         session = AsyncMock()
-
+        # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+        session.add = MagicMock()
         user_row = MagicMock()
         user_row.scalar_one_or_none.return_value = None
         dp_row = MagicMock()
@@ -57,7 +58,8 @@ class TestRegisterDriver:
 
     async def test_returns_existing_pending_profile(self):
         session = AsyncMock()
-
+        # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+        session.add = MagicMock()
         existing_user = MagicMock(spec=User)
         existing_user.id = 1
         existing_user.role = UserRole.DRIVER
@@ -87,7 +89,8 @@ class TestRegisterDriver:
 
     async def test_raises_when_already_approved(self):
         session = AsyncMock()
-
+        # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+        session.add = MagicMock()
         existing_user = MagicMock(spec=User)
         existing_user.id = 1
         existing_user.role = UserRole.DRIVER
@@ -112,7 +115,8 @@ class TestRegisterDriver:
 
     async def test_raises_on_duplicate_plate_or_license(self):
         session = AsyncMock()
-
+        # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+        session.add = MagicMock()
         user_row = MagicMock()
         user_row.scalar_one_or_none.return_value = None
         dp_row = MagicMock()
@@ -164,6 +168,8 @@ class TestRegisterDriver:
 class TestGetDriverProfileByTelegramId:
     async def test_returns_profile_when_found(self):
         session = AsyncMock()
+        # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+        session.add = MagicMock()
         driver = MagicMock(spec=DriverProfile)
         driver.id = 1
         result_mock = MagicMock()
@@ -176,6 +182,8 @@ class TestGetDriverProfileByTelegramId:
 
     async def test_returns_none_when_not_found(self):
         session = AsyncMock()
+        # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+        session.add = MagicMock()
         result_mock = MagicMock()
         result_mock.scalar_one_or_none.return_value = None
         session.execute.return_value = result_mock
@@ -188,6 +196,8 @@ class TestGetDriverProfileByTelegramId:
 class TestSetDriverAvailability:
     async def test_sets_available_when_approved(self):
         session = AsyncMock()
+        # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+        session.add = MagicMock()
         profile = MagicMock(spec=DriverProfile)
         profile.status = DriverStatus.APPROVED
         profile.availability = DriverAvailability.OFFLINE
@@ -206,6 +216,8 @@ class TestSetDriverAvailability:
 
     async def test_raises_when_not_approved(self):
         session = AsyncMock()
+        # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+        session.add = MagicMock()
         profile = MagicMock(spec=DriverProfile)
         profile.status = DriverStatus.PENDING_APPROVAL
         profile.availability = DriverAvailability.OFFLINE
@@ -222,6 +234,8 @@ class TestSetDriverAvailability:
 
     async def test_raises_when_busy(self):
         session = AsyncMock()
+        # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+        session.add = MagicMock()
         profile = MagicMock(spec=DriverProfile)
         profile.status = DriverStatus.APPROVED
         profile.availability = DriverAvailability.BUSY
@@ -238,6 +252,8 @@ class TestSetDriverAvailability:
 
     async def test_raises_when_setting_busy_manually(self):
         session = AsyncMock()
+        # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+        session.add = MagicMock()
         profile = MagicMock(spec=DriverProfile)
         profile.status = DriverStatus.APPROVED
         profile.availability = DriverAvailability.AVAILABLE
@@ -254,6 +270,8 @@ class TestSetDriverAvailability:
 
     async def test_sets_offline_when_available(self):
         session = AsyncMock()
+        # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+        session.add = MagicMock()
         profile = MagicMock(spec=DriverProfile)
         profile.status = DriverStatus.APPROVED
         profile.availability = DriverAvailability.AVAILABLE
