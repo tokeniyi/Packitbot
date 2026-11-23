@@ -49,7 +49,8 @@ def _make_admin_user(telegram_id: int = 42) -> User:
 class TestAdminApprovalFlowIntegration:
     async def test_full_approval_flow(self):
         session = AsyncMock()
-
+        # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+        session.add = MagicMock()
         dp, user = _make_driver_and_user(status=DriverStatus.PENDING_APPROVAL)
         admin_user = _make_admin_user(telegram_id=42)
 
@@ -73,7 +74,8 @@ class TestAdminApprovalFlowIntegration:
 
     async def test_full_rejection_flow(self):
         session = AsyncMock()
-
+        # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+        session.add = MagicMock()
         dp, user = _make_driver_and_user(status=DriverStatus.PENDING_APPROVAL)
         admin_user = _make_admin_user(telegram_id=42)
 

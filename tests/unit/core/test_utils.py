@@ -3,14 +3,7 @@ from datetime import date, timedelta, datetime
 
 import pytest
 
-from bot.core.constants.limits import (
-    MAX_BROADCAST_LENGTH,
-    MAX_LUGGAGE_COUNT,
-    MIN_LUGGAGE_COUNT,
-    PAGE_SIZE,
-    RATING_MAX,
-    RATING_MIN,
-)
+from bot.core.constants.limits import PAGE_SIZE
 from bot.core.constants.enums import LuggageSize
 from bot.core.utils.callback_data import (
     AdminAssign,
@@ -19,21 +12,16 @@ from bot.core.utils.callback_data import (
     PaginationNav,
 )
 from bot.core.utils.formatters import (
-    format_account_status,
-    format_admin_action_type,
     format_cancelled_by_label,
     format_datetime_for_display,
     format_date_for_display,
-    format_driver_availability,
     format_driver_name,
-    format_driver_status,
     format_luggage_size,
     format_request_summary,
     format_rating,
     format_status_label,
-    format_verification_status,
 )
-from bot.core.utils.pagination import Page, paginate
+from bot.core.utils.pagination import paginate
 from bot.core.utils.validators import (
     ValidationError,
     validate_cancellation_reason,

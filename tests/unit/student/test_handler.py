@@ -47,6 +47,8 @@ def _make_callback(data: str = "", user_id: int = 1) -> MagicMock:
 
 async def test_register_student_creates_user_and_profile_atomically():
     session = AsyncMock()
+    # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+    session.add = MagicMock()
     row = MagicMock()
     row.scalar_one_or_none.return_value = None
     session.execute.return_value = row
@@ -68,6 +70,8 @@ async def test_register_student_creates_user_and_profile_atomically():
 
 async def test_register_student_duplicate_raises_validation_error():
     session = AsyncMock()
+    # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+    session.add = MagicMock()
     row = MagicMock()
     row.scalar_one_or_none.return_value = None
     session.execute.return_value = row
@@ -102,7 +106,8 @@ async def test_student_service_has_no_session_factory():
 
 async def test_is_registered_returns_false_before_registration():
     session = AsyncMock()
-
+    # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+    session.add = MagicMock()
     row = MagicMock()
     row.scalar_one_or_none.return_value = None
     session.execute.return_value = row
@@ -113,7 +118,8 @@ async def test_is_registered_returns_false_before_registration():
 
 async def test_is_registered_returns_true_after_registration():
     session = AsyncMock()
-
+    # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+    session.add = MagicMock()
     user = MagicMock()
     user.role = UserRole.STUDENT
 

@@ -110,7 +110,8 @@ class TestDriverRegistrationFlowIntegration:
 
     async def test_registration_service_with_duplicate_plate_raises(self):
         session = AsyncMock()
-
+        # SQLAlchemy's Session.add is synchronous; keep it a plain mock.
+        session.add = MagicMock()
         user_row = MagicMock()
         user_row.scalar_one_or_none.return_value = None
         dp_row = MagicMock()
