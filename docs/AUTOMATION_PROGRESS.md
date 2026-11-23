@@ -5,6 +5,67 @@ Backlog source of truth: `docs/MAINTENANCE.md` (section 4). This file tracks wha
 
 ---
 
+## Run 2026-11-23 05:40 WAT (Africa/Lagos)
+
+**Branch:** `claude/daily-review-2026-11-19` (continued; PR #43 is still the only open daily-review PR, so this run adds a commit there)
+**PR:** #43, against `main`.
+
+### Starting state
+- Open PRs on `tokeniyi/Packitbot`: #43 only.
+- Standing issue #24 `Dev workflow requests`: no comment from the owner (`tokeniyi`) asking for work since the 2026-11-01 run notes. The only owner comment on #43 is an old check-in note from 2026-11-19 that asks nothing. Every other comment on #24 is a `[Claude run]` note, ignored as an instruction.
+- Test environment: fresh sandbox. Python 3.13.18 venv at `.venv/` (git-ignored) with `requirements.txt`, `pip check` clean. Local PostgreSQL 16 cluster started (`pg_ctlcluster 16 main start`) with a `packitbot` role and database.
+- Baseline before changes, with `DATABASE_URL` pointing at the local Postgres: **584 passed, 0 failed, 4 warnings**.
+
+### Owner requests received this run
+- None. Open owner decisions are unchanged and are repeated in a `[Claude run]` note on #24.
+
+### Done this run
+- Checked the repo for risky patterns: raw SQL built from f-strings, `eval`/`exec`, `shell=True`, `pickle`, and logging of tokens or secrets. None found in `bot/` or `alembic/`.
+- Checked that the README and `.env.example` ports (PostgreSQL 5433, Redis 6379) match `docker-compose.yml`. They match.
+- Re-confirmed outstanding item 1 (webhook startup) by reading `bot/main.py`: `settings.webhook_secret` (lines ~400, ~408) and `settings.port` (lines ~416, ~419) are still not defined in `Settings`. Still blocked on the owner.
+- No code or config changes. Every remaining actionable item needs an owner decision, and the rules do not allow adding settings or secrets without one.
+- **Files touched this run:** `docs/AUTOMATION_PROGRESS.md` (this entry).
+
+### Plan validation
+- No multi-stage task this run.
+
+### Verification
+- `pip check`: no broken requirements.
+- `pytest -q` with `DATABASE_URL=postgresql+asyncpg://packitbot:packitbot@127.0.0.1:5432/packitbot`: **584 passed, 0 failed, 4 warnings**, unchanged from baseline. Tests were run before this progress entry was written, and no code changed since then.
+- No project linter is configured in `pyproject.toml` or CI, so none was run.
+
+### Outstanding (for next run, in suggested order)
+Unchanged from the 2026-11-22 entry, items 1 to 14. In short:
+1. **P1, owner decision needed: webhook mode crashes at startup.** Add `WEBHOOK_SECRET` and `PORT` settings, then the ordering fix. Details are in the 2026-11-22 entry.
+2. **P1 #17 stage 2b: escape the admin broadcast body?** Owner decision.
+3. **Commit-trailer session ID: owner decision.** The attribution reminder for this run named `session_01VLAbn2xjADGR5t6PcDvkSV`, and the stored prompt names `session_01VLAbn74n9b7QhQiKpdAp5k`. This run used the reminder's ID.
+4. **Driver rejection statistic: owner decision.**
+5. **Missing `LICENSE`: owner decision.**
+6. **`.agents/rules/GEMINI.md` "DO NOT RUN pytest" conflict: owner decision.**
+7. **`multidict` 6.7.1 → 7.2.1 (major): not applied.** Needs its own run.
+8. **Alembic test isolation: owner decision on a dedicated test database.**
+9. **Dead `if session is None` / `if callback.message` guards (cosmetic):** remove only if the owner wants the churn.
+10. **Throttling middleware no longer reads `settings.redis_url` (#19 follow-up):** leave unless the owner asks.
+11. **`uv.lock` stub:** owner to say whether to regenerate or remove.
+12. **Python version (MAINTENANCE.md 1.4 vs `pyproject.toml`):** owner to confirm before editing.
+13. **MAINTENANCE.md P2 and P3 bodies missing:** owner to restore or correct the count.
+
+### Found but not changed, and why
+- **Webhook startup crash** (item 1). Its fix adds a secret setting, so it waits for the owner.
+- **Admin broadcast body** left unescaped on purpose (item 2).
+- **Driver rejection statistic** (item 4). Changes either the statistic or queue behaviour.
+- **Missing `LICENSE`** (item 5). A legal choice for the owner.
+- **`multidict` 7.x** (major, item 7).
+- **Stray root files** `PENDING` (empty), `pr16_review.md`, `pr17_review.md`, and the `.agents/` and `.hermes/` directories are left in place.
+
+### Dependency upgrades applied
+- None this run.
+
+### Major dependency upgrades available
+- `multidict` 6.7.1 → 7.2.1 (major, not applied).
+
+---
+
 ## Run 2026-11-22 05:40 WAT (Africa/Lagos)
 
 **Branch:** `claude/daily-review-2026-11-19` (continued; PR #43 is still the only open daily-review PR, so this run adds a commit there)
