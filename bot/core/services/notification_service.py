@@ -86,7 +86,7 @@ async def send_broadcast_message(
     """
     # Attempt to send the broadcast message via the aiogram Bot instance.
     try:
-        await bot.send_message(chat_id=telegram_id, text=text, parse_mode="Markdown")
+        await bot.send_message(chat_id=telegram_id, text=text)
         return True
     except Exception as e:
         # Log the failure and return False so the caller can handle it.

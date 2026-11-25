@@ -42,6 +42,7 @@ objects, so any second call trips the regression assertion.
 
 import warnings
 from unittest.mock import AsyncMock, MagicMock, patch
+import pytest
 
 from aiogram.types import BotCommandScopeChat, BotCommandScopeDefault
 
@@ -169,3 +170,46 @@ async def test_per_chat_failure_is_caught_and_loop_continues(caplog):
     assert len(failures) == 3, f"expected 3 warnings (one per role), got {len(failures)}"
     assert all("chat_id=111" in r.getMessage() for r in failures)
     assert {r.getMessage().split()[3] for r in failures} == {"student", "driver", "admin"}
+
+
+async def test_webhook_uses_configured_address_and_preserves_updates(monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+
+    from aiogram.webhook import aiohttp_server
+    from aiohttp import web
+    from bot import main as entrypoint
+
+    settings = SimpleNamespace(
+        webhook_url="https://example.test/telegram",
+        webhook_secret="test-secret",
+        port=8085,
+    )
+    running = asyncio.Event()
+    bot = AsyncMock()
+    runner = AsyncMock()
+    site = AsyncMock()
+    site.start.side_effect = running.set
+    request_handler = MagicMock()
+    monkeypatch.setattr(entrypoint, "get_settings", lambda: settings)
+    for operation in ("_init_db", "_seed_admins", "set_bot_commands"):
+        monkeypatch.setattr(entrypoint, operation, AsyncMock())
+    monkeypatch.setattr(aiohttp_server, "SimpleRequestHandler", MagicMock(return_value=request_handler))
+    monkeypatch.setattr(aiohttp_server, "setup_application", MagicMock())
+    monkeypatch.setattr(web, "AppRunner", MagicMock(return_value=runner))
+    site_factory = MagicMock(return_value=site)
+    monkeypatch.setattr(web, "TCPSite", site_factory)
+
+    task = asyncio.create_task(entrypoint._run_webhook(MagicMock(), bot))
+    try:
+        await asyncio.wait_for(running.wait(), timeout=2)
+        bot.set_webhook.assert_awaited_once_with(
+            url=settings.webhook_url, secret_token=settings.webhook_secret
+        )
+        assert request_handler.register.call_args.kwargs["path"] == "/telegram"
+        assert site_factory.call_args.kwargs["port"] == 8085
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    runner.cleanup.assert_awaited_once()

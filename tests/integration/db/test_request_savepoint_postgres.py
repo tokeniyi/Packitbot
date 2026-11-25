@@ -181,3 +181,72 @@ async def test_failed_create_leaves_no_rows_and_other_session_keeps_working(engi
     finally:
         await failing.close()
         await other.close()
+
+
+async def test_concurrent_assignment_reserves_driver_and_cancel_releases(engine):
+    """Two sessions must not reserve the same driver for different deliveries."""
+    import asyncio
+
+    from bot.admin.schemas import RemoveDriverDTO
+    from bot.admin.service import get_available_drivers_ranked, remove_driver
+    from bot.core.constants.enums import CancelledBy, DriverAvailability, DriverStatus, RequestStatus
+    from bot.core.exceptions import DriverUnavailableError
+    from bot.core.models.driver_profile import DriverProfile
+    from bot.request.schemas import AssignDriverDTO, CancelRequestDTO
+
+    async with AsyncSession(engine, expire_on_commit=False) as session:
+        await _seed_student(session)
+        driver_user = User(id=2, telegram_id=2002, role=UserRole.DRIVER)
+        admin = User(id=3, telegram_id=2003, role=UserRole.ADMIN)
+        session.add_all([driver_user, admin])
+        await session.flush()
+        profile = DriverProfile(
+            user_id=driver_user.id,
+            vehicle_type="sedan",
+            plate_number="ABC-123DE",
+            license_number="DL-987654",
+            status=DriverStatus.APPROVED,
+            availability=DriverAvailability.AVAILABLE,
+        )
+        session.add(profile)
+        service = RequestService(session)
+        first, _ = await service.create_request(make_dto())
+        second, _ = await service.create_request(make_dto())
+        await session.commit()
+        profile_id, driver_id, admin_id = profile.id, driver_user.id, admin.id
+        request_ids = (first.id, second.id)
+
+    ready = asyncio.Barrier(2)
+
+    async def assign(request_id):
+        async with AsyncSession(engine, expire_on_commit=False) as session:
+            # Both calls hold an ORM instance loaded before any reservation.
+            profile = await session.get(DriverProfile, profile_id)
+            await ready.wait()
+            try:
+                await RequestService(session).assign_driver(
+                    AssignDriverDTO(request_id=request_id, driver_id=driver_id, admin_id=admin_id),
+                    profile,
+                )
+            except DriverUnavailableError:
+                await session.rollback()
+                return None
+            await session.commit()
+            return request_id
+
+    results = await asyncio.wait_for(asyncio.gather(*(assign(rid) for rid in request_ids)), timeout=10)
+    assert results.count(None) == 1
+    winner = next(result for result in results if result is not None)
+
+    async with AsyncSession(engine, expire_on_commit=False) as session:
+        assert not await get_available_drivers_ranked(session)
+        with pytest.raises(ValidationError, match="current delivery"):
+            await remove_driver(session, RemoveDriverDTO(driver_id=profile_id, admin_user_id=admin_id))
+        await RequestService(session).cancel_request(
+            CancelRequestDTO(request_id=winner, actor_id=STUDENT_ID, cancelled_by=CancelledBy.STUDENT)
+        )
+        await session.commit()
+        remaining = next(rid for rid in request_ids if rid != winner)
+        assert (await session.get(DeliveryRequest, remaining)).status == RequestStatus.PENDING
+        assert (await session.get(DriverProfile, profile_id)).availability == DriverAvailability.AVAILABLE
+        assert [driver.driver_id for driver in await get_available_drivers_ranked(session)] == [profile_id]

@@ -2,6 +2,7 @@
 
 from bot.driver.repository import DriverRepository
 from bot.core.constants.commands import CMD_DRIVERS
+from bot.core.keyboards.common_kb import HomeButton
 import logging
 from aiogram import Router, F
 from aiogram.filters import Command
@@ -449,6 +450,7 @@ async def handle_approve_driver(
             admin_user_id=user.id,
         )
         approved_driver = await approve_driver(session=session, dto=dto)
+        await session.commit()
 
         # Trigger instant notification
         await notify_driver_approval_status(
@@ -490,6 +492,7 @@ async def handle_reject_driver(
             admin_user_id=user.id,
         )
         rejected_driver = await reject_driver(session=session, dto=dto)
+        await session.commit()
 
         # Trigger instant notification
         await notify_driver_approval_status(
@@ -513,6 +516,7 @@ async def handle_reject_driver(
 
 
 @admin_router.callback_query(F.data == "admin_pending_drivers_back")
+@admin_router.callback_query(F.data.startswith("admin_verify_page:"))
 async def handle_back_to_pending_list(
     callback: CallbackQuery,
     session: AsyncSession,
@@ -523,12 +527,18 @@ async def handle_back_to_pending_list(
         await callback.answer(ErrorMessages.ADMIN_ACCESS_REQUIRED, show_alert=True)
         return
 
-    drivers, total_pages = await get_pending_drivers(session=session, page=1)
-    if not drivers:
-        await callback.message.edit_text("ℹ️ No pending driver applications found.")
+    page = 1 if callback.data == "admin_pending_drivers_back" else _parse_page_number(callback.data)
+    if page is None:
+        await callback.answer(ErrorMessages.INVALID_INPUT, show_alert=True)
         return
 
-    keyboard = pending_drivers_list_keyboard(drivers, page=1, total_pages=total_pages)
+    drivers, total_pages = await get_pending_drivers(session=session, page=page)
+    if not drivers:
+        await callback.message.edit_text("ℹ️ No pending driver applications found.", reply_markup=HomeButton())
+        await callback.answer()
+        return
+
+    keyboard = pending_drivers_list_keyboard(drivers, page=page, total_pages=total_pages)
     await callback.message.edit_text(
         "📋 **Pending Driver Applications:**\nSelect a driver below to review their profile:",
         reply_markup=keyboard,
@@ -1157,6 +1167,9 @@ async def process_broadcast_audience(
         return
 
     audience = callback.data.split(":")[1]
+    if audience not in {"students", "drivers", "all"}:
+        await callback.answer(ErrorMessages.INVALID_INPUT, show_alert=True)
+        return
     await state.update_data(audience=audience)
     await state.set_state(BroadcastFSM.waiting_for_content)
 
@@ -1201,17 +1214,8 @@ async def process_broadcast_content(
     audience = data.get("audience", "all")
     audience_name = "Students" if audience == "students" else ("Drivers" if audience == "drivers" else "All Users")
 
-    await message.answer(
-        "🔍 **Broadcast Preview & Confirmation**\n\n"
-        f"🎯 **Audience:** `{audience_name}`\n\n"
-        "📝 **Message Preview:**\n"
-        "----------------------------------------\n"
-        f"{content}\n"
-        "----------------------------------------\n\n"
-        "⚠️ Please review carefully before bulk dispatching.",
-        reply_markup=broadcast_confirm_keyboard(),
-        parse_mode="Markdown",
-    )
+    await message.answer(f"📝 Broadcast preview for {audience_name}")
+    await message.answer(content, reply_markup=broadcast_confirm_keyboard())
 
 
 @admin_router.callback_query(BroadcastFSM.waiting_for_confirmation, F.data == "broadcast_confirm:send")
@@ -1242,7 +1246,9 @@ async def execute_broadcast(
         admin_user_id=user.id,
     )
 
+    await callback.answer("Dispatching broadcast messages…")
     await callback.message.edit_text("⏳ Dispatching broadcast messages... Please wait.")
+    await state.clear()
 
     target_telegram_ids = await get_broadcast_target_telegram_ids(session=session, audience=broadcast_dto.audience)
     total_targets = len(target_telegram_ids)
@@ -1263,8 +1269,7 @@ async def execute_broadcast(
         f"📊 **Success Rate:** `{success_count} / {total_targets}` delivered",
         parse_mode="Markdown",
     )
-    await state.clear()
-    await callback.answer("Broadcast sent successfully!")
+
 
 
 @admin_router.callback_query(F.data == "broadcast_cancel")

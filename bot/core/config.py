@@ -58,6 +58,8 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     debug_sql: bool = False
     webhook_url: str = ""
+    webhook_secret: str = ""
+    port: int = 8080
 
     # Configure Pydantic Settings behavior:
     # - env_file: Load variables from this file in addition to the process env.

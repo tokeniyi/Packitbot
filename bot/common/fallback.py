@@ -19,7 +19,6 @@ Cross-References:
 import logging
 from aiogram import Router
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 
 from bot.core.constants.messages import ErrorMessages, LogMessages, SuccessMessages
@@ -29,7 +28,6 @@ logger = logging.getLogger(__name__)
 fallback_router = Router()
 
 
-@fallback_router.message(Command("cancel"))
 async def cmd_cancel(message: Message, state):
     """Handle /cancel command by resetting FSM state."""
     await state.clear()

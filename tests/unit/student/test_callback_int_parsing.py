@@ -67,9 +67,10 @@ class TestRatingSelectionCallbackIntParsing:
         """Positive control: a well-formed ``rate:5:4`` drives the state machine."""
         cb = _make_callback("rate:5:4")
         state = AsyncMock(spec=FSMContext)
+        state.get_data.return_value = {"request_id": 5}
 
         await process_rating_selection(cb, state)
 
-        state.update_data.assert_awaited_once_with(request_id=5, rating=4)
+        state.update_data.assert_awaited_once_with(rating=4)
         state.set_state.assert_awaited_once()
         cb.message.edit_text.assert_awaited_once()

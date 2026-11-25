@@ -39,6 +39,7 @@ from bot.core.constants.messages import (
     MSG_UNKNOWN_CALLBACK,
     MSG_UNKNOWN_COMMAND,
 )
+from bot.core.constants.quick_replies import BTN_MY_PROFILE, BTN_MY_REQUESTS
 from bot.core.keyboards.common_kb import HomeButton
 from bot.core.models.admin_profile import AdminProfile
 from bot.core.models.driver_profile import DriverProfile
@@ -68,9 +69,26 @@ class RBACMiddleware(BaseMiddleware):
     PUBLIC_COMMANDS = {"start", "help", "about", "cancel", "menu", "home"}
 
     ROLE_COMMANDS = {
-        UserRole.STUDENT: {"request", "my_requests", "profile"},
-        UserRole.DRIVER: {"register_driver", "active_delivery", "toggle_availability", "cancel_driver_reg"},
+        UserRole.STUDENT: {"request", "my_requests", "profile", "cancel_request"},
+        UserRole.DRIVER: {"register_driver", "active_delivery", "toggle_availability", "cancel_driver_reg", "active", "duty", "driver_profile"},
         UserRole.ADMIN: {"admin", "stats", "verify", "users", "orders", "drivers", "assign", "broadcast", "add_driver"},
+    }
+
+    ROLE_MENU_COMMANDS = {
+        "📦 Request Delivery": "request",
+        "📦 New Request": "request",
+        BTN_MY_REQUESTS: "my_requests",
+        BTN_MY_PROFILE: "profile",
+        "🟢 Go Available": "toggle_availability",
+        "🔴 Go Offline": "toggle_availability",
+        "📊 Active Delivery": "active_delivery",
+        "📋 Assigned Deliveries": "active_delivery",
+        "👤 Driver Profile": "driver_profile",
+        "🚘 Register as Driver": "register_driver",
+    }
+
+    DRIVER_REGISTRATION_CALLBACKS = {
+        "driver_vtype:", "driver_edit:", "driver_submit_reg",
     }
 
     # Callback prefixes that are always allowed (public callbacks)
@@ -80,7 +98,8 @@ class RBACMiddleware(BaseMiddleware):
         "cancel",  # registration cancellation
         "review_edit_",  # registration review edits
         "review_submit",  # registration submission
-        "driver_vtype:",  # vehicle type selection in registration
+        "hall_select:",
+        "driver_cancel_reg",
     }
 
     # Callback prefix -> required role mapping.
@@ -90,7 +109,7 @@ class RBACMiddleware(BaseMiddleware):
         "driver_accept:": UserRole.DRIVER,
         "driver_step:": UserRole.DRIVER,
         "driver_reject:": UserRole.DRIVER,
-        "driver_cancel_reg": UserRole.DRIVER,
+        "driver_vtype:": UserRole.DRIVER,
         "driver_edit:": UserRole.DRIVER,
         "driver_submit_reg": UserRole.DRIVER,
 
@@ -100,6 +119,10 @@ class RBACMiddleware(BaseMiddleware):
         "admin_pending_req_back": UserRole.ADMIN,
         "admin_pending_drivers_back": UserRole.ADMIN,
         "admin_drv_page:": UserRole.ADMIN,
+        "admin_verify_page:": UserRole.ADMIN,
+        "admin_assign:": UserRole.ADMIN,
+        "broadcast_audience:": UserRole.ADMIN,
+        "broadcast_confirm:": UserRole.ADMIN,
         "admin_driver_detail_back:": UserRole.ADMIN,
         "admin_drivers_back": UserRole.ADMIN,
         "broadcast_cancel": UserRole.ADMIN,
@@ -112,6 +135,18 @@ class RBACMiddleware(BaseMiddleware):
         # Student callbacks
         "my_req_rate:": UserRole.STUDENT,
         "req_cancel": UserRole.STUDENT,
+        "req_hall:": UserRole.STUDENT,
+        "req_size:": UserRole.STUDENT,
+        "req_date:": UserRole.STUDENT,
+        "req_time:": UserRole.STUDENT,
+        "req_skip_landmark": UserRole.STUDENT,
+        "req_skip_instructions": UserRole.STUDENT,
+        "req_edit:": UserRole.STUDENT,
+        "req_submit": UserRole.STUDENT,
+        "req_update_field:": UserRole.STUDENT,
+        "req_update_confirm:": UserRole.STUDENT,
+        "rate:": UserRole.STUDENT,
+        "feedback_skip_comment:": UserRole.STUDENT,
         "my_reqs_list": UserRole.STUDENT,
         "my_reqs_page:": UserRole.STUDENT,
         "my_req_detail:": UserRole.STUDENT,
@@ -253,6 +288,8 @@ class RBACMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         command = self._extract_command(event)
+        if not command and event.message:
+            command = self.ROLE_MENU_COMMANDS.get(event.message.text, "")
         callback_prefix = self._extract_callback_prefix(event)
 
         # Public commands always allowed
@@ -265,14 +302,18 @@ class RBACMiddleware(BaseMiddleware):
             # Special: driver registration bypass for pre-authorized users.
             # A user does not need the DRIVER role yet — being on the
             # pre-authorized list is sufficient to start the registration flow.
+            if command == "cancel_driver_reg":
+                return await handler(event, data)
+
             if command == "register_driver":
                 from bot.driver.service import is_authorized_driver
 
-                if await is_authorized_driver(session=session, telegram_id=user.telegram_id):
+                if user.role in (None, UserRole.DRIVER) and await is_authorized_driver(
+                    session=session, telegram_id=user.telegram_id
+                ):
                     return await handler(event, data)
-                if user.role == UserRole.DRIVER:
-                    await self._reply_denied(event, MSG_DRIVER_NOT_AUTHORIZED)
-                    return
+                await self._reply_denied(event, MSG_DRIVER_NOT_AUTHORIZED)
+                return
 
             # Reject unknown commands — commands that are not in any role's
             # allowed set and not in PUBLIC_COMMANDS.
@@ -323,15 +364,13 @@ class RBACMiddleware(BaseMiddleware):
             # Special case: driver registration callbacks allow pre-authorized users
             # even if they don't have the DRIVER role yet.
             # This mirrors the logic for the /register_driver command.
-            if callback_prefix in ("driver_submit_reg", "driver_edit:", "driver_vtype:"):
+            if callback_prefix in self.DRIVER_REGISTRATION_CALLBACKS:
                 from bot.driver.service import is_authorized_driver
 
-                if await is_authorized_driver(session=session, telegram_id=user.telegram_id):
+                if user.role in (None, UserRole.DRIVER) and await is_authorized_driver(
+                    session=session, telegram_id=user.telegram_id
+                ):
                     return await handler(event, data)
-                if user.role == UserRole.DRIVER:
-                    await self._reply_denied(event, MSG_DRIVER_NOT_AUTHORIZED)
-                    return
-                # If not a driver yet and not pre-authorized
                 await self._reply_denied(event, MSG_DRIVER_NOT_AUTHORIZED)
                 return
 

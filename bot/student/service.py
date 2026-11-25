@@ -17,7 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.core.constants.enums import AccountStatus, RequestStatus, UserRole
-from bot.core.exceptions import DuplicateResourceError, NotFoundError
+from bot.core.exceptions import DuplicateResourceError, NotFoundError, ValidationError
 from bot.core.models.delivery_request import DeliveryRequest
 from bot.core.models.student_profile import StudentProfile
 from bot.core.models.user import User
@@ -66,6 +66,8 @@ async def register_student(
     user = result.scalar_one_or_none()
 
     if user:
+        if user.role not in (None, UserRole.STUDENT):
+            raise ValidationError("You already have a registered role.")
         # Update existing user attributes
         user.username = username
         user.full_name = validated_full_name

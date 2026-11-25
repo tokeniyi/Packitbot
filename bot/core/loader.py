@@ -27,5 +27,6 @@ def get_storage() -> RedisStorage:
 def get_dispatch() -> Dispatcher:
     global _dispatch
     if _dispatch is None:
-        _dispatch = Dispatcher(storage=get_storage())
+        storage = get_storage()
+        _dispatch = Dispatcher(storage=storage, events_isolation=storage.create_isolation())
     return _dispatch

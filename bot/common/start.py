@@ -83,8 +83,8 @@ async def _set_user_menu(bot: Bot, chat_id: int, commands: list[BotCommand]) -> 
     or_f(
         Command("start"),
         Command("home"),
+        Command("menu"),
         F.text == BTN_HOME,
-        F.text.contains(BTN_HOME),
     ),
 )
 async def cmd_start(
@@ -92,6 +92,7 @@ async def cmd_start(
     state: FSMContext,
     bot: Bot,
     user: User | None = None,  # Injected directly from AuthMiddleware
+    session: AsyncSession | None = None,
 ) -> None:
     """Handle the /start and /home commands and home button presses."""
     await state.clear()
@@ -122,11 +123,14 @@ async def cmd_start(
 
     elif user.role == UserRole.STUDENT:
         await _set_user_menu(bot, message.chat.id, STUDENT_COMMANDS)
-        await message.answer(CommandResponses.STUDENT_WELCOME)
+        await message.answer(CommandResponses.STUDENT_WELCOME, reply_markup=student_persistent_menu())
 
     elif user.role == UserRole.DRIVER:
         await _set_user_menu(bot, message.chat.id, DRIVER_COMMANDS)
-        await message.answer(CommandResponses.DRIVER_WELCOME)
+        if session is not None:
+            await _show_driver_home(message, session, user.telegram_id)
+        else:
+            await message.answer(CommandResponses.DRIVER_WELCOME)
 
     elif user.role == UserRole.ADMIN:
         await _set_user_menu(bot, message.chat.id, ADMIN_COMMANDS)
@@ -142,6 +146,7 @@ async def home_callback(
     state: FSMContext,
     bot: Bot,
     user: User | None = None,
+    session: AsyncSession | None = None,
 ) -> None:
     """Handle the home button callback."""
     await callback.answer()
@@ -183,11 +188,14 @@ async def home_callback(
 
     elif user.role == UserRole.STUDENT:
         await _set_user_menu(bot, callback.message.chat.id, STUDENT_COMMANDS)
-        await callback.message.answer(CommandResponses.STUDENT_WELCOME)
+        await callback.message.answer(CommandResponses.STUDENT_WELCOME, reply_markup=student_persistent_menu())
 
     elif user.role == UserRole.DRIVER:
         await _set_user_menu(bot, callback.message.chat.id, DRIVER_COMMANDS)
-        await callback.message.answer(CommandResponses.DRIVER_WELCOME)
+        if session is not None:
+            await _show_driver_home(callback.message, session, user.telegram_id)
+        else:
+            await callback.message.answer(CommandResponses.DRIVER_WELCOME)
 
     elif user.role == UserRole.ADMIN:
         await _set_user_menu(bot, callback.message.chat.id, ADMIN_COMMANDS)
@@ -197,10 +205,27 @@ async def home_callback(
         await callback.message.answer(CommandResponses.WELCOME_GENERAL)
 
 
+async def _show_driver_home(message: Message, session: AsyncSession, telegram_id: int) -> None:
+    profile = await get_driver_profile_by_telegram_id(session, telegram_id)
+    if profile is not None and profile.status == DriverStatus.APPROVED:
+        await message.answer(
+            CommandResponses.DRIVER_WELCOME,
+            reply_markup=driver_persistent_menu(profile.availability),
+        )
+    else:
+        await message.answer(CommandResponses.DRIVER_WELCOME, reply_markup=driver_pending_menu())
+
+
 @start_router.callback_query(F.data == "role:student")
-async def process_role_student(callback: CallbackQuery, state: FSMContext) -> None:
+async def process_role_student(
+    callback: CallbackQuery, state: FSMContext, user: User | None = None
+) -> None:
     """Handle the student role selection callback."""
+    if user is not None and user.role is not None:
+        await callback.answer("You already have a registered role. Use Home.", show_alert=True)
+        return
     await callback.answer()
+    await state.clear()
     await state.set_state(StudentRegistrationFSM.entering_full_name)
     if callback.message:
         await callback.message.answer(
@@ -209,8 +234,13 @@ async def process_role_student(callback: CallbackQuery, state: FSMContext) -> No
 
 
 @start_router.callback_query(F.data == "role:driver")
-async def process_role_driver(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
+async def process_role_driver(
+    callback: CallbackQuery, state: FSMContext, session: AsyncSession, user: User | None = None
+) -> None:
     """Handle the driver role selection callback."""
+    if user is not None and user.role not in (None, UserRole.DRIVER):
+        await callback.answer("You already have a registered role. Use Home.", show_alert=True)
+        return
     await callback.answer()
     if session is None:
         if callback.message:

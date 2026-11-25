@@ -217,9 +217,6 @@ class RequestService:
         if request is None:
             raise NotFoundError(f"DeliveryRequest with id={dto.request_id} not found")
 
-        if not can_assign_driver(driver_profile):
-            raise DriverUnavailableError("Driver is not approved or available for assignment.")
-
         # ``DeliveryRequest.driver_id`` is a foreign key to ``users.id``, so the
         # DTO must carry the driver's *user* id. Guard here as well as at the
         # call site: a ``DriverProfile`` primary key would fail the foreign key
@@ -229,6 +226,16 @@ class RequestService:
                 "AssignDriverDTO.driver_id must be the driver's users.id "
                 f"(expected {driver_profile.user_id}, got {dto.driver_id})."
             )
+
+        driver_profile = await self.driver_repo.get_by_user_id_for_update(
+            dto.driver_id, active_driver_only=True
+        )
+        if (
+            driver_profile is None
+            or not can_assign_driver(driver_profile)
+            or await self.request_repo.get_active_for_driver(dto.driver_id) is not None
+        ):
+            raise DriverUnavailableError("Driver is not approved or available for assignment.")
 
         if not can_transition(request.status, RequestStatus.ASSIGNED):
             raise InvalidStatusTransitionError(
@@ -243,6 +250,7 @@ class RequestService:
                     driver_id=dto.driver_id,
                     status=RequestStatus.ASSIGNED,
                 )
+                driver_profile.availability = DriverAvailability.BUSY
                 # Log the status transition for audit and driver-side visibility.
                 await self.status_log_repo.create(
                     request_id=request.id,
@@ -325,6 +333,12 @@ class RequestService:
                     changed_by_user_id=dto.actor_id,
                     note=dto.note,
                 )
+                if request.driver_id is not None and dto.new_status in (
+                    RequestStatus.DELIVERED, RequestStatus.FAILED
+                ):
+                    await self._release_driver(
+                        request.driver_id, delivered=dto.new_status == RequestStatus.DELIVERED
+                    )
                 event = RequestStatusChangedEvent(
                     request_id=request.id,
                     old_status=old_status,
@@ -402,9 +416,7 @@ class RequestService:
                     note=dto.reason or f"Assignment declined by driver {dto.driver_id}",
                 )
                 # Returning the request to the pool frees the driver to take another.
-                driver_profile = await self.driver_repo.get_by_user_id(dto.driver_id)
-                if driver_profile is not None:
-                    driver_profile.availability = DriverAvailability.AVAILABLE
+                await self._release_driver(dto.driver_id)
                 event = RequestStatusChangedEvent(
                     request_id=request.id,
                     old_status=old_status,
@@ -443,7 +455,7 @@ class RequestService:
                 transition to ``CANCELLED``.
             ValidationError: If a database integrity constraint is violated.
         """
-        request = await self.request_repo.get_by_id(dto.request_id)
+        request = await self.request_repo.get_by_id_for_update(dto.request_id)
         if request is None:
             raise NotFoundError(f"DeliveryRequest with id={dto.request_id} not found")
 
@@ -471,6 +483,8 @@ class RequestService:
                     changed_by_user_id=dto.actor_id,
                     note=dto.cancellation_reason or f"Cancelled by {dto.cancelled_by}",
                 )
+                if request.driver_id is not None:
+                    await self._release_driver(request.driver_id)
                 event = RequestCancelledEvent(
                     request_id=request.id,
                     cancelled_by=dto.cancelled_by,
@@ -480,6 +494,18 @@ class RequestService:
                 return updated_request, event
         except IntegrityError as exc:
             raise ValidationError("Failed to cancel request.") from exc
+
+    async def _release_driver(self, driver_id: int, *, delivered: bool = False) -> None:
+        profile = await self.driver_repo.get_by_user_id_for_update(driver_id)
+        if profile is None:
+            return
+        if delivered:
+            profile.total_deliveries += 1
+        if (
+            profile.availability == DriverAvailability.BUSY
+            and await self.request_repo.get_active_for_driver(driver_id) is None
+        ):
+            profile.availability = DriverAvailability.AVAILABLE
 
     async def submit_feedback(
         self, dto: CreateFeedbackDTO
@@ -509,6 +535,9 @@ class RequestService:
         request = await self.request_repo.get_by_id(dto.request_id)
         if request is None:
             raise NotFoundError(f"DeliveryRequest with id={dto.request_id} not found")
+
+        if request.student_id != dto.student_id:
+            raise PermissionDeniedError("Only the student who placed this request can rate it.")
 
         existing_feedback = await self.feedback_repo.get_for_request(dto.request_id)
         if not can_rate_delivery(request, existing_feedback):

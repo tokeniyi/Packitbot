@@ -8,10 +8,10 @@ from aiogram.fsm.context import FSMContext
 from sqlalchemy.ext.asyncio import AsyncSession
 from aiogram.types import CallbackQuery, Message
 
+from bot.core.config import get_settings
 from bot.core.constants.commands import CMD_MY_REQUESTS, CMD_NEW_REQUEST
 from bot.core.constants.enums import (
     CancelledBy,
-    DriverAvailability,
     LuggageSize,
     RequestStatus,
 )
@@ -44,6 +44,8 @@ from bot.core.utils.formatters import escape_html, format_step_prompt
 from bot.core.utils.pagination import Page
 from bot.core.utils.validators import (
     validate_dropoff_address,
+    validate_hall,
+    validate_luggage_size,
     validate_luggage_count,
     validate_phone,
     validate_pickup_detail,
@@ -51,8 +53,8 @@ from bot.core.utils.validators import (
     validate_recipient_name,
     validate_special_instructions,
     validate_time_window,
+    ValidationError as InputValidationError,
 )
-from bot.driver.repository import DriverRepository
 from bot.request.repository import RequestRepository
 from bot.request.schemas import CancelRequestDTO, CreateRequestDTO, UpdateRequestDTO
 from bot.request.service import RequestService
@@ -100,6 +102,10 @@ STATUS_PROGRESS_INDICATORS = {
     "cancelled": "❌ This request was cancelled",
     "failed": "⚠️ Delivery couldn't be completed",
 }
+
+
+def _validate_request_date(value: str) -> date:
+    return validate_preferred_date(value, get_settings().max_request_lead_days)
 
 
 def _req_step_prompt(step: int, total: int = 11, prompt: str = "") -> str:
@@ -392,8 +398,13 @@ async def process_luggage_count(message: Message, state: FSMContext) -> None:
 async def process_preferred_date_callback(callback: CallbackQuery, state: FSMContext) -> None:
     """Select preferred pickup date via callback."""
     dt_str = callback.data.split(":", 1)[1]
+    try:
+        preferred_date = _validate_request_date(dt_str)
+    except InputValidationError as exc:
+        await callback.answer(str(exc), show_alert=True)
+        return
     await callback.answer(f"Date: {dt_str}")
-    await state.update_data(preferred_date=dt_str)
+    await state.update_data(preferred_date=preferred_date.isoformat())
 
     data = await state.get_data()
     if data.get("is_editing"):
@@ -413,7 +424,7 @@ async def process_preferred_date_callback(callback: CallbackQuery, state: FSMCon
 async def process_preferred_date_message(message: Message, state: FSMContext) -> None:
     """Select preferred pickup date via typed text."""
     try:
-        val = validate_preferred_date(message.text)
+        val = _validate_request_date(message.text)
     except Exception as exc:
         await message.answer(f"❌ {exc}")
         return
@@ -556,6 +567,13 @@ async def submit_request_creation(callback: CallbackQuery, state: FSMContext, se
             await callback.message.answer(ErrorMessages.USER_NOT_FOUND, reply_markup=student_persistent_menu())
         return
 
+    try:
+        preferred_date = _validate_request_date(data["preferred_date"])
+    except InputValidationError as exc:
+        if callback.message:
+            await callback.message.answer(str(exc), reply_markup=request_review_keyboard())
+        return
+
     dto = CreateRequestDTO(
         student_id=user_id,
         pickup_detail=data["pickup_detail"],
@@ -567,7 +585,7 @@ async def submit_request_creation(callback: CallbackQuery, state: FSMContext, se
         luggage_size=LuggageSize(data["luggage_size"]),
         luggage_count=int(data["luggage_count"]),
         special_instructions=data.get("special_instructions"),
-        preferred_date=date.fromisoformat(data["preferred_date"]),
+        preferred_date=preferred_date,
         preferred_time_window=data["preferred_time_window"],
     )
 
@@ -742,12 +760,12 @@ async def start_request_edit(callback: CallbackQuery, state: FSMContext, session
 @requests_router.callback_query(RequestUpdateFSM.selecting_field, F.data.startswith("req_update_field:"))
 async def select_field_to_edit(callback: CallbackQuery, state: FSMContext) -> None:
     """Select a specific field to edit on the request."""
-    await callback.answer()
     parts = callback.data.split(":")
+    data = await state.get_data()
+    if len(parts) != 3 or parts[1] != str(data.get("request_id")):
+        await callback.answer(ErrorMessages.INVALID_INPUT, show_alert=True)
+        return
     field_name = parts[2]
-
-    await state.update_data(current_field=field_name)
-    await state.set_state(RequestUpdateFSM.editing_value)
 
     field_prompts = {
         "pickup_detail": ("Pickup Detail", "Enter new pickup detail:"),
@@ -763,7 +781,13 @@ async def select_field_to_edit(callback: CallbackQuery, state: FSMContext) -> No
         "special_instructions": ("Special Instructions", "Enter new special instructions (or type 'none' to clear):"),
     }
 
-    title, prompt = field_prompts.get(field_name, (field_name.replace("_", " ").title(), "Enter new value:"))
+    if field_name not in field_prompts:
+        await callback.answer(ErrorMessages.INVALID_INPUT, show_alert=True)
+        return
+    await callback.answer()
+    await state.update_data(current_field=field_name)
+    await state.set_state(RequestUpdateFSM.editing_value)
+    title, prompt = field_prompts[field_name]
 
     if callback.message:
         if field_name == "hall_of_residence":
@@ -797,10 +821,13 @@ async def process_edit_size_callback(callback: CallbackQuery, state: FSMContext)
 @requests_router.callback_query(RequestUpdateFSM.editing_value, F.data.startswith("req_date:"))
 async def process_edit_date_callback(callback: CallbackQuery, state: FSMContext) -> None:
     """Store edited preferred date field."""
-    dt_str = callback.data.split(":", 1)[1]
-    await callback.answer(f"Selected Date: {dt_str}")
-    dt = date.fromisoformat(dt_str)
-    await _store_field_change(callback, state, "preferred_date", dt)
+    try:
+        preferred_date = _validate_request_date(callback.data.split(":", 1)[1])
+    except InputValidationError as exc:
+        await callback.answer(str(exc), show_alert=True)
+        return
+    await callback.answer()
+    await _store_field_change(callback, state, "preferred_date", preferred_date)
 
 
 @requests_router.callback_query(RequestUpdateFSM.editing_value, F.data.startswith("req_time:"))
@@ -833,13 +860,17 @@ async def process_edit_value_message(message: Message, state: FSMContext) -> Non
         elif field_name == "luggage_count":
             parsed_value = validate_luggage_count(text)
         elif field_name == "preferred_date":
-            parsed_value = validate_preferred_date(text)
+            parsed_value = _validate_request_date(text)
         elif field_name == "preferred_time_window":
             parsed_value = validate_time_window(text)
         elif field_name == "special_instructions":
             parsed_value = None if text.lower() == "none" else validate_special_instructions(text)
+        elif field_name == "hall_of_residence":
+            parsed_value = validate_hall(text)
+        elif field_name == "luggage_size":
+            parsed_value = validate_luggage_size(text)
         else:
-            parsed_value = text
+            raise InputValidationError("Choose a field to edit.")
     except Exception as exc:
         await message.answer(f"❌ {exc}")
         return
@@ -855,7 +886,11 @@ async def _store_field_change(
 ) -> None:
     """Store updated value in FSM changes dictionary and show confirmation prompt."""
     data = await state.get_data()
+    if data.get("current_field") != field_name:
+        return
     changes = data.get("changes", {})
+    if isinstance(new_value, date):
+        new_value = new_value.isoformat()
     changes[field_name] = new_value
 
     await state.update_data(changes=changes)
@@ -885,10 +920,13 @@ async def _store_field_change(
 @requests_router.callback_query(RequestUpdateFSM.confirming_update, F.data.startswith("req_update_confirm:"))
 async def confirm_request_update(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
     """Apply the accumulated changes to the request via RequestService."""
-    await callback.answer()
     data = await state.get_data()
-    req_id = data["request_id"]
-    changes = data.get("changes", {})
+    req_id = data.get("request_id")
+    if callback.data != f"req_update_confirm:{req_id}":
+        await callback.answer(ErrorMessages.INVALID_INPUT, show_alert=True)
+        return
+    await callback.answer()
+    changes = dict(data.get("changes", {}))
 
     if not changes:
         if callback.message:
@@ -907,6 +945,15 @@ async def confirm_request_update(callback: CallbackQuery, state: FSMContext, ses
             await callback.message.answer(ErrorMessages.USER_NOT_FOUND)
         await state.clear()
         return
+
+    if "preferred_date" in changes:
+        try:
+            changes["preferred_date"] = _validate_request_date(changes["preferred_date"])
+        except InputValidationError as exc:
+            await state.set_state(RequestUpdateFSM.selecting_field)
+            if callback.message:
+                await callback.message.answer(str(exc), reply_markup=request_edit_fields_keyboard(req_id))
+            return
 
     service = RequestService(session)
     dto = UpdateRequestDTO(
@@ -1012,15 +1059,6 @@ async def confirm_cancel_request(callback: CallbackQuery, session: AsyncSession)
 
     try:
         updated_req, event = await service.cancel_request(dto)
-
-        # Restore driver availability if request had assigned/accepted driver.
-        # DeliveryRequest.driver_id is a FK to users.id, not DriverProfile.id,
-        # so the profile must be resolved via DriverRepository.get_by_user_id.
-        if updated_req.driver_id is not None:
-            driver = await DriverRepository(session).get_by_user_id(updated_req.driver_id)
-            if driver:
-                driver.availability = DriverAvailability.AVAILABLE
-                await session.flush()
 
         if callback.message:
             await callback.message.answer(

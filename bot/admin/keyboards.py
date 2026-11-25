@@ -137,14 +137,14 @@ def pending_drivers_list_keyboard(
         nav_row.append(
             InlineKeyboardButton(
                 text="⬅️ Prev",
-                callback_data=f"admin_drv_page:{page - 1}",
+                callback_data=f"admin_verify_page:{page - 1}",
             )
         )
     if page < total_pages:
         nav_row.append(
             InlineKeyboardButton(
                 text="➡️ Next",
-                callback_data=f"admin_drv_page:{page + 1}",
+                callback_data=f"admin_verify_page:{page + 1}",
             )
         )
     if nav_row:

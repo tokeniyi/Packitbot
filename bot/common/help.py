@@ -14,7 +14,8 @@ Cross-References:
 
 import logging
 
-from aiogram import Router
+from aiogram import F, Router
+from bot.core.constants.quick_replies import BTN_HELP
 from aiogram.filters import Command
 from aiogram.types import Message
 
@@ -25,6 +26,7 @@ help_router = Router()
 
 
 @help_router.message(Command("help"))
+@help_router.message(F.text == BTN_HELP)
 async def cmd_help(message: Message) -> None:
     """Handle the /help command by sending the help text.
 

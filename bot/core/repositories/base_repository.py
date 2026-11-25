@@ -30,7 +30,12 @@ class BaseRepository(Generic[T]):
         current persisted state.  The lock closes the read/validate/update
         race between concurrent handlers.
         """
-        stmt = select(self.model).where(self.model.id == entity_id).with_for_update()
+        stmt = (
+            select(self.model)
+            .where(self.model.id == entity_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 

@@ -250,6 +250,8 @@ class TestRequestServiceAssignDriver:
 
         dto = AssignDriverDTO(request_id=1, driver_id=7, admin_id=3)
         driver = _make_driver_profile(user_id=7)
+        service.driver_repo.get_by_user_id_for_update = AsyncMock(return_value=driver)
+        repo.get_active_for_driver = AsyncMock(return_value=None)
         result_req, event = await service.assign_driver(dto, driver)
 
         assert result_req.id == 1
@@ -269,6 +271,8 @@ class TestRequestServiceAssignDriver:
 
         dto = AssignDriverDTO(request_id=1, driver_id=7, admin_id=3)
         driver = _make_driver_profile()
+        service.driver_repo.get_by_user_id_for_update = AsyncMock(return_value=driver)
+        repo.get_active_for_driver = AsyncMock(return_value=None)
         with pytest.raises(NotFoundError):
             await service.assign_driver(dto, driver)
 
@@ -285,6 +289,8 @@ class TestRequestServiceAssignDriver:
 
         dto = AssignDriverDTO(request_id=1, driver_id=7, admin_id=3)
         driver = _make_driver_profile(status=DriverStatus.PENDING_APPROVAL)
+        service.driver_repo.get_by_user_id_for_update = AsyncMock(return_value=driver)
+        repo.get_active_for_driver = AsyncMock(return_value=None)
         with pytest.raises(DriverUnavailableError):
             await service.assign_driver(dto, driver)
 
@@ -301,6 +307,8 @@ class TestRequestServiceAssignDriver:
 
         dto = AssignDriverDTO(request_id=1, driver_id=7, admin_id=3)
         driver = _make_driver_profile()
+        service.driver_repo.get_by_user_id_for_update = AsyncMock(return_value=driver)
+        repo.get_active_for_driver = AsyncMock(return_value=None)
         with pytest.raises(InvalidStatusTransitionError):
             await service.assign_driver(dto, driver)
 
@@ -327,6 +335,8 @@ class TestRequestServiceAssignDriver:
 
         dto = AssignDriverDTO(request_id=1, driver_id=7, admin_id=3)
         driver = _make_driver_profile(user_id=99)
+        service.driver_repo.get_by_user_id_for_update = AsyncMock(return_value=driver)
+        repo.get_active_for_driver = AsyncMock(return_value=None)
 
         with pytest.raises(ValidationError, match="users.id"):
             await service.assign_driver(dto, driver)
@@ -353,6 +363,8 @@ class TestRequestServiceAssignDriver:
 
         dto = AssignDriverDTO(request_id=1, driver_id=99, admin_id=3)
         driver = _make_driver_profile(user_id=99)
+        service.driver_repo.get_by_user_id_for_update = AsyncMock(return_value=driver)
+        repo.get_active_for_driver = AsyncMock(return_value=None)
 
         _, event = await service.assign_driver(dto, driver)
 
@@ -817,7 +829,8 @@ class TestRequestServiceRejectAssignment:
 
         repo.update = AsyncMock(return_value=request)
         status_log_repo.create = AsyncMock(return_value=MagicMock(spec=RequestStatusLog))
-        driver_repo.get_by_user_id = AsyncMock(return_value=driver_profile)
+        driver_repo.get_by_user_id_for_update = AsyncMock(return_value=driver_profile)
+        repo.get_active_for_driver = AsyncMock(return_value=None)
 
         service = RequestService(session)
         service.request_repo = repo
@@ -900,7 +913,7 @@ class TestRequestServiceRejectAssignment:
             RejectAssignmentDTO(request_id=5, driver_id=7)
         )
 
-        driver_repo.get_by_user_id.assert_awaited_once_with(7)
+        driver_repo.get_by_user_id_for_update.assert_awaited_once_with(7)
         assert driver.availability == DriverAvailability.AVAILABLE
 
     async def test_reject_assignment_survives_missing_driver_profile(self):
@@ -937,7 +950,7 @@ class TestRequestServiceRejectAssignment:
 
         repo.update.assert_not_called()
         status_log_repo.create.assert_not_called()
-        driver_repo.get_by_user_id.assert_not_called()
+        driver_repo.get_by_user_id_for_update.assert_not_called()
 
     async def test_reject_assignment_refuses_unassigned_request(self):
         """A request with no assignee cannot be handed back; the ownership check refuses it."""
@@ -991,7 +1004,7 @@ class TestRequestServiceRejectAssignment:
 
         repo.update = AsyncMock(return_value=req)
         status_log_repo.create = AsyncMock(return_value=MagicMock(spec=RequestStatusLog))
-        driver_repo.get_by_user_id = AsyncMock(return_value=None)
+        driver_repo.get_by_user_id_for_update = AsyncMock(return_value=None)
 
         service = RequestService(session)
         service.request_repo = repo
