@@ -2,7 +2,6 @@
 
 import logging
 from aiogram import F, Router
-from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -72,7 +71,6 @@ async def _show_review_screen(target: Message | CallbackQuery, state: FSMContext
         )
 
 
-@registration_router.message(Command("cancel"))
 @registration_router.callback_query(F.data == "cancel")
 async def cancel_registration(event: Message | CallbackQuery, state: FSMContext) -> None:
     """Handle cancellation of the student registration process."""
@@ -141,7 +139,7 @@ async def receive_phone(message: Message, state: FSMContext) -> None:
     await _show_review_screen(message, state)
 
 
-@registration_router.callback_query(F.data == "review_edit_full_name")
+@registration_router.callback_query(StudentRegistrationFSM.confirming_registration, F.data == "review_edit_full_name")
 async def edit_full_name(callback: CallbackQuery, state: FSMContext) -> None:
     """Handle edit full name button on registration review screen."""
     await callback.answer()
@@ -154,7 +152,7 @@ async def edit_full_name(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(StudentRegistrationFSM.entering_full_name)
 
 
-@registration_router.callback_query(F.data == "review_edit_phone_number")
+@registration_router.callback_query(StudentRegistrationFSM.confirming_registration, F.data == "review_edit_phone_number")
 async def edit_phone(callback: CallbackQuery, state: FSMContext) -> None:
     """Handle edit phone button on registration review screen."""
     await callback.answer()
@@ -167,7 +165,7 @@ async def edit_phone(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(StudentRegistrationFSM.entering_phone_number)
 
 
-@registration_router.callback_query(F.data == "review_submit")
+@registration_router.callback_query(StudentRegistrationFSM.confirming_registration, F.data == "review_submit")
 async def submit_registration(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
     """Handle final submission of student registration.
 

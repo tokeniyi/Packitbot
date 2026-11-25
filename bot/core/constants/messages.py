@@ -41,9 +41,9 @@ class CommandResponses:
         "• /users — Search or view registered students and drivers\n"
         "• /drivers — View and manage all driver records\n\n"
         "📦 **Logistics & Orders**\n"
-        "• /orders — View active, pending, or completed deliveries\n"
-        "• /broadcast — Send an announcement message to all users\n\n"
-        "💡 *Tip: You can also use the inline buttons below to navigate quick actions!(not implemented yet 😁*"
+        "• /orders or /assign — View pending requests and assign drivers\n"
+        "• /add_driver — Invite a driver by Telegram ID\n"
+        "• /broadcast — Send an announcement to a selected audience"
     )
     STATS: Final[str] = (
         "📊 **System Statistics**\n\n"
@@ -58,7 +58,7 @@ class CommandResponses:
         "• Delivered: `{delivered_requests}`\n"
         "• Cancelled: `{cancelled_requests}`\n"
         "• Failed: `{failed_requests}`\n"
-        "• Rejected by Driver: `{rejected_by_driver_requests}`\n"
+        "• Requests Declined by a Driver: `{rejected_by_driver_requests}`\n"
         "• Avg Delivery Time: `{avg_delivery_duration}`\n\n"
         "👥 **User Overview**\n"
         "• Total Users: `{total_users}`\n"

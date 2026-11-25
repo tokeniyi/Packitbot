@@ -130,7 +130,10 @@ def can_driver_act_on_request(request: DeliveryRequest, actor_id: int) -> bool:
     return request.driver_id is not None and request.driver_id == actor_id
 
 
-def can_rate_delivery(request: DeliveryRequest, existing_feedback: Any = None) -> bool:
+_FEEDBACK_NOT_LOADED = object()
+
+
+def can_rate_delivery(request: DeliveryRequest, existing_feedback: Any = _FEEDBACK_NOT_LOADED) -> bool:
     """Check whether a delivered request is eligible to receive feedback.
 
     Feedback is allowed only once the request has reached ``DELIVERED``
@@ -144,8 +147,8 @@ def can_rate_delivery(request: DeliveryRequest, existing_feedback: Any = None) -
 
     Args:
         request: The ``DeliveryRequest`` instance under evaluation.
-        existing_feedback: Optional pre-fetched feedback object. If ``None``,
-            the function falls back to ``request.feedback`` (lazy attribute).
+        existing_feedback: Pre-fetched feedback or None when no feedback exists.
+            When omitted, use the request's feedback relationship.
 
     Returns:
         ``True`` if the request is delivered and has no existing feedback;
@@ -153,5 +156,9 @@ def can_rate_delivery(request: DeliveryRequest, existing_feedback: Any = None) -
     """
     # Accept an explicit feedback object to keep this function pure and
     # avoid implicit ORM lazy-loading inside business logic.
-    feedback = existing_feedback or getattr(request, "feedback", None)
+    feedback = (
+        getattr(request, "feedback", None)
+        if existing_feedback is _FEEDBACK_NOT_LOADED
+        else existing_feedback
+    )
     return request.status == RequestStatus.DELIVERED and feedback is None

@@ -89,7 +89,8 @@ class RequestRepository(BaseRepository[DeliveryRequest]):
                 .options(
                     selectinload(DeliveryRequest.driver).selectinload(
                         User.driver_profile
-                    )
+                    ),
+                    selectinload(DeliveryRequest.feedback),
                 )
                 .where(DeliveryRequest.id == request_id)
             )

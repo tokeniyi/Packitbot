@@ -1,3 +1,5 @@
+from contextlib import nullcontext
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -110,6 +112,7 @@ class TestDriverRegistrationFlowIntegration:
 
     async def test_registration_service_with_duplicate_plate_raises(self):
         session = AsyncMock()
+        session.begin_nested = MagicMock(side_effect=nullcontext)
 
         user_row = MagicMock()
         user_row.scalar_one_or_none.return_value = None

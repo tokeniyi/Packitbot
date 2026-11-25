@@ -50,11 +50,11 @@ The happy path is `PENDING → ASSIGNED → ACCEPTED → EN_ROUTE_TO_PICKUP → 
 | `ASSIGNED → PENDING` | `RequestService.reject_assignment`, called when the assigned driver declines. The request returns to the admin queue. |
 | `ASSIGNED → ACCEPTED` | Driver accept callback in `bot/driver/handler.py`. |
 | `ACCEPTED → EN_ROUTE_TO_PICKUP → PICKED_UP → IN_TRANSIT → DELIVERED / FAILED` | Driver status callbacks in `bot/driver/handler.py` (`RequestService.transition_status`). |
-| `* → CANCELLED` | `RequestService.cancel_request`, called from the student, admin and driver handlers. The state machine decides which source states may move to `CANCELLED`. A student may additionally cancel only their own request, and only from `PENDING`, `ASSIGNED` or `ACCEPTED`. |
+| `* → CANCELLED` | The student handler calls `RequestService.cancel_request`. Students can cancel their own requests from `PENDING`, `ASSIGNED` or `ACCEPTED`. The state machine also defines transitions for future admin or system callers. |
 
 The status-changing `RequestService` methods check `can_transition` first, write a
 `RequestStatusLog` row, and run inside a SAVEPOINT (`session.begin_nested()`), so
-a constraint violation rolls back only that step.
+a constraint violation rolls back only that step. Assignment locks the driver profile and sets it to `BUSY`. Decline, cancellation, delivery, and failure release the driver when no other active assignment remains.
 
 ## Notes for maintainers
 
@@ -64,13 +64,10 @@ queries (`admin/service.py::get_pending_requests` and
 `request/repository.py::get_pending`) filter on `PENDING`. A request sitting in
 `REJECTED_BY_DRIVER` would never come back to an admin.
 
-**`REJECTED_BY_DRIVER` is currently never written.** Only the transition map and
-the admin statistics query (`admin/service.py`, `rejected_by_driver_requests`)
-reference it. Because a driver hand-back goes to `PENDING`, that statistic counts
-current-status rows and is always zero. Counting driver rejections needs the
-status log (`old_status = ASSIGNED`, `new_status = PENDING`, from the driver
-reject path) or a decision to write `REJECTED_BY_DRIVER`. This is an open
-question for the maintainer, recorded in `docs/AUTOMATION_PROGRESS.md`.
+**Decline reporting uses the status log.** The admin dashboard counts distinct
+requests that have an `ASSIGNED → PENDING` hand-back or a legacy
+`ASSIGNED → REJECTED_BY_DRIVER` event. A request can appear in this historical
+statistic and in a current-status count.
 
 **Terminal states have no outgoing edges.** Once a request is `DELIVERED`,
 `CANCELLED` or `FAILED`, no code path can move it again. Re-opening a request

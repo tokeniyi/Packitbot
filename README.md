@@ -20,8 +20,8 @@
 
 - 👤 **Role-Based Workflows (Student, Driver, Admin):** Dynamic Telegram bot menus and command scopes tailored to each authenticated role.
 - 📦 **Student Request Management:** Multi-step Finite State Machine (FSM) forms for scheduling delivery requests with lead-time validation, tracking order history, and cancellation support.
-- 🚗 **Driver Logistics & Duty Control:** Driver registration, duty toggle (online/offline), job discovery, order accepting, state transitions (pickup, transit, delivered), and earnings tracking.
-- 🔒 **Admin Portal & Driver Verification:** System statistics, driver verification review queue, broadcast notifications, user lookup, and manual order overrides.
+- 🚗 **Driver Logistics & Duty Control:** Driver registration, duty toggle, assigned-order acceptance and rejection, delivery updates, and driver ratings.
+- 🔒 **Admin Portal & Driver Verification:** System statistics, driver verification, pending-request assignment, broadcasts, user lookup, and driver record management.
 - ⚡ **Domain-Driven Architecture:** Clean separation of concerns with domain state machines, repositories, business rules, schemas, and events.
 - 🔄 **Production Infrastructure:** Asynchronous DB access (SQLAlchemy 2.0 + asyncpg), Redis-backed FSM storage, in-memory per-user throttling, Alembic database migrations, and Docker containerization.
 
@@ -126,7 +126,9 @@ cp .env.example .env
 | `MAX_REQUEST_LEAD_DAYS` | Maximum lead days in advance for scheduling requests | `7` |
 | `DEFAULT_THROTTLE_RATE` | Throttle rate limit (requests per second) | `1.0` |
 | `LOG_LEVEL` | Application logging verbosity (`DEBUG`, `INFO`, `WARNING`, `ERROR`) | `INFO` |
-| `WEBHOOK_URL` | Public HTTPS URL for Telegram webhooks (leave empty for polling mode) | `""` |
+| `WEBHOOK_URL` | Public HTTPS URL for Telegram webhooks. Leave empty for polling. | `""` |
+| `WEBHOOK_SECRET` | Secret required when webhook mode is configured | `""` |
+| `PORT` | Local HTTP listener port in webhook mode | `8080` |
 
 ---
 
@@ -185,22 +187,24 @@ docker-compose up --build -d
 
 ### Driver Commands
 - `/duty` - Toggle online/offline status
-- `/jobs` - Browse available package delivery jobs
-- `/active` - View currently accepted delivery details
+- `/active` - View or respond to the current assignment
+- `/driver_profile` - View your profile, completed deliveries, and rating
 
 ### Admin Commands
 - `/admin` - Access Admin Control Panel
 - `/stats` - View system-wide metrics and orders report
 - `/verify` - Review pending driver registration applications
 - `/users` - Search or filter registered students & drivers
-- `/orders` - View active, pending, or completed deliveries
+- `/orders` or `/assign` - View pending requests and assign a driver
+- `/drivers` - Manage driver records
+- `/add_driver` - Invite a driver by Telegram ID
 - `/broadcast` - Send system announcements to users
 
 ---
 
 ## 🧪 Testing & Linting
 
-Unit and integration tests are located under the `tests/` directory. No linter (ruff, flake8, mypy) is currently configured for this repository.
+Unit and integration tests are located under the `tests/` directory. The [role-flow audit](docs/ROLE_FLOW_AUDIT.md) maps findings to fixes and regression coverage. No linter (ruff, flake8, mypy) is currently configured for this repository.
 
 ### Run Test Suite
 

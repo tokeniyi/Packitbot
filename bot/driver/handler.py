@@ -62,6 +62,7 @@ from bot.core.utils.formatters import escape_html, format_step_prompt, render_pr
 from bot.request.service import RequestService
 from bot.driver.keyboards import (
     delivery_status_update_keyboard,
+    driver_assignment_response_keyboard,
     driver_pending_menu,
     driver_persistent_menu,
     driver_registration_review_keyboard,
@@ -518,7 +519,7 @@ async def check_approval_status(message: Message, session: AsyncSession) -> None
 
 
 @driver_router.message(F.text.in_({"🟢 Go Available", "🔴 Go Offline"}))
-@driver_router.message(Command("toggle_availability"))
+@driver_router.message(Command("toggle_availability", "duty"))
 async def toggle_availability_handler(message: Message, session: AsyncSession) -> None:
     """Toggle the driver's availability between AVAILABLE and OFFLINE.
 
@@ -714,8 +715,27 @@ async def process_driver_accept(callback: CallbackQuery, session: AsyncSession) 
         await callback.answer("Something went wrong. Please try again.", show_alert=True)
 
 
-@driver_router.message(F.text == "📊 Active Delivery")
-@driver_router.message(Command("active_delivery"))
+@driver_router.message(Command("driver_profile"))
+@driver_router.message(F.text == "👤 Driver Profile")
+async def show_driver_profile(message: Message, session: AsyncSession) -> None:
+    profile = await get_driver_profile_by_telegram_id(session, message.from_user.id)
+    if profile is None:
+        await message.answer("Driver profile not found.", reply_markup=HomeButton())
+        return
+    await message.answer(
+        f"👤 <b>Driver Profile</b>\n\n"
+        f"Name: {escape_html(profile.user.full_name)}\n"
+        f"Vehicle: {escape_html(profile.vehicle_type)} ({escape_html(profile.plate_number)})\n"
+        f"Availability: {profile.availability.value.title()}\n"
+        f"Completed deliveries: {profile.total_deliveries}\n"
+        f"Rating: {profile.rating_avg:.1f}",
+        parse_mode="HTML",
+        reply_markup=HomeButton(),
+    )
+
+
+@driver_router.message(F.text.in_({"📊 Active Delivery", "📋 Assigned Deliveries"}))
+@driver_router.message(Command("active_delivery", "active"))
 async def active_delivery_dashboard_handler(message: Message, session: AsyncSession) -> None:
     """Display the active delivery dashboard for the requesting driver.
 
@@ -756,6 +776,7 @@ async def active_delivery_dashboard_handler(message: Message, session: AsyncSess
             return
 
         active_statuses = [
+            RequestStatus.ASSIGNED,
             RequestStatus.ACCEPTED,
             RequestStatus.EN_ROUTE_TO_PICKUP,
             RequestStatus.PICKED_UP,
@@ -776,7 +797,9 @@ async def active_delivery_dashboard_handler(message: Message, session: AsyncSess
 
         if not active_req:
             from bot.core.constants.messages import MSG_EMPTY_STATE_DRIVER
-            await message.answer(MSG_EMPTY_STATE_DRIVER, reply_markup=driver_persistent_menu(DriverAvailability.AVAILABLE))
+            profile = await get_driver_profile_by_telegram_id(session, message.from_user.id)
+            availability = profile.availability if profile else DriverAvailability.OFFLINE
+            await message.answer(MSG_EMPTY_STATE_DRIVER, reply_markup=driver_persistent_menu(availability))
             return
 
         student = active_req.student
@@ -797,7 +820,11 @@ async def active_delivery_dashboard_handler(message: Message, session: AsyncSess
             f"• Phone: {escape_html(student_phone)}"
         )
 
-        kb = delivery_status_update_keyboard(active_req.id, active_req.status)
+        kb = (
+            driver_assignment_response_keyboard(active_req.id)
+            if active_req.status == RequestStatus.ASSIGNED
+            else delivery_status_update_keyboard(active_req.id, active_req.status)
+        )
         await message.answer(dashboard_text, parse_mode="HTML", reply_markup=kb)
 
     except Exception as exc:
@@ -851,7 +878,6 @@ async def process_delivery_status_step(callback: CallbackQuery, session: AsyncSe
     from bot.core.constants.enums import DriverAvailability, RequestStatus
     from bot.core.exceptions import PackitbotError
     from bot.core.models.delivery_request import DeliveryRequest
-    from bot.core.models.driver_profile import DriverProfile
     from bot.core.models.user import User
     from bot.request.schemas import TransitionDTO
 
@@ -885,15 +911,6 @@ async def process_delivery_status_step(callback: CallbackQuery, session: AsyncSe
             note=f"Status updated to {new_status.value} by driver {driver_user.id}",
         )
         updated_req, event = await req_service.transition_status(dto)
-
-        # On delivery completion or failure, set driver availability back to AVAILABLE
-        if new_status in (RequestStatus.DELIVERED, RequestStatus.FAILED):
-            dp_res = await session.execute(
-                select(DriverProfile).where(DriverProfile.user_id == driver_user.id)
-            )
-            dp = dp_res.scalar_one_or_none()
-            if dp:
-                dp.availability = DriverAvailability.AVAILABLE
 
         await session.commit()
 

@@ -53,10 +53,12 @@ from datetime import datetime, timezone
 from bot.core.constants.enums import AccountStatus, AdminActionType, DriverAvailability, DriverStatus, RequestStatus, UserRole
 from bot.core.exceptions import DuplicateResourceError, NotFoundError, PackitbotError, ValidationError
 from bot.core.models.admin_action_log import AdminActionLog
+from bot.core.models.admin_profile import AdminProfile
 from bot.core.models.authorized_driver import AuthorizedDriver
 from bot.core.models.delivery_request import DeliveryRequest
 from bot.core.models.driver_profile import DriverProfile
 from bot.core.models.feedback import Feedback
+from bot.core.models.status_log import RequestStatusLog
 from bot.core.models.user import User
 from bot.core.utils.validators import (
     validate_full_name,
@@ -66,6 +68,7 @@ from bot.core.utils.validators import (
     validate_vehicle_type,
 )
 from bot.driver.repository import DriverRepository
+from bot.request.repository import RequestRepository
 from bot.admin.schemas import (
     AvailableDriverDTO,
     BanUserDTO,
@@ -145,7 +148,7 @@ async def get_pending_requests(
 async def get_available_drivers_ranked(
     session: AsyncSession,
 ) -> List[AvailableDriverDTO]:
-    """Retrieve approved, non-offline drivers ranked by rating and delivery volume.
+    """Retrieve approved, available drivers ranked by rating and delivery volume.
 
     Drivers are ordered by descending average rating, then descending total
     deliveries, then ascending ID as a tiebreaker. This ranking is used when
@@ -175,7 +178,15 @@ async def get_available_drivers_ranked(
         .join(User, DriverProfile.user_id == User.id)
         .where(
             DriverProfile.status == DriverStatus.APPROVED,
-            DriverProfile.availability != DriverAvailability.OFFLINE,
+            DriverProfile.availability == DriverAvailability.AVAILABLE,
+            User.role == UserRole.DRIVER,
+            User.account_status == AccountStatus.ACTIVE,
+            ~select(DeliveryRequest.id).where(
+                DeliveryRequest.driver_id == User.id,
+                DeliveryRequest.status.not_in(
+                    (RequestStatus.DELIVERED, RequestStatus.CANCELLED, RequestStatus.FAILED)
+                ),
+            ).exists(),
         )
         .order_by(
             DriverProfile.rating_avg.desc(),
@@ -378,6 +389,8 @@ async def approve_driver(
         select(DriverProfile, User)
         .join(User, DriverProfile.user_id == User.id)
         .where(DriverProfile.id == dto.driver_id)
+        .with_for_update(of=DriverProfile)
+        .execution_options(populate_existing=True)
     )
     res = await session.execute(stmt)
     row = res.first()
@@ -388,9 +401,15 @@ async def approve_driver(
 
     if dp.status == DriverStatus.APPROVED:
         raise ValidationError("Driver application is already approved.")
+    if dp.status != DriverStatus.PENDING_APPROVAL:
+        raise ValidationError("Only pending applications can be approved.")
+    if driver_user.role not in (None, UserRole.DRIVER) or driver_user.account_status == AccountStatus.BANNED:
+        raise ValidationError("This user cannot be approved as a driver.")
 
     # 3. Update driver profile and user role
     dp.status = DriverStatus.APPROVED
+    dp.approved_by_admin_id = admin_user.id
+    dp.approved_at = datetime.now(timezone.utc).replace(tzinfo=None)
     driver_user.role = UserRole.DRIVER
 
     # 4. Create audit log entry
@@ -467,6 +486,8 @@ async def reject_driver(
         select(DriverProfile, User)
         .join(User, DriverProfile.user_id == User.id)
         .where(DriverProfile.id == dto.driver_id)
+        .with_for_update(of=DriverProfile)
+        .execution_options(populate_existing=True)
     )
     res = await session.execute(stmt)
     row = res.first()
@@ -475,7 +496,9 @@ async def reject_driver(
 
     dp, driver_user = row
 
-    # 3. Update driver profile status
+    if dp.status != DriverStatus.PENDING_APPROVAL:
+        raise ValidationError("Only pending applications can be rejected.")
+
     dp.status = DriverStatus.REJECTED
 
     # 4. Create audit log entry
@@ -551,7 +574,13 @@ async def get_stats(
         func.count(DeliveryRequest.id).filter(DeliveryRequest.status == RequestStatus.DELIVERED).label("delivered"),
         func.count(DeliveryRequest.id).filter(DeliveryRequest.status == RequestStatus.CANCELLED).label("cancelled"),
         func.count(DeliveryRequest.id).filter(DeliveryRequest.status == RequestStatus.FAILED).label("failed"),
-        func.count(DeliveryRequest.id).filter(DeliveryRequest.status == RequestStatus.REJECTED_BY_DRIVER).label("rejected")
+        select(func.count(func.distinct(RequestStatusLog.request_id)))
+        .where(
+            RequestStatusLog.old_status == RequestStatus.ASSIGNED,
+            RequestStatusLog.new_status.in_((RequestStatus.PENDING, RequestStatus.REJECTED_BY_DRIVER)),
+        )
+        .scalar_subquery()
+        .label("rejected")
     )
     req_row = (await session.execute(req_stmt)).one()
     total_requests, pending_requests, assigned_requests, accepted_requests, en_route_requests, picked_up_requests, in_transit_requests, delivered_requests, cancelled_requests, failed_requests, rejected_by_driver_requests = req_row
@@ -583,7 +612,6 @@ async def get_stats(
     total_feedbacks, avg_rating = fb_row
 
     # Average delivery duration: correlate ACCEPTED and DELIVERED log timestamps
-    from bot.core.models.status_log import RequestStatusLog
     start_logs = select(
         RequestStatusLog.request_id,
         func.min(RequestStatusLog.created_at).label("start_time"),
@@ -639,6 +667,15 @@ async def get_stats(
 
 
 
+async def _ensure_no_active_driver_request(session: AsyncSession, user: User) -> None:
+    if user.role != UserRole.DRIVER:
+        return
+    # Coordinate with assignment, which holds the same driver profile lock.
+    await DriverRepository(session).get_by_user_id_for_update(user.id)
+    if await RequestRepository(session).get_active_for_driver(user.id) is not None:
+        raise ValidationError("Resolve this driver's current delivery before changing their access.")
+
+
 async def ban_user(
     session: AsyncSession,
     dto: BanUserDTO,
@@ -685,6 +722,9 @@ async def ban_user(
 
     if target_user.account_status == AccountStatus.BANNED:
         raise ValidationError("User is already banned.")
+    if target_user.id == admin_user.id:
+        raise ValidationError("You cannot ban your own admin account.")
+    await _ensure_no_active_driver_request(session, target_user)
 
     target_user.account_status = AccountStatus.BANNED
     target_user.banned_reason = dto.reason
@@ -839,10 +879,18 @@ async def promote_admin(
     if not target_user:
         raise NotFoundError(f"User with ID {dto.target_user_id} not found.")
 
-    if target_user.role == UserRole.ADMIN:
+    existing_profile = await session.scalar(
+        select(AdminProfile).where(AdminProfile.user_id == target_user.id)
+    )
+    if target_user.role == UserRole.ADMIN and existing_profile is not None:
         raise ValidationError("User is already an admin.")
+    if target_user.account_status == AccountStatus.BANNED:
+        raise ValidationError("Unban this user before promoting them.")
+    await _ensure_no_active_driver_request(session, target_user)
 
     target_user.role = UserRole.ADMIN
+    if existing_profile is None:
+        session.add(AdminProfile(user_id=target_user.id, added_by_admin_id=admin_user.id))
 
     log_entry = AdminActionLog(
         admin_id=admin_user.id,
@@ -1184,6 +1232,12 @@ async def update_driver_field(
                 validated = DriverStatus(value.strip().lower())
             except ValueError:
                 raise ValidationError("Invalid driver status. Choose: pending_approval, approved, rejected, suspended.")
+            if validated == DriverStatus.APPROVED and dp.status != DriverStatus.APPROVED:
+                if dp.status == DriverStatus.PENDING_APPROVAL or driver_user.role != UserRole.DRIVER:
+                    raise ValidationError("Approve pending applications through /verify.")
+            if validated != DriverStatus.APPROVED:
+                await _ensure_no_active_driver_request(session, driver_user)
+                dp.availability = DriverAvailability.OFFLINE
             dp.status = validated
     else:
         raise ValidationError(f"Field '{field}' is not editable.")
@@ -1269,9 +1323,11 @@ async def remove_driver(
         raise NotFoundError(f"Driver profile with ID {dto.driver_id} not found.")
 
     dp, driver_user = row
+    await _ensure_no_active_driver_request(session, driver_user)
 
     await session.delete(dp)
-    driver_user.role = None
+    if driver_user.role == UserRole.DRIVER:
+        driver_user.role = None
 
     log_entry = AdminActionLog(
         admin_id=admin_user.id,

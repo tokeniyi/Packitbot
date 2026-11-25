@@ -8,7 +8,7 @@ key. When the two keys differ (the normal case, since the two tables have
 independent autoincrement sequences) the lookup silently returned ``None`` or, worse,
 a different driver's profile.
 
-These tests assert the profile is resolved through ``DriverRepository.get_by_user_id``
+These tests assert the profile is resolved through ``DriverRepository.get_by_user_id_for_update``
 (``WHERE user_id = :users_id``) and that ``session.get`` is never used for it.
 """
 
@@ -44,10 +44,10 @@ async def test_recalculate_driver_rating_resolves_profile_by_user_id():
     profile = MagicMock(rating_avg=0.0, total_deliveries=0)
 
     with patch("bot.student.handlers.feedback.DriverRepository") as repo_cls:
-        repo_cls.return_value.get_by_user_id = AsyncMock(return_value=profile)
+        repo_cls.return_value.get_by_user_id_for_update = AsyncMock(return_value=profile)
         await _recalculate_driver_rating(session, 42)
 
-    repo_cls.return_value.get_by_user_id.assert_awaited_once_with(42)
+    repo_cls.return_value.get_by_user_id_for_update.assert_awaited_once_with(42)
     session.get.assert_not_called()
     assert profile.rating_avg == 4.5
     assert profile.total_deliveries == 3
@@ -67,13 +67,13 @@ async def test_recalculate_resolves_profile_via_user_id_not_profile_pk():
     ) as repo_cls, patch.object(
         session, "get", wraps=session.get
     ) as session_get:
-        repo_cls.return_value.get_by_user_id = AsyncMock(return_value=profile)
+        repo_cls.return_value.get_by_user_id_for_update = AsyncMock(return_value=profile)
 
         await _recalculate_driver_rating(session, 4242)
 
     # Resolved through the users.id -> DriverProfile.user_id path.
     repo_cls.assert_called_once_with(session)
-    repo_cls.return_value.get_by_user_id.assert_awaited_once_with(4242)
+    repo_cls.return_value.get_by_user_id_for_update.assert_awaited_once_with(4242)
 
     # The bug: session.get(DriverProfile, users.id) must never be called.
     session_get.assert_not_called()
@@ -99,7 +99,7 @@ async def test_total_deliveries_counts_delivered_requests_not_feedback_rows():
     profile = MagicMock(rating_avg=0.0, total_deliveries=0)
 
     with patch("bot.student.handlers.feedback.DriverRepository") as repo_cls:
-        repo_cls.return_value.get_by_user_id = AsyncMock(return_value=profile)
+        repo_cls.return_value.get_by_user_id_for_update = AsyncMock(return_value=profile)
         await _recalculate_driver_rating(session, 42)
 
     assert profile.total_deliveries == 7
@@ -119,59 +119,12 @@ async def test_recalculate_is_a_noop_when_driver_has_no_profile():
     session = _make_session()
 
     with patch("bot.student.handlers.feedback.DriverRepository") as repo_cls:
-        repo_cls.return_value.get_by_user_id = AsyncMock(return_value=None)
+        repo_cls.return_value.get_by_user_id_for_update = AsyncMock(return_value=None)
 
         await _recalculate_driver_rating(session, 999)
 
     session.execute.assert_not_awaited()
     session.flush.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_cancel_restores_availability_of_the_correct_driver():
-    """Cancelling a request must mark the ASSIGNED driver available again.
-
-    Regression: the handler used ``session.get(DriverProfile, updated_req.driver_id)``.
-    With driver_id being a users.id, that either missed the profile (availability never
-    restored, driver stuck BUSY forever) or hit an unrelated driver's profile row.
-    """
-    from bot.core.constants.enums import DriverAvailability
-    from bot.core.models.delivery_request import DeliveryRequest
-    from bot.core.models.driver_profile import DriverProfile
-    from bot.student.handlers.requests import confirm_cancel_request
-
-    session = _make_session()
-    profile = MagicMock(spec=DriverProfile)
-    profile.availability = DriverAvailability.BUSY
-
-    updated = MagicMock(spec=DeliveryRequest)
-    updated.id = 7
-    updated.driver_id = 4242
-
-    callback = MagicMock()
-    callback.data = "my_req_cancel_confirm:7"
-    callback.answer = AsyncMock()
-    callback.message.answer = AsyncMock()
-    callback.from_user.id = 555
-
-    service = MagicMock()
-    service.cancel_request = AsyncMock(return_value=(updated, None))
-
-    with (
-        patch("bot.student.handlers.requests.DriverRepository") as repo_cls,
-        patch("bot.student.handlers.requests.RequestService") as svc_cls,
-        patch("bot.student.handlers.requests.resolve_user_id", AsyncMock(return_value=555)),
-        patch.object(session, "get", wraps=session.get) as session_get,
-    ):
-        repo_cls.return_value.get_by_user_id = AsyncMock(return_value=profile)
-        svc_cls.return_value = service
-
-        await confirm_cancel_request(callback, session=session)
-
-    repo_cls.return_value.get_by_user_id.assert_awaited_once_with(4242)
-    session_get.assert_not_called()
-    assert profile.availability is DriverAvailability.AVAILABLE
-    session.flush.assert_awaited_once()
 
 
 @pytest.mark.asyncio

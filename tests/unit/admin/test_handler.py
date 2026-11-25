@@ -343,6 +343,7 @@ class TestHandleConfirmDriverAssignment:
 class TestHandleBackToPendingList:
     async def test_navigates_back(self):
         callback = _make_callback()
+        callback.data = "admin_pending_drivers_back"
         user = _make_admin_user()
 
         drivers = [MagicMock(driver_id=1, full_name="Alice")]

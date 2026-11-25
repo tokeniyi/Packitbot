@@ -27,9 +27,11 @@ Cross-References:
 
 import asyncio
 import logging
+from urllib.parse import urlsplit
 
 from aiogram.client.bot import Bot
 from aiogram.exceptions import TelegramBadRequest
+from aiogram.filters import Command
 from aiogram.types import BotCommand, BotCommandScopeChat, BotCommandScopeDefault, ErrorEvent
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -37,7 +39,7 @@ from sqlalchemy.exc import IntegrityError
 # 1. Register all SQLAlchemy models before running any DB queries
 import bot.core.models  # noqa: F401
 from bot.admin.handler import admin_router
-from bot.common.fallback import fallback_router
+from bot.common.fallback import cmd_cancel, fallback_router
 from bot.common.help import help_router
 from bot.common.start import start_router
 from bot.core.config import get_settings
@@ -191,6 +193,7 @@ def setup_routers(dp) -> None:
     Args:
         dp: The aiogram Dispatcher instance.
     """
+    dp.message.register(cmd_cancel, Command("cancel"))
     dp.include_router(start_router)
     dp.include_router(admin_router)
     dp.include_router(help_router)
@@ -373,6 +376,7 @@ async def _run_polling(dp, bot: Bot) -> None:
     await _init_db()
     await _seed_admins()
     await set_bot_commands(bot)
+    await bot.delete_webhook()
     await dp.start_polling(bot)
 
 
@@ -391,6 +395,8 @@ async def _run_webhook(dp, bot: Bot) -> None:
     from aiohttp import web
 
     settings = get_settings()
+    if not settings.webhook_secret:
+        raise ValueError("WEBHOOK_SECRET is required when WEBHOOK_URL is set.")
     await _init_db()
     await _seed_admins()
     await set_bot_commands(bot)
@@ -398,7 +404,6 @@ async def _run_webhook(dp, bot: Bot) -> None:
     await bot.set_webhook(
         url=f"{settings.webhook_url}",
         secret_token=settings.webhook_secret,
-        drop_pending_updates=True,
     )
 
     app = web.Application()
@@ -407,7 +412,7 @@ async def _run_webhook(dp, bot: Bot) -> None:
         bot=bot,
         secret_token=settings.webhook_secret,
     )
-    webhook_requests_handler.register(app, path="/webhook")
+    webhook_requests_handler.register(app, path=urlsplit(settings.webhook_url).path or "/")
     setup_application(app, dp, bot=bot)
 
     # Clean lifecycle handling

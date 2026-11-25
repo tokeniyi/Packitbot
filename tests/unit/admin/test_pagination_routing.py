@@ -149,22 +149,18 @@ async def test_every_keyboard_callback_is_routed(kb_name, build):
 
 
 @pytest.mark.parametrize(
-    "build",
+    ("build", "prefix", "handler"),
     [
-        lambda: pending_drivers_list_keyboard([_driver_item(1)], page=2, total_pages=5),
-        lambda: drivers_list_keyboard([_driver_item(1)], page=2, total_pages=5),
+        (pending_drivers_list_keyboard, "admin_verify_page:", "handle_back_to_pending_list"),
+        (drivers_list_keyboard, "admin_drv_page:", "handle_drivers_pagination"),
     ],
-    ids=["pending_drivers_list_keyboard", "drivers_list_keyboard"],
 )
-def test_driver_pagination_uses_drv_page_prefix(build):
-    """The driver lists must page through ``admin_drv_page:``, which is routed."""
-    nav = [
-        btn.callback_data
-        for row in build().inline_keyboard
-        for btn in row
-        if btn.callback_data and btn.callback_data.startswith("admin_drv_page:")
-    ]
-    assert nav == ["admin_drv_page:1", "admin_drv_page:3"]
+async def test_driver_pagination_stays_in_its_queue(build, prefix, handler):
+    keyboard = build([_driver_item(1)], page=2, total_pages=5)
+    nav = [value for value in _callback_data(keyboard) if value.startswith(prefix)]
+    assert nav == [f"{prefix}1", f"{prefix}3"]
+    for payload in nav:
+        assert handler in await _routed_handler_names(_probe(payload))
 
 
 @pytest.mark.parametrize(

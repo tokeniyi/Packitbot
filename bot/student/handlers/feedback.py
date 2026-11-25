@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from bot.core.constants.enums import RequestStatus
 from bot.core.constants.messages import ErrorMessages
 from bot.core.exceptions import PackitbotError, PermissionDeniedError, ValidationError
+from bot.core.keyboards.common_kb import HomeButton
 from bot.core.models.delivery_request import DeliveryRequest
 from bot.core.models.feedback import Feedback
 from bot.driver.repository import DriverRepository
@@ -32,7 +33,7 @@ async def _recalculate_driver_rating(session, driver_user_id: int) -> None:
             is a FK to ``users.id``, NOT to ``DriverProfile.id``, so the profile must be
             resolved through ``DriverProfile.user_id``.
     """
-    driver_profile = await DriverRepository(session).get_by_user_id(driver_user_id)
+    driver_profile = await DriverRepository(session).get_by_user_id_for_update(driver_user_id)
     if not driver_profile:
         return
 
@@ -124,7 +125,13 @@ async def process_rating_selection(callback: CallbackQuery, state: FSMContext) -
             await callback.message.answer(ErrorMessages.INVALID_INPUT)
         return
 
-    await state.update_data(request_id=req_id, rating=rating)
+    data = await state.get_data()
+    if data.get("request_id") != req_id or rating not in range(1, 6):
+        if callback.message:
+            await callback.message.answer(ErrorMessages.INVALID_INPUT, reply_markup=HomeButton())
+        return
+
+    await state.update_data(rating=rating)
     await state.set_state(FeedbackFSM.entering_comment)
 
     kb = feedback_comment_skip_keyboard(req_id)
@@ -141,6 +148,10 @@ async def process_rating_selection(callback: CallbackQuery, state: FSMContext) -
 @feedback_router.callback_query(FeedbackFSM.entering_comment, F.data.startswith("feedback_skip_comment:"))
 async def process_feedback_skip_comment(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
     """Handle skipping the optional comment step."""
+    data = await state.get_data()
+    if callback.data != f"feedback_skip_comment:{data.get('request_id')}":
+        await callback.answer(ErrorMessages.INVALID_INPUT, show_alert=True)
+        return
     await callback.answer()
     await _finalize_feedback_submission(callback, state, session, comment=None)
 

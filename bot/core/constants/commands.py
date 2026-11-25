@@ -61,24 +61,16 @@ DEFAULT_COMMANDS = [
 
 # 2. STUDENT COMMANDS
 STUDENT_COMMANDS = DEFAULT_COMMANDS + [
-    BotCommand(command=CMD_HOME, description="Return to main menu"),
     BotCommand(command=CMD_NEW_REQUEST, description="Create new delivery request"),
     BotCommand(command=CMD_MY_REQUESTS, description="View my delivery history"),
-    BotCommand(command=CMD_ABOUT, description="About the bot & services"),
-    BotCommand(command=CMD_HELP, description="Get help & support"),
-    BotCommand(command=CMD_CANCEL, description="Cancel active action"),
     BotCommand(command=CMD_PROFILE, description="View Profile"),
 ]
 
 # 3. DRIVER COMMANDS
 DRIVER_COMMANDS = DEFAULT_COMMANDS + [
-    BotCommand(command=CMD_HOME, description="Return to main menu"),
-    BotCommand(command=CMD_AVAILABLE_JOBS, description="View available orders"),
     BotCommand(command=CMD_ACTIVE_JOB, description="View current delivery"),
     BotCommand(command=CMD_TOGGLE_DUTY, description="Toggle online status"),
-    BotCommand(command=CMD_ABOUT, description="About the bot & services"),
-    BotCommand(command=CMD_HELP, description="Get help & support"),
-    BotCommand(command=CMD_CANCEL, description="Cancel active action"),
+    BotCommand(command="driver_profile", description="View driver profile"),
 ]
 
 # 4. ADMIN COMMANDS
@@ -88,8 +80,8 @@ ADMIN_COMMANDS = DEFAULT_COMMANDS + [
     BotCommand(command=CMD_VERIFY, description="Review driver verification"),
     BotCommand(command=CMD_BROADCAST, description="Send announcement"),
     BotCommand(command=CMD_USERS, description="Search or view registered students and drivers"),
-    BotCommand(command=CMD_ORDERS, description=" View active, pending, or completed deliveries"),
-    BotCommand(command=CMD_DRIVERS, description="  lists all driver record"),
-    BotCommand(command=CMD_ASSIGN, description="  assign request to a driver"),
+    BotCommand(command=CMD_ORDERS, description="View pending deliveries"),
+    BotCommand(command=CMD_DRIVERS, description="List all driver records"),
+    BotCommand(command=CMD_ASSIGN, description="Assign a request to a driver"),
     BotCommand(command=CMD_ADD_DRIVER, description="Add authorized driver"),
 ]

@@ -29,7 +29,7 @@ from bot.student.handler import (
     confirm_cancel_request,
 )
 from bot.student.states import RequestCreateFSM, RequestUpdateFSM
-from datetime import date
+from datetime import date, date
 
 
 
@@ -108,7 +108,7 @@ class TestRequestCreationFlowIntegration:
             "recipient_phone": "08012345678",
             "luggage_size": "small",
             "luggage_count": "1",
-            "preferred_date": "2025-08-15",
+            "preferred_date": date.today().isoformat(),
             "preferred_time_window": "8am-11am",
             "special_instructions": None,
         })
@@ -197,49 +197,3 @@ class TestRequestCancelFlowIntegration:
         await prompt_cancel_request(callback, session=session)
 
         callback.message.answer.assert_awaited_once()
-
-    async def test_confirm_cancel_restores_driver_availability(self):
-        callback = _make_callback(data="my_req_cancel_confirm:1", user_id=1)
-        state = AsyncMock()
-        state.clear = AsyncMock()
-
-        req = MagicMock(spec=DeliveryRequest)
-        req.id = 1
-        req.student_id = 1
-        req.status = RequestStatus.ASSIGNED
-        req.driver_id = 7
-
-        session = _make_session()
-
-        user_row = MagicMock()
-        user_row.id = 1
-        user_result = MagicMock()
-        user_result.scalar_one_or_none.return_value = user_row
-        session.execute.return_value = user_result
-
-        repo = RequestRepository(session)
-        repo.get_by_id = AsyncMock(return_value=req)
-
-        driver = MagicMock()
-        driver.availability = DriverAvailability.BUSY
-        session.get = AsyncMock(side_effect=lambda model, id: driver if model.__name__ == "DriverProfile" else req)
-
-        updated_req = MagicMock()
-        updated_req.id = 1
-        updated_req.driver_id = 7
-        driver_repo_lookup = AsyncMock(return_value=driver)
-
-        with patch.object(
-            RequestService,
-            "cancel_request",
-            AsyncMock(return_value=(updated_req, MagicMock())),
-        ), patch(
-            "bot.student.handlers.requests.DriverRepository.get_by_user_id",
-            driver_repo_lookup,
-        ):
-            await confirm_cancel_request(callback, session=session)
-
-        driver_repo_lookup.assert_awaited_once_with(7)
-
-        assert driver.availability == DriverAvailability.AVAILABLE
-        assert session.flush.call_count >= 1

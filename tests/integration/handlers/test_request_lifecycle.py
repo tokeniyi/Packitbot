@@ -124,6 +124,8 @@ class TestRequestLifecycleIntegration:
 
         assign_dto = AssignDriverDTO(request_id=1, driver_id=7, admin_id=3)
         driver = _make_driver_profile()
+        service.driver_repo.get_by_user_id_for_update = AsyncMock(return_value=driver)
+        repo.get_active_for_driver = AsyncMock(return_value=None)
         _, assigned_event = await service.assign_driver(assign_dto, driver)
         assert isinstance(assigned_event, RequestAssignedEvent)
         assert req.status == RequestStatus.ASSIGNED

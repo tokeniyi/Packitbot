@@ -1,4 +1,5 @@
 import pytest
+from contextlib import nullcontext
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from bot.core.constants.enums import (
@@ -36,6 +37,7 @@ VALID_DTO = RegisterDriverDTO(
 class TestRegisterDriver:
     async def test_creates_new_user_and_driver_profile(self):
         session = AsyncMock()
+        session.begin_nested = MagicMock(side_effect=nullcontext)
 
         user_row = MagicMock()
         user_row.scalar_one_or_none.return_value = None
@@ -43,7 +45,7 @@ class TestRegisterDriver:
         dp_row.scalar_one_or_none.return_value = None
 
         def execute_side_effect(stmt):
-            if "User" in str(stmt):
+            if stmt.column_descriptions[0]["entity"] is User:
                 return user_row
             return dp_row
 
@@ -57,6 +59,7 @@ class TestRegisterDriver:
 
     async def test_returns_existing_pending_profile(self):
         session = AsyncMock()
+        session.begin_nested = MagicMock(side_effect=nullcontext)
 
         existing_user = MagicMock(spec=User)
         existing_user.id = 1
@@ -72,7 +75,7 @@ class TestRegisterDriver:
         dp_row.scalar_one_or_none.return_value = existing_dp
 
         def execute_side_effect(stmt):
-            if "User" in str(stmt):
+            if stmt.column_descriptions[0]["entity"] is User:
                 return user_row
             return dp_row
 
@@ -87,6 +90,7 @@ class TestRegisterDriver:
 
     async def test_raises_when_already_approved(self):
         session = AsyncMock()
+        session.begin_nested = MagicMock(side_effect=nullcontext)
 
         existing_user = MagicMock(spec=User)
         existing_user.id = 1
@@ -101,7 +105,7 @@ class TestRegisterDriver:
         dp_row.scalar_one_or_none.return_value = existing_dp
 
         def execute_side_effect(stmt):
-            if "User" in str(stmt):
+            if stmt.column_descriptions[0]["entity"] is User:
                 return user_row
             return dp_row
 
@@ -112,6 +116,7 @@ class TestRegisterDriver:
 
     async def test_raises_on_duplicate_plate_or_license(self):
         session = AsyncMock()
+        session.begin_nested = MagicMock(side_effect=nullcontext)
 
         user_row = MagicMock()
         user_row.scalar_one_or_none.return_value = None
@@ -119,7 +124,7 @@ class TestRegisterDriver:
         dp_row.scalar_one_or_none.return_value = None
 
         def execute_side_effect(stmt):
-            if "User" in str(stmt):
+            if stmt.column_descriptions[0]["entity"] is User:
                 return user_row
             return dp_row
 
@@ -186,9 +191,15 @@ class TestGetDriverProfileByTelegramId:
 
 
 class TestSetDriverAvailability:
+    @pytest.fixture(autouse=True)
+    def mock_no_active_delivery(self):
+        with patch("bot.driver.service.RequestRepository.get_active_for_driver", new_callable=AsyncMock, return_value=None):
+            yield
+
     async def test_sets_available_when_approved(self):
         session = AsyncMock()
         profile = MagicMock(spec=DriverProfile)
+        profile.user_id = 1
         profile.status = DriverStatus.APPROVED
         profile.availability = DriverAvailability.OFFLINE
 
@@ -207,6 +218,7 @@ class TestSetDriverAvailability:
     async def test_raises_when_not_approved(self):
         session = AsyncMock()
         profile = MagicMock(spec=DriverProfile)
+        profile.user_id = 1
         profile.status = DriverStatus.PENDING_APPROVAL
         profile.availability = DriverAvailability.OFFLINE
 
@@ -223,6 +235,7 @@ class TestSetDriverAvailability:
     async def test_raises_when_busy(self):
         session = AsyncMock()
         profile = MagicMock(spec=DriverProfile)
+        profile.user_id = 1
         profile.status = DriverStatus.APPROVED
         profile.availability = DriverAvailability.BUSY
 
@@ -239,6 +252,7 @@ class TestSetDriverAvailability:
     async def test_raises_when_setting_busy_manually(self):
         session = AsyncMock()
         profile = MagicMock(spec=DriverProfile)
+        profile.user_id = 1
         profile.status = DriverStatus.APPROVED
         profile.availability = DriverAvailability.AVAILABLE
 
@@ -255,6 +269,7 @@ class TestSetDriverAvailability:
     async def test_sets_offline_when_available(self):
         session = AsyncMock()
         profile = MagicMock(spec=DriverProfile)
+        profile.user_id = 1
         profile.status = DriverStatus.APPROVED
         profile.availability = DriverAvailability.AVAILABLE
 

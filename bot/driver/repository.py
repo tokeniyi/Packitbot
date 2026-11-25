@@ -24,7 +24,9 @@ from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
+from bot.core.constants.enums import AccountStatus, UserRole
 from bot.core.models.driver_profile import DriverProfile
 from bot.core.repositories.base_repository import BaseRepository
 
@@ -59,6 +61,25 @@ class DriverRepository(BaseRepository[DriverProfile]):
         stmt = select(DriverProfile).where(DriverProfile.user_id == user_id)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def get_by_user_id_for_update(
+        self, user_id: int, *, active_driver_only: bool = False
+    ) -> DriverProfile | None:
+        stmt = (
+            select(DriverProfile)
+            .where(DriverProfile.user_id == user_id)
+            .with_for_update(of=DriverProfile)
+            .execution_options(populate_existing=True)
+        )
+        if active_driver_only:
+            stmt = stmt.options(selectinload(DriverProfile.user))
+
+        profile = (await self.session.execute(stmt)).scalar_one_or_none()
+        if active_driver_only and profile is not None:
+            # The eager SELECT runs after the profile lock is acquired.
+            if profile.user.account_status != AccountStatus.ACTIVE or profile.user.role != UserRole.DRIVER:
+                return None
+        return profile
 
     async def get_by_plate_number(self, plate_number: str) -> Optional[DriverProfile]:
         """Retrieve a driver profile by vehicle plate number.
